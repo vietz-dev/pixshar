@@ -2,14 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${process.env.API_URL || "http://localhost:3001"}/api/:path*`,
-      },
-    ];
-  },
+  // API proxying is handled by src/middleware.ts for runtime env var support
   async headers() {
     return [
       {
