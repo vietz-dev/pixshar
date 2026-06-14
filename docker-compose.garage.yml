@@ -7,6 +7,7 @@ services:
       - "3900:3900"
       - "3901:3901"
       - "3902:3902"
+      - "3903:3903"
     environment:
       - GARAGE_RPC_SECRET=0000000000000000000000000000000000000000000000000000000000000000
       - GARAGE_ADMIN_TOKEN=dev-admin-token-do-not-use-in-production
@@ -68,6 +69,23 @@ services:
       echo 'Garage init complete';
       exit 0;
       "
+
+  garage-ui:
+    image: noooste/garage-ui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - GARAGE_UI_GARAGE_ENDPOINT=http://garage:3900
+      - GARAGE_UI_GARAGE_ADMIN_ENDPOINT=http://garage:3903
+      - GARAGE_UI_GARAGE_REGION=us-east-1
+      - GARAGE_UI_GARAGE_ADMIN_TOKEN=dev-admin-token-do-not-use-in-production
+      - GARAGE_UI_SERVER_HOST=0.0.0.0
+      - GARAGE_UI_SERVER_PORT=8080
+      - GARAGE_UI_SERVER_ENVIRONMENT=production
+      - GARAGE_UI_AUTH_TOKEN_ENABLED=true
+    depends_on:
+      garage-init:
+        condition: service_completed_successfully
 
 volumes:
   garage-meta:
