@@ -250,25 +250,62 @@ export default function UploadModal({ galleryName, onClose, onUpload }: UploadMo
             />
           )}
 
-          <button
-            onClick={doUpload}
-            disabled={!nameOk || total === 0}
-            style={{
-              height: 42,
-              width: "100%",
-              borderRadius: 9,
-              border: "none",
-              background: submitBg,
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 500,
-              marginTop: 10,
-              transition: "background .15s",
-              cursor: submitCursor,
-            }}
-          >
-            {submitLabel}
-          </button>
+          {/* Disclaimer during active upload */}
+          {active && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "8px 10px", background: "#eff6ff", borderRadius: 8, border: "1px solid #dbeafe" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4M12 8h.01" />
+              </svg>
+              <span style={{ fontSize: 12, color: "#1e40af", fontWeight: 500 }}>
+                Please stay on this page until your upload finishes.
+              </span>
+            </div>
+          )}
+
+          {/* Button: Upload or Close */}
+          {submitted && allDone ? (
+            <button
+              onClick={onClose}
+              style={{
+                height: 42,
+                width: "100%",
+                borderRadius: 9,
+                border: "none",
+                background: "#16a34a",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 500,
+                marginTop: 14,
+                transition: "background .15s",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#15803d"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "#16a34a"; }}
+            >
+              Close
+            </button>
+          ) : (
+            <button
+              onClick={doUpload}
+              disabled={!nameOk || total === 0}
+              style={{
+                height: 42,
+                width: "100%",
+                borderRadius: 9,
+                border: "none",
+                background: submitBg,
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 500,
+                marginTop: 14,
+                transition: "background .15s",
+                cursor: submitCursor,
+              }}
+            >
+              {submitLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>
