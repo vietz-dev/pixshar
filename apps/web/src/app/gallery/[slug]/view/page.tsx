@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { toast } from "sonner";
 import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import UploadModal from "../../../../components/UploadModal";
@@ -55,57 +54,16 @@ export default function GalleryViewPage() {
     fetchGallery();
   }, [fetchGallery]);
 
-  async function handleUpload(name: string, files: FileList) {
-    const allFiles = Array.from(files);
-    const total = allFiles.length;
-
-    const uploadOne = async (file: File) => {
-      const form = new FormData();
-      form.append("photographerName", name);
-      form.append("files", file);
-      const res = await fetch(`/api/gallery/${slug}/upload`, {
-        method: "POST",
-        body: form,
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
-    };
-
-    const batchSize = 4;
-    let done = 0;
-    let failed = 0;
-
-    const toastId = toast.loading(
-      `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
-      { description: "0 / " + total }
-    );
-
-    for (let i = 0; i < allFiles.length; i += batchSize) {
-      const batch = allFiles.slice(i, i + batchSize);
-      const results = await Promise.allSettled(batch.map(uploadOne));
-      results.forEach((r) => {
-        if (r.status === "fulfilled") done++;
-        else failed++;
-      });
-      toast.loading(
-        `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
-        { id: toastId, description: `${done} / ${total}` }
-      );
-    }
-
-    if (failed === 0) {
-      toast.success(
-        `${done} photo${done === 1 ? "" : "s"} uploaded`,
-        { id: toastId, description: "Processing has started" }
-      );
-    } else {
-      toast.warning(
-        `${done} uploaded, ${failed} failed`,
-        { id: toastId }
-      );
-    }
-
-    fetchGallery();
+  async function handleUploadOne(name: string, file: File) {
+    const form = new FormData();
+    form.append("photographerName", name);
+    form.append("files", file);
+    const res = await fetch(`/api/gallery/${slug}/upload`, {
+      method: "POST",
+      body: form,
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
   }
 
   if (loading) {
@@ -307,8 +265,8 @@ export default function GalleryViewPage() {
       {uploadModalOpen && (
         <UploadModal
           galleryName={gallery.name}
-          onClose={() => setUploadModalOpen(false)}
-          onSubmit={handleUpload}
+          onClose={() => { setUploadModalOpen(false); fetchGallery(); }}
+          onUpload={handleUploadOne}
         />
       )}
     </div>

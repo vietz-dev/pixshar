@@ -9,6 +9,7 @@ import Lightbox from "../../../../components/Lightbox";
 import DownloadButton from "../../../../components/DownloadButton";
 import DownloadPanel from "../../../../components/DownloadPanel";
 import AlertDialog from "../../../../components/AlertDialog";
+import UploadTray, { UploadItem, randomTint } from "../../../../components/UploadTray";
 
 interface Photo {
   id: string;
@@ -52,6 +53,10 @@ export default function EventDetailPage() {
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [queue, setQueue] = useState<UploadItem[]>([]);
+  const [showUpDetails, setShowUpDetails] = useState(false);
+  const fileMapRef = useRef<Map<string, File>>(new Map());
+  const abortRef = useRef(false);
 
   const fetchEvent = useCallback(() => {
     fetch(`/api/events/${id}`, { credentials: "include" })
@@ -87,55 +92,84 @@ export default function EventDetailPage() {
   async function handleUpload(files: FileList | null) {
     if (!files || !files.length) return;
 
-    const allFiles = Array.from(files);
-    const total = allFiles.length;
+    const newItems: UploadItem[] = Array.from(files).map((f) => {
+      const uid = Math.random().toString(36).slice(2);
+      fileMapRef.current.set(uid, f);
+      return {
+        id: uid,
+        name: f.name,
+        status: "queued" as const,
+        progress: 0,
+        tint: randomTint(),
+      };
+    });
+    setQueue((prev) => [...prev, ...newItems]);
+    setShowUpDetails(false);
+    abortRef.current = false;
 
-    const uploadOne = async (file: File) => {
-      const form = new FormData();
-      form.append("files", file);
-      const res = await fetch(`/api/upload/events/${id}/photos`, {
-        method: "POST",
-        body: form,
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
-    };
+    // Start upload after a tick so state is updated
+    setTimeout(() => runUploadBatch(newItems), 0);
+  }
 
+  async function runUploadBatch(items: UploadItem[]) {
     const batchSize = 4;
-    let done = 0;
-    let failed = 0;
+    let idx = 0;
 
-    const toastId = toast.loading(
-      `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
-      { description: "0 / " + total }
-    );
+    while (idx < items.length) {
+      if (abortRef.current) break;
+      const batch = items.slice(idx, idx + batchSize);
+      const batchIds = new Set(batch.map((b) => b.id));
 
-    for (let i = 0; i < allFiles.length; i += batchSize) {
-      const batch = allFiles.slice(i, i + batchSize);
-      const results = await Promise.allSettled(batch.map(uploadOne));
-      results.forEach((r) => {
-        if (r.status === "fulfilled") done++;
-        else failed++;
-      });
-      toast.loading(
-        `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
-        { id: toastId, description: `${done} / ${total}` }
+      setQueue((prev) =>
+        prev.map((q) => (batchIds.has(q.id) ? { ...q, status: "uploading" as const, progress: 0 } : q))
       );
-    }
 
-    if (failed === 0) {
-      toast.success(
-        `${done} photo${done === 1 ? "" : "s"} uploaded`,
-        { id: toastId, description: "Processing has started" }
+      await Promise.allSettled(
+        batch.map(async (item) => {
+          const file = fileMapRef.current.get(item.id);
+          if (!file) {
+            setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: "error" as const, progress: 0 } : q)));
+            return;
+          }
+          const form = new FormData();
+          form.append("files", file);
+          try {
+            const res = await fetch(`/api/upload/events/${id}/photos`, {
+              method: "POST",
+              body: form,
+              credentials: "include",
+            });
+            if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
+            setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: "done" as const, progress: 100 } : q)));
+          } catch {
+            setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: "error" as const, progress: 0 } : q)));
+          }
+        })
       );
-    } else {
-      toast.warning(
-        `${done} uploaded, ${failed} failed`,
-        { id: toastId }
-      );
+
+      idx += batchSize;
     }
 
     fetchEvent();
+  }
+
+  function handleCancelUpload() {
+    abortRef.current = true;
+  }
+
+  function handleClearUpload() {
+    setQueue([]);
+    fileMapRef.current.clear();
+  }
+
+  function handleRetryUpload() {
+    const retryItems = queue.filter((q) => q.status === "error");
+    if (retryItems.length === 0) return;
+    setQueue((prev) =>
+      prev.map((q) => (q.status === "error" ? { ...q, status: "queued" as const, progress: 0 } : q))
+    );
+    abortRef.current = false;
+    setTimeout(() => runUploadBatch(retryItems), 0);
   }
 
   async function handleDeleteEvent() {
@@ -312,7 +346,18 @@ export default function EventDetailPage() {
           <div style={{ fontSize: 12.5, color: "#a1a1aa" }}>JPEG, PNG or HEIC · up to 4 uploading at once</div>
         </div>
 
-
+        {/* Upload tray */}
+        {queue.length > 0 && (
+          <UploadTray
+            queue={queue}
+            showDetails={showUpDetails}
+            onToggleDetails={() => setShowUpDetails((s) => !s)}
+            onClear={handleClearUpload}
+            onCancel={handleCancelUpload}
+            onRetry={handleRetryUpload}
+            size="large"
+          />
+        )}
 
         {/* Download archive */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 14px" }}>

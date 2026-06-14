@@ -1,31 +1,115 @@
 "use client";
 
 import { useRef, useState } from "react";
+import UploadTray, { UploadItem, randomTint } from "./UploadTray";
 
 interface UploadModalProps {
   galleryName: string;
   onClose: () => void;
-  onSubmit: (name: string, files: FileList) => void;
+  onUpload: (name: string, file: File) => Promise<void>;
 }
 
-export default function UploadModal({ galleryName, onClose, onSubmit }: UploadModalProps) {
+export default function UploadModal({ galleryName, onClose, onUpload }: UploadModalProps) {
   const [name, setName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [queue, setQueue] = useState<UploadItem[]>([]);
+  const [showDetails, setShowDetails] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const abortRef = useRef(false);
 
   const nameOk = name.trim().length > 0;
-  const hasFiles = files !== null && files.length > 0;
+  const total = queue.length;
+  const active = queue.some((q) => q.status === "queued" || q.status === "uploading");
+  const allDone = total > 0 && !active && !queue.some((q) => q.status === "error");
 
-  function handleSubmit() {
-    if (!nameOk || !hasFiles) return;
-    onSubmit(name.trim(), files);
+  const submitLabel = submitted && allDone
+    ? "Uploaded — thank you!"
+    : total > 0
+      ? `Upload ${total} photo${total === 1 ? "" : "s"}`
+      : "Choose photos to upload";
+  const submitBg = nameOk
+    ? submitted && allDone
+      ? "#16a34a"
+      : "#2563eb"
+    : "#a8c1f0";
+  const submitCursor = nameOk ? "pointer" : "not-allowed";
+
+  const fileMapRef = useRef<Map<string, File>>(new Map());
+
+  function addFilesWithMap(fileList: FileList | null) {
+    if (!fileList) return;
+    const newItems: UploadItem[] = Array.from(fileList).map((f) => {
+      const id = Math.random().toString(36).slice(2);
+      fileMapRef.current.set(id, f);
+      return {
+        id,
+        name: f.name,
+        status: "queued" as const,
+        progress: 0,
+        tint: randomTint(),
+      };
+    });
+    setQueue((prev) => [...prev, ...newItems]);
   }
 
-  const submitLabel = hasFiles
-    ? `Upload ${files.length} photo${files.length === 1 ? "" : "s"}`
-    : "Choose photos to upload";
-  const submitBg = nameOk ? "#2563eb" : "#a8c1f0";
-  const submitCursor = nameOk ? "pointer" : "not-allowed";
+  async function doUpload() {
+    if (!nameOk || total === 0) return;
+    abortRef.current = false;
+    setSubmitted(true);
+
+    const batchSize = 4;
+    const items = queue.slice();
+    let idx = 0;
+
+    while (idx < items.length) {
+      if (abortRef.current) break;
+      const batch = items.slice(idx, idx + batchSize);
+      const batchIds = new Set(batch.map((b) => b.id));
+
+      setQueue((prev) =>
+        prev.map((q) => (batchIds.has(q.id) ? { ...q, status: "uploading" as const, progress: 0 } : q))
+      );
+
+      const results = await Promise.allSettled(
+        batch.map(async (item) => {
+          const file = fileMapRef.current.get(item.id);
+          if (!file) throw new Error("File not found");
+          try {
+            await onUpload(name.trim(), file);
+            setQueue((prev) =>
+              prev.map((q) => (q.id === item.id ? { ...q, status: "done" as const, progress: 100 } : q))
+            );
+          } catch {
+            setQueue((prev) =>
+              prev.map((q) => (q.id === item.id ? { ...q, status: "error" as const, progress: 0 } : q))
+            );
+            throw new Error("Upload failed");
+          }
+        })
+      );
+
+      idx += batchSize;
+    }
+  }
+
+  function handleCancel() {
+    abortRef.current = true;
+  }
+
+  function handleClear() {
+    setQueue([]);
+    fileMapRef.current.clear();
+    setSubmitted(false);
+  }
+
+  function handleRetry() {
+    setQueue((prev) =>
+      prev.map((q) => (q.status === "error" ? { ...q, status: "queued" as const, progress: 0 } : q))
+    );
+    setSubmitted(false);
+    // Retry after state updates
+    setTimeout(() => doUpload(), 0);
+  }
 
   return (
     <div
@@ -77,6 +161,8 @@ export default function UploadModal({ galleryName, onClose, onSubmit }: UploadMo
               cursor: "pointer",
               transition: "background .15s",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#e4e4e7"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -139,7 +225,7 @@ export default function UploadModal({ galleryName, onClose, onSubmit }: UploadMo
               type="file"
               multiple
               ref={fileRef}
-              onChange={(e) => setFiles(e.target.files)}
+              onChange={(e) => addFilesWithMap(e.target.files)}
               style={{ display: "none" }}
             />
             <div style={{ width: 40, height: 40, borderRadius: 10, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 11px" }}>
@@ -152,9 +238,21 @@ export default function UploadModal({ galleryName, onClose, onSubmit }: UploadMo
             <div style={{ fontSize: 12, color: "#a1a1aa" }}>or drag them here</div>
           </div>
 
+          {total > 0 && (
+            <UploadTray
+              queue={queue}
+              showDetails={showDetails}
+              onToggleDetails={() => setShowDetails((s) => !s)}
+              onClear={handleClear}
+              onCancel={handleCancel}
+              onRetry={handleRetry}
+              size="small"
+            />
+          )}
+
           <button
-            onClick={handleSubmit}
-            disabled={!nameOk}
+            onClick={doUpload}
+            disabled={!nameOk || total === 0}
             style={{
               height: 42,
               width: "100%",
