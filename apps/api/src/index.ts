@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { bodyLimit } from "hono/body-limit";
 import { auth } from "./lib/auth.js";
 import { env } from "./lib/env.js";
 import events from "./routes/events.js";
@@ -29,15 +30,11 @@ app.use(async (c, next) => {
   await next();
 });
 
-// Max request body size (100MB)
-const MAX_BODY_SIZE = 100 * 1024 * 1024;
-app.use(async (c, next) => {
-  const contentLength = c.req.header("content-length");
-  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
-    return c.json({ error: "Request body too large" }, 413);
-  }
-  await next();
-});
+// Max request body size (100MB) — handles both Content-Length and Transfer-Encoding: chunked
+app.use(bodyLimit({
+  maxSize: 100 * 1024 * 1024,
+  onError: (c) => c.json({ error: "Request body too large" }, 413),
+}));
 
 // BetterAuth routes
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
