@@ -16,6 +16,19 @@ app.use(cors({
   credentials: true,
 }));
 
+// Security headers
+app.use(async (c, next) => {
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("X-XSS-Protection", "1; mode=block");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (env.NODE_ENV === "production") {
+    c.header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  }
+  await next();
+});
+
 // BetterAuth routes
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 

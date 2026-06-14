@@ -4,6 +4,8 @@ import { requireAdmin } from "../middleware/requireAdmin.js";
 import { processImage } from "../services/imageProcessor.js";
 import { Effect } from "effect";
 import type { HonoVariables } from "../types.js";
+import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
+import { validateFiles } from "../lib/validate.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -19,6 +21,18 @@ app.post("/events/:id/photos", requireAdmin, async (c) => {
 
   if (!files.length) {
     return c.json({ error: "No files provided" }, 400);
+  }
+
+  // Rate limit: 100 uploads per minute per admin
+  const userId = c.get("user").id;
+  const rateKey = getRateLimitKey(c, `admin-upload:${userId}`);
+  if (!checkRateLimit(rateKey, 100, 60_000)) {
+    return c.json({ error: "Too many uploads. Please try again later." }, 429);
+  }
+
+  const validation = validateFiles(files);
+  if (!validation.valid) {
+    return c.json({ error: validation.error }, 400);
   }
 
   const results = await Promise.all(

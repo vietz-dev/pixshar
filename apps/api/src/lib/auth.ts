@@ -18,5 +18,15 @@ export const auth = betterAuth({
     cookieCache: {
       enabled: true,
     },
+    cookie: {
+      secure: env.NODE_ENV === "production",
+      sameSite: "lax",
+      httpOnly: true,
+    },
+  },
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 100,
   },
 });

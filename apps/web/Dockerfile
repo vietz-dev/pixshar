@@ -22,6 +22,10 @@ RUN cd apps/web && bun run build
 
 WORKDIR /app/apps/web
 
+# Run as non-root user for security
+RUN groupadd -r bunjs -g 1001 && useradd -r -g bunjs -u 1001 bunjs
+USER bunjs
+
 EXPOSE 3000
 
 CMD ["bun", "run", "start"]

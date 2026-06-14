@@ -29,6 +29,10 @@ RUN cd apps/api && bun run build
 
 WORKDIR /app/apps/api
 
+# Run as non-root user for security
+RUN groupadd -r bunjs -g 1001 && useradd -r -g bunjs -u 1001 bunjs
+USER bunjs
+
 EXPOSE 3001
 
 CMD ["bun", "run", "start"]

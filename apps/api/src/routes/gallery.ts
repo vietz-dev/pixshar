@@ -10,13 +10,16 @@ import { getCookie, setCookie } from "hono/cookie";
 import { processImage } from "../services/imageProcessor.js";
 import { Effect } from "effect";
 import type { HonoVariables } from "../types.js";
+import { verifyPassword } from "../lib/hash.js";
+import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
+import { validateFiles } from "../lib/validate.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
 const secret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
 const unlockSchema = z.object({
-  password: z.string().min(1),
+  password: z.string().min(1).max(128),
 });
 
 app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
@@ -28,7 +31,22 @@ app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
     return c.json({ error: "Gallery not found" }, 404);
   }
 
-  if (event.passwordHash !== body.password) {
+  // Rate limit: 5 attempts per minute per IP
+  const rateKey = getRateLimitKey(c, `unlock:${slug}`);
+  if (!checkRateLimit(rateKey, 5, 60_000)) {
+    return c.json({ error: "Too many attempts. Please try again later." }, 429);
+  }
+
+  let valid = false;
+  if (event.passwordHash.includes(":")) {
+    // New format: hashed with scrypt
+    valid = await verifyPassword(body.password, event.passwordHash);
+  } else {
+    // Legacy format: plaintext (migration fallback)
+    valid = event.passwordHash === body.password;
+  }
+
+  if (!valid) {
     return c.json({ error: "Invalid password" }, 401);
   }
 
@@ -78,10 +96,26 @@ app.post("/:slug/upload", requireGallerySession, async (c) => {
   const event = c.get("galleryEvent");
   const form = await c.req.formData();
   const files = form.getAll("files") as File[];
-  const photographerName = form.get("photographerName") as string;
+  const photographerNameRaw = form.get("photographerName") as string;
+  const photographerName = photographerNameRaw ? photographerNameRaw.trim().slice(0, 100) : null;
+
+  if (photographerNameRaw && photographerNameRaw.trim().length > 100) {
+    return c.json({ error: "Photographer name must be 100 characters or less" }, 400);
+  }
 
   if (!files.length) {
     return c.json({ error: "No files provided" }, 400);
+  }
+
+  // Rate limit: 50 uploads per minute per gallery
+  const rateKey = getRateLimitKey(c, `upload:${event.id}`);
+  if (!checkRateLimit(rateKey, 50, 60_000)) {
+    return c.json({ error: "Too many uploads. Please try again later." }, 429);
+  }
+
+  const validation = validateFiles(files);
+  if (!validation.valid) {
+    return c.json({ error: validation.error }, 400);
   }
 
   const results = await Promise.all(

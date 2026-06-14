@@ -8,19 +8,22 @@ import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
 import { getDownloadJobStatus, forceBuild, cancelJob } from "../services/downloadJob.js";
+import { hashPassword } from "../lib/hash.js";
+import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
 const createSchema = z.object({
-  name: z.string().min(1),
-  slug: z.string().min(1).regex(/^[a-z0-9-]+$/),
-  description: z.string().optional(),
-  password: z.string().min(1),
+  name: z.string().min(1).max(200),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+  description: z.string().max(1000).optional(),
+  password: z.string().min(1).max(128),
 });
 
 app.get("/", requireAdmin, async (c) => {
   const events = await prisma.event.findMany({
     orderBy: { createdAt: "desc" },
+    omit: { passwordHash: true },
     include: {
       _count: { select: { photos: true } },
     },
@@ -32,20 +35,29 @@ app.post("/", requireAdmin, zValidator("json", createSchema), async (c) => {
   const body = c.req.valid("json");
   const user = c.get("user");
 
+  // Rate limit: 10 event creations per minute per IP
+  const rateKey = getRateLimitKey(c, "create-event");
+  if (!checkRateLimit(rateKey, 10, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const existing = await prisma.event.findUnique({ where: { slug: body.slug } });
   if (existing) {
     return c.json({ error: "Slug already exists" }, 409);
   }
+
+  const hashedPassword = await hashPassword(body.password);
 
   const event = await prisma.event.create({
     data: {
       name: body.name,
       slug: body.slug,
       description: body.description || null,
-      passwordHash: body.password,
+      passwordHash: hashedPassword,
       createdById: user.id,
       status: "READY",
     },
+    omit: { passwordHash: true },
   });
 
   return c.json(event, 201);
@@ -55,6 +67,7 @@ app.get("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const event = await prisma.event.findUnique({
     where: { id },
+    omit: { passwordHash: true },
     include: { photos: { orderBy: { createdAt: "desc" } } },
   });
   if (!event) {
