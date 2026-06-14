@@ -1,0 +1,217 @@
+# --- Global settings ---
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+# --- Service Account ---
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+# --- API ---
+# The Pixshar API (Hono + Bun + Prisma + SQLite).
+# The SQLite database is stored on a PVC.
+api:
+  enabled: true
+  image:
+    repository: ghcr.io/pixshar/pixshar-api
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  port: 3001
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext:
+    fsGroup: 1001
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: api
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: api
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  # SQLite database persistence.
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+
+  # Extra volumes for the API pod.
+  extraVolumes: []
+  extraVolumeMounts: []
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+# --- Web ---
+# The Pixshar frontend (Next.js 15).
+# Proxies /api/* to the API service internally.
+web:
+  enabled: true
+  image:
+    repository: ghcr.io/pixshar/pixshar-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  port: 3000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext:
+    fsGroup: 1001
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  livenessProbe:
+    httpGet:
+      path: /
+      port: web
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: web
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  extraVolumes: []
+  extraVolumeMounts: []
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+# --- Secrets ---
+# All sensitive values are stored in a Kubernetes Secret.
+# For production, create the secret manually and set existingSecret.
+# For quick testing, the chart can create the secret from values.
+secrets:
+  existingSecret: ""
+  betterAuthSecret: ""
+  adminEmail: "admin@example.com"
+  adminPassword: ""
+  s3AccessKey: ""
+  s3SecretKey: ""
+
+# --- Config ---
+# Non-sensitive configuration values are stored in a ConfigMap.
+# The webUrl must be the public URL guests use to reach the app.
+# The apiUrl is the public URL for BetterAuth callbacks.
+config:
+  webUrl: "https://pixshar.local"
+  apiUrl: "https://pixshar.local/api"
+  betterAuthUrl: "https://pixshar.local/api"
+  s3Endpoint: "https://s3.amazonaws.com"
+  s3Bucket: "pixshar"
+  s3Region: "us-east-1"
+  s3PublicUrl: ""
+  downloadDebounceSeconds: 600
+
+# --- Ingress ---
+# The ingress routes all traffic to the web service.
+# The web app proxies /api/* to the API service internally.
+# If apiDirectRouting is true, /api/* is routed directly to the API
+# service (bypassing the web proxy).
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+    # cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - host: pixshar.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: pixshar-tls
+    #   hosts:
+    #     - pixshar.local
+  apiDirectRouting: false
+
+# --- Gateway API HTTPRoute ---
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRefs:
+    - name: gateway
+      sectionName: http
+  hostnames:
+    - pixshar.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /

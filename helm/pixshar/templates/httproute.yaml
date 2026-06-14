@@ -1,0 +1,51 @@
+{{- if .Values.httpRoute.enabled -}}
+{{- $webSvcName := include "pixshar.web.fullname" . }}
+{{- $webSvcPort := .Values.web.port }}
+{{- $apiSvcName := include "pixshar.api.fullname" . }}
+{{- $apiSvcPort := .Values.api.port }}
+{{- $apiDirect := .Values.ingress.apiDirectRouting }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "pixshar.fullname" . }}
+  labels:
+    {{- include "pixshar.labels" . | nindent 4 }}
+  {{- with .Values.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- with .Values.httpRoute.parentRefs }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.httpRoute.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- if $apiDirect }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: {{ $apiSvcName }}
+          port: {{ $apiSvcPort }}
+          weight: 1
+    {{- end }}
+    {{- range .Values.httpRoute.rules }}
+    {{- with .matches }}
+    - matches:
+      {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .filters }}
+      filters:
+      {{- toYaml . | nindent 8 }}
+    {{- end }}
+      backendRefs:
+        - name: {{ $webSvcName }}
+          port: {{ $webSvcPort }}
+          weight: 1
+    {{- end }}
+{{- end }}

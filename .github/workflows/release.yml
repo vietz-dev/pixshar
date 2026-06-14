@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [api, web]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Generate Prisma client (API only)
+        if: matrix.component == 'api'
+        run: bunx prisma generate
+      - name: Type check
+        run: bunx tsc --noEmit
+      - name: Build
+        run: bun run build
+
+  build-images:
+    name: Build & Push Images
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: api
+            image: ghcr.io/${{ github.repository_owner }}/pixshar-api
+            dockerfile: apps/api/Dockerfile
+          - name: web
+            image: ghcr.io/${{ github.repository_owner }}/pixshar-web
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm-package:
+    name: Package & Push Helm Chart
+    needs: build-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package Helm chart
+        run: |
+          helm package helm/pixshar \
+            --app-version ${{ github.ref_name }} \
+            --version ${{ github.ref_name }}
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixshar-helm-chart
+          path: pixshar-*.tgz
+          if-no-files-found: error
+
+      - name: Push Helm chart to ghcr.io
+        run: |
+          helm push pixshar-*.tgz \
+            oci://ghcr.io/${{ github.repository_owner }}

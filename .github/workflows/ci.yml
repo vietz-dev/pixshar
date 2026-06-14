@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-api:
+    name: Test API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Generate Prisma client
+        run: bunx prisma generate
+      - name: Type check
+        run: bunx tsc --noEmit
+      - name: Build
+        run: bun run build
+
+  test-web:
+    name: Test Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Type check
+        run: bunx tsc --noEmit
+      - name: Build
+        run: bun run build
+
+  lint-helm:
+    name: Lint Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+      - name: Lint Helm chart
+        run: |
+          helm lint helm/pixshar \
+            --set secrets.betterAuthSecret=ci-test \
+            --set secrets.adminPassword=ci-test \
+            --set secrets.s3AccessKey=ci-test \
+            --set secrets.s3SecretKey=ci-test
+      - name: Template Helm chart
+        run: |
+          helm template test-release helm/pixshar \
+            --set secrets.betterAuthSecret=ci-test \
+            --set secrets.adminPassword=ci-test \
+            --set secrets.s3AccessKey=ci-test \
+            --set secrets.s3SecretKey=ci-test

@@ -46,6 +46,49 @@ cd apps/api && bunx prisma migrate dev --name init
 bun run dev          # API + Web
 ```
 
+## Kubernetes Deployment
+
+### GitHub Actions Release
+
+Push a tag to automatically build and publish everything:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+This triggers the release workflow that:
+1. Runs tests (`tsc`, `next build`, Helm lint)
+2. Builds and pushes Docker images to `ghcr.io/<owner>/pixshar-api` and `ghcr.io/<owner>/pixshar-web`
+3. Packages and pushes the Helm chart to `ghcr.io/<owner>/pixshar`
+
+### Install from ghcr.io
+
+```bash
+# Create your secret
+kubectl create secret generic pixshar-secrets \
+  --namespace pixshar \
+  --from-literal=BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
+  --from-literal=ADMIN_EMAIL="admin@example.com" \
+  --from-literal=ADMIN_PASSWORD="$(openssl rand -base64 24)" \
+  --from-literal=S3_ACCESS_KEY="..." \
+  --from-literal=S3_SECRET_KEY="..."
+
+# Install the chart
+helm install pixshar oci://ghcr.io/$(OWNER)/pixshar --version v1.0.0 \
+  --namespace pixshar \
+  --set secrets.existingSecret=pixshar-secrets \
+  --set config.webUrl="https://photos.example.com" \
+  --set config.apiUrl="https://photos.example.com/api" \
+  --set config.s3Endpoint="https://s3.wasabisys.com" \
+  --set config.s3Bucket="my-pixshar" \
+  --set config.s3Region="eu-central-1" \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=photos.example.com
+```
+
+See [helm/pixshar/README.md](helm/pixshar/README.md) for full configuration.
+
 ## Stack
 
 - **Frontend:** Next.js 15 (App Router)
@@ -53,4 +96,4 @@ bun run dev          # API + Web
 - **Auth:** BetterAuth (single admin)
 - **ORM:** Prisma + SQLite
 - **Storage:** Garage S3-compatible
-- **Infra:** Docker Compose
+- **Infra:** Docker Compose + Helm Chart (Kubernetes)
