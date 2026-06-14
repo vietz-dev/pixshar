@@ -20,9 +20,18 @@ export function getPublicUrl(key: string): string {
   return `${env.S3_ENDPOINT}/${env.S3_BUCKET}/${key}`;
 }
 
-export async function getPresignedUrl(key: string, operation: "get" | "put" = "get", expiresIn = 3600): Promise<string> {
+export async function getPresignedUrl(
+  key: string,
+  operation: "get" | "put" = "get",
+  expiresIn = 3600,
+  contentDisposition?: string
+): Promise<string> {
   const command = operation === "get"
-    ? new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key })
+    ? new GetObjectCommand({
+        Bucket: env.S3_BUCKET,
+        Key: key,
+        ...(contentDisposition ? { ResponseContentDisposition: contentDisposition } : {}),
+      })
     : new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key });
   return getSignedUrl(s3, command, { expiresIn });
 }

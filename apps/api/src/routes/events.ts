@@ -181,4 +181,25 @@ function statusMessage(status: string): string {
   }
 }
 
+app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
+  const eventId = c.req.param("id");
+  const photoId = c.req.param("photoId");
+
+  const photo = await prisma.photo.findUnique({
+    where: { id: photoId, eventId },
+  });
+  if (!photo) {
+    return c.json({ error: "Photo not found" }, 404);
+  }
+
+  const filename = `${(photo.photographerName || "photo").replace(/[^a-zA-Z0-9_-]/g, "_")}-${photo.id}.jpg`;
+  const url = await getPresignedUrl(
+    photo.originalKey,
+    "get",
+    60 * 60,
+    `attachment; filename="${filename}"`
+  );
+  return c.json({ url });
+});
+
 export default app;

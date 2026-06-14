@@ -172,4 +172,25 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
   });
 });
 
+app.get("/:slug/photos/:photoId/download", requireGallerySession, async (c) => {
+  const event = c.get("galleryEvent");
+  const photoId = c.req.param("photoId");
+
+  const photo = await prisma.photo.findUnique({
+    where: { id: photoId, eventId: event.id },
+  });
+  if (!photo) {
+    return c.json({ error: "Photo not found" }, 404);
+  }
+
+  const filename = `${(photo.photographerName || "photo").replace(/[^a-zA-Z0-9_-]/g, "_")}-${photo.id}.jpg`;
+  const url = await getPresignedUrl(
+    photo.originalKey,
+    "get",
+    60 * 60,
+    `attachment; filename="${filename}"`
+  );
+  return c.json({ url });
+});
+
 export default app;

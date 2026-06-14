@@ -294,6 +294,12 @@ export default function GalleryViewPage() {
           onClose={() => setLbOpen(false)}
           onNext={() => setLbIndex((i) => (i + 1) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}
           onPrev={() => setLbIndex((i) => (i - 1 + gallery.photos.filter((p) => p.status === "PROCESSED").length) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}
+          onDownload={async (photoId) => {
+            const res = await fetch(`/api/gallery/${slug}/photos/${photoId}/download`, { credentials: "include" });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Download failed");
+            return data.url;
+          }}
         />
       )}
 

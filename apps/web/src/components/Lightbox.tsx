@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 
 interface LightboxPhoto {
   id: string;
@@ -15,11 +15,13 @@ interface LightboxProps {
   onClose: () => void;
   onNext: () => void;
   onPrev: () => void;
+  onDownload?: (photoId: string) => Promise<string>;
 }
 
-export default function Lightbox({ photos, index, onClose, onNext, onPrev }: LightboxProps) {
+export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDownload }: LightboxProps) {
   const photo = photos[index];
   const counter = `${index + 1} / ${photos.length}`;
+  const [downloading, setDownloading] = useState(false);
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
@@ -34,6 +36,21 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev }: Lig
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [handleKey]);
+
+  async function handleDownload() {
+    if (!onDownload || !photo) return;
+    setDownloading(true);
+    try {
+      const url = await onDownload(photo.id);
+      // S3 presigned URL sends Content-Disposition: attachment;
+      // opening in a new tab triggers a download without leaving the page.
+      window.open(url, "_blank");
+    } catch {
+      // ignore
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   if (!photo) return null;
 
@@ -69,26 +86,59 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev }: Lig
         <span style={{ fontSize: 13.5, fontFamily: "'Geist Mono', monospace", color: "#a1a1aa" }}>
           {counter}
         </span>
-        <button
-          onClick={onClose}
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: "50%",
-            border: "none",
-            background: "rgba(255,255,255,.1)",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            transition: "background .15s",
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {onDownload && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDownload(); }}
+              disabled={downloading}
+              style={{
+                height: 38,
+                padding: "0 14px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,.15)",
+                background: "rgba(255,255,255,.1)",
+                color: "#fff",
+                fontSize: 13.5,
+                fontWeight: 500,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+                transition: "background .15s",
+                opacity: downloading ? 0.6 : 1,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.2)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.1)"; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              {downloading ? "Loading…" : "Download"}
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: "50%",
+              border: "none",
+              background: "rgba(255,255,255,.1)",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "background .15s",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Prev */}
