@@ -18,6 +18,31 @@ export interface ProcessImageOutput {
   thumbKey: string;
 }
 
+// Concurrency semaphore: limit to 8 concurrent image processing jobs
+const MAX_CONCURRENT = 8;
+let activeJobs = 0;
+const queue: Array<() => void> = [];
+
+function acquire(): Promise<void> {
+  return new Promise((resolve) => {
+    if (activeJobs < MAX_CONCURRENT) {
+      activeJobs++;
+      resolve();
+    } else {
+      queue.push(() => {
+        activeJobs++;
+        resolve();
+      });
+    }
+  });
+}
+
+function release(): void {
+  activeJobs = Math.max(0, activeJobs - 1);
+  const next = queue.shift();
+  if (next) next();
+}
+
 const uploadToS3 = (key: string, buffer: Buffer, contentType: string) =>
   Effect.tryPromise({
     try: () =>
@@ -50,7 +75,7 @@ const resizeImage = (
     catch: (e) => new Error(`Resize failed: ${e}`),
   });
 
-export const processImage = (input: ProcessImageInput) =>
+const processImageEffect = (input: ProcessImageInput) =>
   Effect.gen(function* () {
     const { photoId, buffer, eventId, ext } = input;
     const base = `${eventId}/${photoId}`;
@@ -112,5 +137,18 @@ export const processImage = (input: ProcessImageInput) =>
         });
         return { originalKey: "", displayKey: "", thumbKey: "" };
       })
+    )
+  );
+
+export const processImage = (input: ProcessImageInput) =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => acquire());
+    const result = yield* processImageEffect(input).pipe(
+      Effect.ensuring(Effect.sync(release))
+    );
+    return result;
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.succeed({ originalKey: "", displayKey: "", thumbKey: "" })
     )
   );

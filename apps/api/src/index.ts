@@ -29,6 +29,16 @@ app.use(async (c, next) => {
   await next();
 });
 
+// Max request body size (100MB)
+const MAX_BODY_SIZE = 100 * 1024 * 1024;
+app.use(async (c, next) => {
+  const contentLength = c.req.header("content-length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+    return c.json({ error: "Request body too large" }, 413);
+  }
+  await next();
+});
+
 // BetterAuth routes
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 

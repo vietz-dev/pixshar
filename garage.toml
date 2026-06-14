@@ -6,7 +6,7 @@ replication_factor = 1
 
 rpc_bind_addr = "[::]:3901"
 rpc_public_addr = "garage:3901"
-rpc_secret = "0000000000000000000000000000000000000000000000000000000000000000"
+rpc_secret = "SET_VIA_GARAGE_RPC_SECRET_ENV_VAR"
 
 [s3_api]
 s3_region = "us-east-1"
@@ -23,7 +23,7 @@ api_bind_addr = "[::]:3904"
 
 [admin]
 api_bind_addr = "[::]:3903"
-admin_token = "dev-admin-token-do-not-use-in-production"
+admin_token = "SET_VIA_GARAGE_ADMIN_TOKEN_ENV_VAR"
 traces_ttl = 14
 
 [metrics]

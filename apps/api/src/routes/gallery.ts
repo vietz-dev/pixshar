@@ -12,7 +12,7 @@ import { Effect } from "effect";
 import type { HonoVariables } from "../types.js";
 import { verifyPassword } from "../lib/hash.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { validateFiles } from "../lib/validate.js";
+import { validateFiles, validateFileMagicBytes } from "../lib/validate.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -37,15 +37,7 @@ app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
     return c.json({ error: "Too many attempts. Please try again later." }, 429);
   }
 
-  let valid = false;
-  if (event.passwordHash.includes(":")) {
-    // New format: hashed with scrypt
-    valid = await verifyPassword(body.password, event.passwordHash);
-  } else {
-    // Legacy format: plaintext (migration fallback)
-    valid = event.passwordHash === body.password;
-  }
-
+  const valid = await verifyPassword(body.password, event.passwordHash);
   if (!valid) {
     return c.json({ error: "Invalid password" }, 401);
   }
@@ -67,6 +59,12 @@ app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
 });
 
 app.get("/:slug", requireGallerySession, async (c) => {
+  // Rate limit: 120 requests per minute per gallery
+  const rateKey = getRateLimitKey(c, `gallery-get:${c.req.param("slug")}`);
+  if (!checkRateLimit(rateKey, 120, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const event = c.get("galleryEvent");
   const photos = await prisma.photo.findMany({
     where: { eventId: event.id, status: "PROCESSED" },
@@ -118,6 +116,14 @@ app.post("/:slug/upload", requireGallerySession, async (c) => {
     return c.json({ error: validation.error }, 400);
   }
 
+  // Verify actual file content (magic bytes) — prevents MIME type spoofing
+  for (const file of files) {
+    const magic = await validateFileMagicBytes(file);
+    if (!magic.valid) {
+      return c.json({ error: magic.error }, 400);
+    }
+  }
+
   const results = await Promise.all(
     files.map(async (file) => {
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -151,6 +157,12 @@ app.post("/:slug/upload", requireGallerySession, async (c) => {
 });
 
 app.get("/:slug/download", requireGallerySession, async (c) => {
+  // Rate limit: 30 download checks per minute per gallery
+  const rateKey = getRateLimitKey(c, `download-check:${c.req.param("slug")}`);
+  if (!checkRateLimit(rateKey, 30, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const event = await prisma.event.findUnique({
     where: { slug: c.req.param("slug") },
     include: { downloadJob: true },
@@ -207,6 +219,12 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
 });
 
 app.get("/:slug/photos/:photoId/download", requireGallerySession, async (c) => {
+  // Rate limit: 60 photo downloads per minute per gallery
+  const rateKey = getRateLimitKey(c, `photo-dl:${c.req.param("slug")}`);
+  if (!checkRateLimit(rateKey, 60, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const event = c.get("galleryEvent");
   const photoId = c.req.param("photoId");
 

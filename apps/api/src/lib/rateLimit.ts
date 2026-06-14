@@ -32,7 +32,20 @@ export function checkRateLimit(key: string, maxRequests: number, windowMs: numbe
   return true;
 }
 
-export function getRateLimitKey(c: { req: { header: (name: string) => string | undefined } }, prefix: string): string {
-  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+export function getRateLimitKey(
+  c: { req: { header: (name: string) => string | undefined } },
+  prefix: string
+): string {
+  // X-Forwarded-For can be forged by clients. Only trust it if the app is behind a trusted proxy.
+  // For direct deployments, use the last IP in the chain (closest to server) or fall back to "unknown".
+  const forwarded = c.req.header("x-forwarded-for");
+  let ip: string;
+  if (forwarded) {
+    // Take the LAST IP in the chain (closest to the server), which is harder to forge
+    const ips = forwarded.split(",").map((s) => s.trim()).filter(Boolean);
+    ip = ips[ips.length - 1] ?? "unknown";
+  } else {
+    ip = c.req.header("x-real-ip") || "unknown";
+  }
   return `${prefix}:${ip}`;
 }

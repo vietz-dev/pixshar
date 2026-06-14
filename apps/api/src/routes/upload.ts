@@ -5,15 +5,19 @@ import { processImage } from "../services/imageProcessor.js";
 import { Effect } from "effect";
 import type { HonoVariables } from "../types.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { validateFiles } from "../lib/validate.js";
+import { validateFiles, validateFileMagicBytes } from "../lib/validate.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
 app.post("/events/:id/photos", requireAdmin, async (c) => {
   const eventId = c.req.param("id");
+  const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
   }
 
   const form = await c.req.formData();
@@ -33,6 +37,14 @@ app.post("/events/:id/photos", requireAdmin, async (c) => {
   const validation = validateFiles(files);
   if (!validation.valid) {
     return c.json({ error: validation.error }, 400);
+  }
+
+  // Verify actual file content (magic bytes) — prevents MIME type spoofing
+  for (const file of files) {
+    const magic = await validateFileMagicBytes(file);
+    if (!magic.valid) {
+      return c.json({ error: magic.error }, 400);
+    }
   }
 
   const results = await Promise.all(
@@ -69,6 +81,19 @@ app.post("/events/:id/photos", requireAdmin, async (c) => {
 
 app.get("/events/:id/photos/status", requireAdmin, async (c) => {
   const eventId = c.req.param("id");
+  const user = c.get("user");
+
+  // Rate limit: 60 status checks per minute per event
+  const rateKey = getRateLimitKey(c, `upload-status:${eventId}`);
+  if (!checkRateLimit(rateKey, 60, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event || event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
   const counts = await prisma.photo.groupBy({
     by: ["status"],
     where: { eventId },

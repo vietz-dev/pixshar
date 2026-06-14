@@ -21,6 +21,12 @@ const createSchema = z.object({
 });
 
 app.get("/", requireAdmin, async (c) => {
+  // Rate limit: 60 list requests per minute per IP
+  const rateKey = getRateLimitKey(c, "list-events");
+  if (!checkRateLimit(rateKey, 60, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const events = await prisma.event.findMany({
     orderBy: { createdAt: "desc" },
     omit: { passwordHash: true },
@@ -65,6 +71,14 @@ app.post("/", requireAdmin, zValidator("json", createSchema), async (c) => {
 
 app.get("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
+  const user = c.get("user");
+
+  // Rate limit: 60 detail requests per minute per event
+  const rateKey = getRateLimitKey(c, `event-detail:${id}`);
+  if (!checkRateLimit(rateKey, 60, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const event = await prisma.event.findUnique({
     where: { id },
     omit: { passwordHash: true },
@@ -72,6 +86,9 @@ app.get("/:id", requireAdmin, async (c) => {
   });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
   }
 
   const photosWithUrls = await Promise.all(
@@ -87,12 +104,16 @@ app.get("/:id", requireAdmin, async (c) => {
 
 app.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
+  const user = c.get("user");
   const event = await prisma.event.findUnique({
     where: { id },
     include: { photos: true },
   });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
   }
 
   // Delete all S3 objects under the event prefix
@@ -125,12 +146,23 @@ app.delete("/:id", requireAdmin, async (c) => {
 
 app.get("/:id/download/status", requireAdmin, async (c) => {
   const id = c.req.param("id");
+  const user = c.get("user");
+
+  // Rate limit: 60 status checks per minute per event
+  const rateKey = getRateLimitKey(c, `admin-download-status:${id}`);
+  if (!checkRateLimit(rateKey, 60, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
   const event = await prisma.event.findUnique({
     where: { id },
     include: { downloadJob: true },
   });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
   }
 
   const job = event.downloadJob;
@@ -163,9 +195,13 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
 
 app.post("/:id/download/build", requireAdmin, async (c) => {
   const id = c.req.param("id");
+  const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
   }
   await forceBuild(id);
   return c.json({ success: true });
@@ -173,9 +209,13 @@ app.post("/:id/download/build", requireAdmin, async (c) => {
 
 app.post("/:id/download/cancel", requireAdmin, async (c) => {
   const id = c.req.param("id");
+  const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
   }
   await cancelJob(id);
   return c.json({ success: true });
@@ -197,6 +237,18 @@ function statusMessage(status: string): string {
 app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
   const eventId = c.req.param("id");
   const photoId = c.req.param("photoId");
+  const user = c.get("user");
+
+  // Rate limit: 60 photo downloads per minute per event
+  const rateKey = getRateLimitKey(c, `admin-photo-dl:${eventId}`);
+  if (!checkRateLimit(rateKey, 60, 60_000)) {
+    return c.json({ error: "Too many requests. Please try again later." }, 429);
+  }
+
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event || event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
 
   const photo = await prisma.photo.findUnique({
     where: { id: photoId, eventId },
@@ -218,6 +270,12 @@ app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
 app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
   const eventId = c.req.param("id");
   const photoId = c.req.param("photoId");
+  const user = c.get("user");
+
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event || event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
 
   const photo = await prisma.photo.findUnique({
     where: { id: photoId, eventId },
