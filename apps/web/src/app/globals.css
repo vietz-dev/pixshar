@@ -1,0 +1,15 @@
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#f4f4f5;font-family:'Geist',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;color:#09090b}
+::selection{background:#bfdbfe}
+input,button,textarea{font-family:inherit}
+button{cursor:pointer}
+
+.pxscroll::-webkit-scrollbar{width:11px;height:11px}
+.pxscroll::-webkit-scrollbar-thumb{background:#d4d4d8;border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+.pxscroll::-webkit-scrollbar-track{background:transparent}
+
+@keyframes pxFade{from{opacity:0}to{opacity:1}}
+@keyframes pxRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pxSpin{to{transform:rotate(360deg)}}
+@keyframes pxShimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}

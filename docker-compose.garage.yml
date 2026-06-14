@@ -1,0 +1,75 @@
+version: "3.8"
+
+services:
+  garage:
+    image: dxflrs/garage:v1.0.0
+    ports:
+      - "3900:3900"
+      - "3901:3901"
+      - "3902:3902"
+    environment:
+      - GARAGE_RPC_SECRET=0000000000000000000000000000000000000000000000000000000000000000
+      - GARAGE_ADMIN_TOKEN=dev-admin-token-do-not-use-in-production
+    volumes:
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+      - ./garage.toml:/etc/garage.toml:ro
+    command: ["/garage", "server"]
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 2s
+      timeout: 1s
+      retries: 15
+
+  garage-init:
+    image: dxflrs/garage:v1.0.0
+    depends_on:
+      garage:
+        condition: service_healthy
+    environment:
+      - GARAGE_RPC_SECRET=0000000000000000000000000000000000000000000000000000000000000000
+      - GARAGE_ADMIN_TOKEN=dev-admin-token-do-not-use-in-production
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-keys:/keys
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      echo 'Configuring garage node...';
+      NODE_ID=$$(/garage node id | head -1 | awk '{print $$1}');
+      if [ -n \"$$NODE_ID\" ]; then
+        /garage node configure \"$$NODE_ID\" -c 1 -z dc1 -r 127.0.0.1 || true;
+      fi;
+      
+      echo 'Creating bucket...';
+      /garage bucket create pixshar || true;
+      
+      echo 'Allowing public read...';
+      /garage bucket allow pixshar --read --anonymous || true;
+      
+      echo 'Creating key...';
+      if [ ! -f /keys/access_key ]; then
+        /garage key create pixshar-key > /tmp/key-create.log 2>&1 || true;
+        KEY_ID=$$(/garage key info pixshar-key 2>/dev/null | grep 'Key ID' | awk '{print $$3}' | head -1 || true);
+        SECRET=$$(/garage key info pixshar-key 2>/dev/null | grep 'Secret Key' | awk '{print $$3}' | head -1 || true);
+        if [ -n \"$$KEY_ID\" ] && [ -n \"$$SECRET\" ]; then
+          echo \"$$KEY_ID\" > /keys/access_key;
+          echo \"$$SECRET\" > /keys/secret_key;
+          echo \"Key created: $$KEY_ID\";
+        else
+          echo 'Failed to extract key info. Output:';
+          cat /tmp/key-create.log || true;
+        fi;
+      fi;
+      
+      echo 'Allowing key on bucket...';
+      /garage key allow pixshar-key --bucket pixshar --read --write || true;
+      
+      echo 'Garage init complete';
+      exit 0;
+      "
+
+volumes:
+  garage-meta:
+  garage-data:
+  garage-keys:

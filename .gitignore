@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+
+# Prisma / SQLite
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+prisma/migrations/*/migration_lock.toml
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Logs
+*.log
+logs/
+nohup.out
+
+# Docker
+# Keep docker-compose files, ignore runtime data
+docker-compose.override.yml
+
+# Garage S3 generated credentials
+garage-keys/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Misc
+tmp/
+temp/
+*.tmp
+
+# Design handoff bundle
+pixshar-extracted/
+pixshar.zip

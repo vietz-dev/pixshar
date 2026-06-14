@@ -1,0 +1,17 @@
+{
+  "name": "pixshar",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\"",
+    "dev:api": "cd apps/api && bun run dev",
+    "dev:web": "cd apps/web && bun run dev",
+    "build": "bun run build:shared && bun run build:api && bun run build:web",
+    "build:shared": "cd packages/shared && bun run build",
+    "build:api": "cd apps/api && bun run build",
+    "build:web": "cd apps/web && bun run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
