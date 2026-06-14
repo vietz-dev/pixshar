@@ -161,13 +161,22 @@ export default function PhotoGrid({ photos, layout, onPhotoClick }: PhotoGridPro
             s.filter = "";
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={p.thumbUrl}
-            alt={p.photographerName || "Photo"}
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            loading="lazy"
-          />
+          {p.thumbUrl ? (
+            <img
+              src={p.thumbUrl}
+              alt={p.photographerName || "Photo"}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              loading="lazy"
+            />
+          ) : (
+            <div style={{ width: "100%", height: "100%", background: "#e4e4e7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="m21 15-5-5L5 21" />
+              </svg>
+            </div>
+          )}
           {p.status && p.status !== "PROCESSED" && (
             <div style={{ position: "absolute", bottom: 6, left: 6, height: 20, padding: "0 8px", borderRadius: 999, background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 11, display: "flex", alignItems: "center" }}>
               {p.status === "PENDING" ? "Processing..." : "Failed"}

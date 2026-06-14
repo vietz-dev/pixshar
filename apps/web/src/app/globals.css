@@ -13,3 +13,4 @@ button{cursor:pointer}
 @keyframes pxRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes pxSpin{to{transform:rotate(360deg)}}
 @keyframes pxShimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes pxPulse{0%,100%{opacity:.3}50%{opacity:.6}}

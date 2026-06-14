@@ -16,6 +16,7 @@ const schema = z.object({
   API_PORT: z.string().transform(Number).default("3001"),
   API_URL: z.string().url(),
   WEB_URL: z.string().url(),
+  DOWNLOAD_DEBOUNCE_SECONDS: z.string().transform(Number).default("600"),
 });
 
 export const env = schema.parse(process.env);

@@ -130,17 +130,26 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev }: Lig
           background: "#18181b",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={photo.url}
-          alt={photo.photographerName || "Photo"}
-          style={{
-            maxWidth: "min(88vw, 1180px)",
-            maxHeight: "80vh",
-            objectFit: "contain",
-            display: "block",
-          }}
-        />
+        {photo.url ? (
+          <img
+            src={photo.url}
+            alt={photo.photographerName || "Photo"}
+            style={{
+              maxWidth: "min(88vw, 1180px)",
+              maxHeight: "80vh",
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        ) : (
+          <div style={{ maxWidth: "min(88vw, 1180px)", maxHeight: "80vh", minWidth: 400, minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="m21 15-5-5L5 21" />
+            </svg>
+          </div>
+        )}
         <div
           style={{
             position: "absolute",

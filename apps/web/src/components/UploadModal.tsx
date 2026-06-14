@@ -2,23 +2,13 @@
 
 import { useRef, useState } from "react";
 
-interface UploadQueueItem {
-  id: string;
-  name: string;
-  progress: number;
-  tint: string;
-}
-
 interface UploadModalProps {
   galleryName: string;
   onClose: () => void;
   onSubmit: (name: string, files: FileList) => void;
-  queue: UploadQueueItem[];
-  submitted: boolean;
-  allDone: boolean;
 }
 
-export default function UploadModal({ galleryName, onClose, onSubmit, queue, submitted, allDone }: UploadModalProps) {
+export default function UploadModal({ galleryName, onClose, onSubmit }: UploadModalProps) {
   const [name, setName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<FileList | null>(null);
@@ -31,27 +21,10 @@ export default function UploadModal({ galleryName, onClose, onSubmit, queue, sub
     onSubmit(name.trim(), files);
   }
 
-  const tints = ["#fde0c4", "#c9d4ea", "#f3d7d7", "#d2e3cf", "#e3dcee"];
-  const queueDisplay = queue.map((u, i) => {
-    const done = u.progress >= 100;
-    return {
-      ...u,
-      tint: u.tint || tints[i % tints.length],
-      pctStr: Math.round(u.progress) + "%",
-      statusText: done ? "Done" : Math.round(u.progress) + "%",
-      pctColor: done ? "#16a34a" : "#71717a",
-      barColor: done ? "#16a34a" : "#2563eb",
-    };
-  });
-
-  const submitLabel = submitted && allDone
-    ? "Uploaded — thank you!"
-    : hasFiles
-      ? `Upload ${files.length} photo${files.length === 1 ? "" : "s"}`
-      : "Choose photos to upload";
-  const submitBg = nameOk
-    ? (submitted && allDone ? "#16a34a" : "#2563eb")
-    : "#a8c1f0";
+  const submitLabel = hasFiles
+    ? `Upload ${files.length} photo${files.length === 1 ? "" : "s"}`
+    : "Choose photos to upload";
+  const submitBg = nameOk ? "#2563eb" : "#a8c1f0";
   const submitCursor = nameOk ? "pointer" : "not-allowed";
 
   return (
@@ -178,38 +151,6 @@ export default function UploadModal({ galleryName, onClose, onSubmit, queue, sub
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>Tap to choose photos</div>
             <div style={{ fontSize: 12, color: "#a1a1aa" }}>or drag them here</div>
           </div>
-
-          {queueDisplay.length > 0 && (
-            <div
-              className="pxscroll"
-              style={{ maxHeight: 168, overflowY: "auto", marginBottom: 6 }}
-            >
-              {queueDisplay.map((u) => (
-                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px" }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 7, background: u.tint, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {u.name}
-                      </span>
-                      <span style={{ fontSize: 11.5, color: u.pctColor, flexShrink: 0 }}>{u.statusText}</span>
-                    </div>
-                    <div style={{ height: 5, borderRadius: 999, background: "#f4f4f5", overflow: "hidden" }}>
-                      <div
-                        style={{
-                          height: "100%",
-                          width: u.pctStr,
-                          background: u.barColor,
-                          borderRadius: 999,
-                          transition: "width .25s ease",
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
 
           <button
             onClick={handleSubmit}

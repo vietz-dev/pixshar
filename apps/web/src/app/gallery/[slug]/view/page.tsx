@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import UploadModal from "../../../../components/UploadModal";
+import DownloadButton from "../../../../components/DownloadButton";
 
 interface GalleryPhoto {
   id: string;
@@ -28,12 +30,10 @@ export default function GalleryViewPage() {
   const [gallery, setGallery] = useState<GalleryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [layout, setLayout] = useState<"justified" | "masonry" | "uniform">("justified");
+  const [layout, setLayout] = useState<"masonry" | "uniform">("masonry");
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [uploadQueue, setUploadQueue] = useState<{ id: string; name: string; progress: number; tint: string }[]>([]);
-  const [submitted, setSubmitted] = useState(false);
 
   const fetchGallery = useCallback(() => {
     fetch(`/api/gallery/${slug}`, { credentials: "include" })
@@ -56,51 +56,56 @@ export default function GalleryViewPage() {
   }, [fetchGallery]);
 
   async function handleUpload(name: string, files: FileList) {
-    const tints = ["#fde0c4", "#c9d4ea", "#f3d7d7", "#d2e3cf", "#e3dcee"];
-    const items = Array.from(files).map((f, i) => ({
-      id: Date.now() + "-" + i + "-" + Math.random().toString(36).slice(2, 6),
-      name: f.name,
-      progress: 0,
-      tint: tints[i % tints.length],
-    }));
-    setUploadQueue((prev) => [...prev, ...items]);
-    setSubmitted(true);
+    const allFiles = Array.from(files);
+    const total = allFiles.length;
 
-    // Simulate progress
-    const interval = setInterval(() => {
-      setUploadQueue((prev) => {
-        let allDone = true;
-        const next = prev.map((it) => {
-          if (it.progress < 100) {
-            allDone = false;
-            return { ...it, progress: Math.min(100, it.progress + 8 + Math.random() * 16) };
-          }
-          return it;
-        });
-        if (allDone) clearInterval(interval);
-        return next;
-      });
-    }, 260);
-
-    // Actually upload
-    const form = new FormData();
-    form.append("photographerName", name);
-    for (let i = 0; i < files.length; i++) {
-      form.append("files", files[i]);
-    }
-    try {
+    const uploadOne = async (file: File) => {
+      const form = new FormData();
+      form.append("photographerName", name);
+      form.append("files", file);
       const res = await fetch(`/api/gallery/${slug}/upload`, {
         method: "POST",
         body: form,
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Upload failed");
-      // Mark all done
-      setUploadQueue((prev) => prev.map((it) => ({ ...it, progress: 100 })));
-      fetchGallery();
-    } catch {
-      setUploadQueue((prev) => prev.map((it) => ({ ...it, progress: 100 })));
+      if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
+    };
+
+    const batchSize = 4;
+    let done = 0;
+    let failed = 0;
+
+    const toastId = toast.loading(
+      `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
+      { description: "0 / " + total }
+    );
+
+    for (let i = 0; i < allFiles.length; i += batchSize) {
+      const batch = allFiles.slice(i, i + batchSize);
+      const results = await Promise.allSettled(batch.map(uploadOne));
+      results.forEach((r) => {
+        if (r.status === "fulfilled") done++;
+        else failed++;
+      });
+      toast.loading(
+        `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
+        { id: toastId, description: `${done} / ${total}` }
+      );
     }
+
+    if (failed === 0) {
+      toast.success(
+        `${done} photo${done === 1 ? "" : "s"} uploaded`,
+        { id: toastId, description: "Processing has started" }
+      );
+    } else {
+      toast.warning(
+        `${done} uploaded, ${failed} failed`,
+        { id: toastId }
+      );
+    }
+
+    fetchGallery();
   }
 
   if (loading) {
@@ -123,7 +128,6 @@ export default function GalleryViewPage() {
   const photoCountLabel = `${gallery.photos.length} photos`;
 
   const layoutItems = [
-    { key: "justified" as const, label: "Rows" },
     { key: "masonry" as const, label: "Masonry" },
     { key: "uniform" as const, label: "Grid" },
   ];
@@ -225,7 +229,9 @@ export default function GalleryViewPage() {
         }}
       >
         <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>{photoCountLabel}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <DownloadButton slug={slug} />
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>Layout</span>
           <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
             {layoutItems.map((l) => {
@@ -258,6 +264,7 @@ export default function GalleryViewPage() {
           </div>
         </div>
       </div>
+      </div>
 
       {/* Photos */}
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 24px 44px" }}>
@@ -280,11 +287,13 @@ export default function GalleryViewPage() {
       {/* Lightbox */}
       {lbOpen && (
         <Lightbox
-          photos={gallery.photos.map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName }))}
+          photos={gallery.photos
+            .filter((p) => p.status === "PROCESSED")
+            .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName }))}
           index={lbIndex}
           onClose={() => setLbOpen(false)}
-          onNext={() => setLbIndex((i) => (i + 1) % gallery.photos.length)}
-          onPrev={() => setLbIndex((i) => (i - 1 + gallery.photos.length) % gallery.photos.length)}
+          onNext={() => setLbIndex((i) => (i + 1) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}
+          onPrev={() => setLbIndex((i) => (i - 1 + gallery.photos.filter((p) => p.status === "PROCESSED").length) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}
         />
       )}
 
@@ -294,9 +303,6 @@ export default function GalleryViewPage() {
           galleryName={gallery.name}
           onClose={() => setUploadModalOpen(false)}
           onSubmit={handleUpload}
-          queue={uploadQueue}
-          submitted={submitted}
-          allDone={uploadQueue.length > 0 && uploadQueue.every((u) => u.progress >= 100)}
         />
       )}
     </div>

@@ -1,3 +1,5 @@
+import { Toaster } from "sonner";
+
 export const metadata = {
   title: "Pixshar",
   description: "Private event photo sharing",
@@ -20,6 +22,7 @@ export default function RootLayout({
       </head>
       <body style={{ fontFamily: "'Geist', system-ui, -apple-system, sans-serif" }}>
         {children}
+        <Toaster position="bottom-right" richColors />
       </body>
     </html>
   );

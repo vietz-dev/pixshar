@@ -3,6 +3,7 @@ import { s3 } from "../lib/s3.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
+import { triggerDebounce } from "./downloadJob.js";
 
 export interface ProcessImageInput {
   photoId: string;
@@ -88,6 +89,9 @@ export const processImage = (input: ProcessImageInput) =>
     });
 
     yield* Console.log(`Photo ${photoId} processed`);
+
+    // Trigger download archive debounce (non-blocking, failures ignored)
+    yield* Effect.promise(() => triggerDebounce(eventId).catch(() => {}));
 
     return { originalKey, displayKey, thumbKey };
   }).pipe(

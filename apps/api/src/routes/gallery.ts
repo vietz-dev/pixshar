@@ -116,4 +116,60 @@ app.post("/:slug/upload", requireGallerySession, async (c) => {
   return c.json({ photos: results }, 202);
 });
 
+app.get("/:slug/download", requireGallerySession, async (c) => {
+  const event = await prisma.event.findUnique({
+    where: { slug: c.req.param("slug") },
+    include: { downloadJob: true },
+  });
+
+  if (!event) {
+    return c.json({ error: "Gallery not found" }, 404);
+  }
+
+  const job = event.downloadJob;
+
+  if (!job) {
+    return c.json({
+      status: "NONE",
+      message: "No archive available yet.",
+    });
+  }
+
+  if (job.status === "DEBOUNCING") {
+    return c.json({
+      status: "DEBOUNCING",
+      message: "New photos are still being uploaded. Your archive will be ready shortly.",
+      debounceUntil: job.debounceUntil,
+    });
+  }
+
+  if (job.status === "QUEUED" || job.status === "BUILDING") {
+    return c.json({
+      status: "BUILDING",
+      message: "Your archive is being prepared. This may take a few minutes.",
+      photoCount: job.photoCount,
+      processedPhotos: job.processedPhotos,
+      uploadProgress: job.uploadProgress,
+    });
+  }
+
+  if (job.status === "FAILED" || job.status === "CANCELLED") {
+    return c.json({
+      status: "FAILED",
+      message: "Archive generation failed. Please try again later.",
+    });
+  }
+
+  // READY — generate presigned URL
+  const url = await getPresignedUrl(job.zipKey!, "get", 60 * 60); // 1 hour
+  const sizeBytes = job.zipSizeBytes ?? 0;
+
+  return c.json({
+    status: "READY",
+    url,
+    sizeBytes,
+    photoCount: job.photoCount,
+  });
+});
+
 export default app;

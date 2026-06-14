@@ -6,6 +6,7 @@ import { env } from "./lib/env.js";
 import events from "./routes/events.js";
 import gallery from "./routes/gallery.js";
 import upload from "./routes/upload.js";
+import { startDebouncePoller } from "./services/downloadJob.js";
 
 const app = new Hono();
 
@@ -27,6 +28,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 
 if (import.meta.main) {
   console.log(`API server running on http://localhost:${env.API_PORT}`);
+  startDebouncePoller();
   Bun.serve({
     port: env.API_PORT,
     fetch: app.fetch,

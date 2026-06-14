@@ -30,3 +30,7 @@ export async function getPresignedUrl(key: string, operation: "get" | "put" = "g
 export async function deleteS3Object(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
 }
+
+export const s3Keys = {
+  zip: (eventId: string) => `${eventId}/archive/gallery.zip`,
+};

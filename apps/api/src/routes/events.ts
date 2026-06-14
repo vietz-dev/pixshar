@@ -7,6 +7,7 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
+import { getDownloadJobStatus, forceBuild, cancelJob } from "../services/downloadJob.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -104,5 +105,80 @@ app.delete("/:id", requireAdmin, async (c) => {
   await prisma.event.delete({ where: { id } });
   return c.json({ success: true });
 });
+
+// ---------------------------------------------------------------------------
+// Download archive admin endpoints
+// ---------------------------------------------------------------------------
+
+app.get("/:id/download/status", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: { downloadJob: true },
+  });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+
+  const job = event.downloadJob;
+  if (!job) {
+    return c.json({
+      status: "NONE",
+      message: "No archive created yet.",
+      processedPhotos: 0,
+      photoCount: 0,
+    });
+  }
+
+  const totalPhotos = await prisma.photo.count({
+    where: { eventId: id, status: "PROCESSED" },
+  });
+
+  return c.json({
+    status: job.status,
+    message: statusMessage(job.status),
+    photoCount: job.photoCount,
+    processedPhotos: job.processedPhotos,
+    uploadProgress: job.uploadProgress,
+    totalPhotos,
+    zipSizeBytes: job.zipSizeBytes,
+    debounceUntil: job.debounceUntil,
+    failureReason: job.failureReason,
+    updatedAt: job.updatedAt,
+  });
+});
+
+app.post("/:id/download/build", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+  await forceBuild(id);
+  return c.json({ success: true });
+});
+
+app.post("/:id/download/cancel", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+  await cancelJob(id);
+  return c.json({ success: true });
+});
+
+function statusMessage(status: string): string {
+  switch (status) {
+    case "NONE": return "No archive created yet.";
+    case "DEBOUNCING": return "Waiting for uploads to settle.";
+    case "QUEUED": return "Queued for building.";
+    case "BUILDING": return "Building archive…";
+    case "READY": return "Archive ready for download.";
+    case "FAILED": return "Archive build failed.";
+    case "CANCELLED": return "Archive build was cancelled.";
+    default: return "Unknown status.";
+  }
+}
 
 export default app;

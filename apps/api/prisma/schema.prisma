@@ -67,17 +67,19 @@ model Verification {
 }
 
 model Event {
-  id           String   @id @default(cuid())
-  slug         String   @unique
-  name         String
-  description  String?
-  passwordHash String
-  status       String   @default("PROCESSING")
-  createdById  String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  createdBy    User     @relation(fields: [createdById], references: [id])
-  photos       Photo[]
+  id                  String   @id @default(cuid())
+  slug                String   @unique
+  name                String
+  description         String?
+  passwordHash        String
+  status              String   @default("PROCESSING")
+  processedPhotoCount Int      @default(0)
+  createdById         String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           User     @relation(fields: [createdById], references: [id])
+  photos              Photo[]
+  downloadJob         DownloadJob?
 
   @@map("event")
 }
@@ -96,4 +98,32 @@ model Photo {
   event            Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("photo")
+}
+
+enum DownloadJobStatus {
+  DEBOUNCING
+  QUEUED
+  BUILDING
+  READY
+  FAILED
+  CANCELLED
+}
+
+model DownloadJob {
+  id              String            @id @default(cuid())
+  eventId         String            @unique
+  status          DownloadJobStatus @default(DEBOUNCING)
+  photoCount      Int               @default(0)
+  processedPhotos Int               @default(0)
+  uploadProgress  Int               @default(0)
+  zipKey          String?
+  zipSizeBytes    Int?
+  debounceUntil   DateTime?
+  failureReason   String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("download_job")
 }

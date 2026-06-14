@@ -3,8 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
+import DownloadButton from "../../../../components/DownloadButton";
+import DownloadPanel from "../../../../components/DownloadPanel";
 
 interface Photo {
   id: string;
@@ -29,15 +32,6 @@ interface EventDetail {
   photos: Photo[];
 }
 
-interface UploadQueueItem {
-  id: string;
-  name: string;
-  progress: number;
-  tint: string;
-}
-
-const TINTS = ["#fde0c4", "#c9d4ea", "#f3d7d7", "#d2e3cf", "#e3dcee"];
-
 function statusMeta(st: string) {
   return st === "READY"
     ? { statusLabel: "Ready", statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
@@ -52,8 +46,6 @@ export default function EventDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadStatus, setUploadStatus] = useState({ pending: 0, processed: 0, failed: 0, total: 0 });
-  const [uploading, setUploading] = useState(false);
-  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -92,46 +84,55 @@ export default function EventDetailPage() {
 
   async function handleUpload(files: FileList | null) {
     if (!files || !files.length) return;
-    setUploading(true);
-
-    const items: UploadQueueItem[] = Array.from(files).map((f, i) => ({
-      id: Date.now() + "-" + i + "-" + Math.random().toString(36).slice(2, 6),
-      name: f.name,
-      progress: 0,
-      tint: TINTS[i % TINTS.length],
-    }));
-    setUploadQueue((prev) => [...prev, ...items]);
 
     const allFiles = Array.from(files);
+    const total = allFiles.length;
+
+    const uploadOne = async (file: File) => {
+      const form = new FormData();
+      form.append("files", file);
+      const res = await fetch(`/api/upload/events/${id}/photos`, {
+        method: "POST",
+        body: form,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
+    };
+
     const batchSize = 4;
+    let done = 0;
+    let failed = 0;
+
+    const toastId = toast.loading(
+      `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
+      { description: "0 / " + total }
+    );
 
     for (let i = 0; i < allFiles.length; i += batchSize) {
       const batch = allFiles.slice(i, i + batchSize);
-      await Promise.all(
-        batch.map(async (file, j) => {
-          const itemId = items[i + j].id;
-          const form = new FormData();
-          form.append("files", file);
-          try {
-            const res = await fetch(`/api/upload/events/${id}/photos`, {
-              method: "POST",
-              body: form,
-              credentials: "include",
-            });
-            if (!res.ok) throw new Error("Failed");
-            setUploadQueue((prev) =>
-              prev.map((it) => (it.id === itemId ? { ...it, progress: 100 } : it))
-            );
-          } catch {
-            setUploadQueue((prev) =>
-              prev.map((it) => (it.id === itemId ? { ...it, progress: 100 } : it))
-            );
-          }
-        })
+      const results = await Promise.allSettled(batch.map(uploadOne));
+      results.forEach((r) => {
+        if (r.status === "fulfilled") done++;
+        else failed++;
+      });
+      toast.loading(
+        `Uploading ${total} photo${total === 1 ? "" : "s"}…`,
+        { id: toastId, description: `${done} / ${total}` }
       );
     }
 
-    setUploading(false);
+    if (failed === 0) {
+      toast.success(
+        `${done} photo${done === 1 ? "" : "s"} uploaded`,
+        { id: toastId, description: "Processing has started" }
+      );
+    } else {
+      toast.warning(
+        `${done} uploaded, ${failed} failed`,
+        { id: toastId }
+      );
+    }
+
     fetchEvent();
   }
 
@@ -203,8 +204,9 @@ export default function EventDetailPage() {
             </p>
           </div>
           <div style={{ display: "flex", gap: 9 }}>
+            <DownloadButton slug={event.slug} />
             <button
-              onClick={() => router.push(`/gallery/${event.slug}`)}
+              onClick={() => window.open(`/gallery/${event.slug}`, '_blank')}
               style={{ height: 38, padding: "0 14px", borderRadius: 8, border: "1px solid #e4e4e7", background: "#fff", color: "#18181b", fontSize: 13.5, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", transition: "background .15s" }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
@@ -295,30 +297,13 @@ export default function EventDetailPage() {
           <div style={{ fontSize: 12.5, color: "#a1a1aa" }}>JPEG, PNG or HEIC · up to 4 uploading at once</div>
         </div>
 
-        {/* Upload queue */}
-        {uploadQueue.length > 0 && (
-          <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: "8px 6px", marginBottom: 22 }}>
-            {uploadQueue.map((u) => {
-              const done = u.progress >= 100;
-              return (
-                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 11px" }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 7, background: u.tint, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.name}</span>
-                      <span style={{ fontSize: 12, color: done ? "#16a34a" : "#71717a", flexShrink: 0 }}>
-                        {done ? "Done" : Math.round(u.progress) + "%"}
-                      </span>
-                    </div>
-                    <div style={{ height: 5, borderRadius: 999, background: "#f4f4f5", overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${Math.round(u.progress)}%`, background: done ? "#16a34a" : "#2563eb", borderRadius: 999, transition: "width .25s ease" }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+
+
+        {/* Download archive */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 14px" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Download archive</h2>
+        </div>
+        <DownloadPanel eventId={event.id} slug={event.slug} />
 
         {/* Photos */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 14px" }}>
@@ -326,7 +311,7 @@ export default function EventDetailPage() {
           <span style={{ fontSize: 13, color: "#71717a" }}>{event.photos.length} total</span>
         </div>
         <PhotoGrid
-          photos={gridPhotos}
+          photos={gridPhotos.filter((p) => p.status === "PROCESSED")}
           layout="uniform"
           onPhotoClick={(p, i) => {
             setLbIndex(i);
@@ -337,11 +322,13 @@ export default function EventDetailPage() {
         {/* Lightbox */}
         {lbOpen && (
           <Lightbox
-            photos={event.photos.map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName }))}
+            photos={event.photos
+              .filter((p) => p.status === "PROCESSED")
+              .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName }))}
             index={lbIndex}
             onClose={() => setLbOpen(false)}
-            onNext={() => setLbIndex((i) => (i + 1) % event.photos.length)}
-            onPrev={() => setLbIndex((i) => (i - 1 + event.photos.length) % event.photos.length)}
+            onNext={() => setLbIndex((i) => (i + 1) % event.photos.filter((p) => p.status === "PROCESSED").length)}
+            onPrev={() => setLbIndex((i) => (i - 1 + event.photos.filter((p) => p.status === "PROCESSED").length) % event.photos.filter((p) => p.status === "PROCESSED").length)}
           />
         )}
       </div>
