@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+.next/
+dist/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.*
+
+# Database
+*.db
+*.db-journal
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Helm
+helm/
+
+# CI
+.github/

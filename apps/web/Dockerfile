@@ -10,7 +10,7 @@ COPY apps/web/next-env.d.ts ./apps/web/next-env.d.ts
 COPY package.json ./package.json
 COPY bun.lock ./bun.lock
 
-RUN bun install --frozen-lockfile
+RUN bun install
 
 COPY packages/shared/src ./packages/shared/src
 COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
