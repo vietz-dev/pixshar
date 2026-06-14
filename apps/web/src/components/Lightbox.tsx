@@ -16,9 +16,10 @@ interface LightboxProps {
   onNext: () => void;
   onPrev: () => void;
   onDownload?: (photoId: string) => Promise<string>;
+  onDelete?: (photoId: string) => void;
 }
 
-export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDownload }: LightboxProps) {
+export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDownload, onDelete }: LightboxProps) {
   const photo = photos[index];
   const counter = `${index + 1} / ${photos.length}`;
   const [downloading, setDownloading] = useState(false);
@@ -116,6 +117,33 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
               {downloading ? "Loading…" : "Download"}
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(photo.id); }}
+              style={{
+                height: 38,
+                padding: "0 14px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,.15)",
+                background: "rgba(255,255,255,.1)",
+                color: "#fff",
+                fontSize: 13.5,
+                fontWeight: 500,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+                transition: "background .15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.2)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.1)"; }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              </svg>
+              Delete
             </button>
           )}
           <button

@@ -8,6 +8,7 @@ import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import DownloadButton from "../../../../components/DownloadButton";
 import DownloadPanel from "../../../../components/DownloadPanel";
+import AlertDialog from "../../../../components/AlertDialog";
 
 interface Photo {
   id: string;
@@ -50,6 +51,7 @@ export default function EventDetailPage() {
   const [lbOpen, setLbOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const fetchEvent = useCallback(() => {
     fetch(`/api/events/${id}`, { credentials: "include" })
@@ -136,7 +138,7 @@ export default function EventDetailPage() {
     fetchEvent();
   }
 
-  async function handleDelete() {
+  async function handleDeleteEvent() {
     if (!confirm("Delete this event and all photos?")) return;
     const res = await fetch(`/api/events/${id}`, {
       method: "DELETE",
@@ -146,6 +148,19 @@ export default function EventDetailPage() {
       router.push("/admin");
     } else {
       setError("Failed to delete event");
+    }
+  }
+
+  async function handleDeletePhoto(photoId: string) {
+    const res = await fetch(`/api/events/${id}/photos/${photoId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (res.ok) {
+      toast.success("Photo deleted");
+      fetchEvent();
+    } else {
+      toast.error("Failed to delete photo");
     }
   }
 
@@ -218,7 +233,7 @@ export default function EventDetailPage() {
               Preview
             </button>
             <button
-              onClick={handleDelete}
+              onClick={handleDeleteEvent}
               style={{ height: 38, padding: "0 14px", borderRadius: 8, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 13.5, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", transition: "background .15s" }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
@@ -317,6 +332,7 @@ export default function EventDetailPage() {
             setLbIndex(i);
             setLbOpen(true);
           }}
+          onDelete={(photoId) => setDeleteTarget(photoId)}
         />
 
         {/* Lightbox */}
@@ -335,8 +351,26 @@ export default function EventDetailPage() {
               if (!res.ok) throw new Error(data.error || "Download failed");
               return data.url;
             }}
+            onDelete={(photoId) => setDeleteTarget(photoId)}
           />
         )}
+
+        {/* Delete confirmation dialog */}
+        <AlertDialog
+          open={deleteTarget !== null}
+          title="Delete this photo?"
+          description="This action cannot be undone. The photo will be permanently removed from the event."
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          destructive
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            if (deleteTarget) {
+              handleDeletePhoto(deleteTarget);
+              setDeleteTarget(null);
+            }
+          }}
+        />
       </div>
     </div>
   );

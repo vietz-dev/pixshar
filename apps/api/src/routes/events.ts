@@ -202,4 +202,27 @@ app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
   return c.json({ url });
 });
 
+app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
+  const eventId = c.req.param("id");
+  const photoId = c.req.param("photoId");
+
+  const photo = await prisma.photo.findUnique({
+    where: { id: photoId, eventId },
+  });
+  if (!photo) {
+    return c.json({ error: "Photo not found" }, 404);
+  }
+
+  // Delete S3 objects
+  const keys = [photo.originalKey, photo.displayKey, photo.thumbKey].filter(Boolean);
+  for (const key of keys) {
+    if (key) {
+      await deleteS3Object(key).catch(() => {});
+    }
+  }
+
+  await prisma.photo.delete({ where: { id: photoId } });
+  return c.json({ success: true });
+});
+
 export default app;
