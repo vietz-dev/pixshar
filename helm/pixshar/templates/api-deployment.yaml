@@ -21,7 +21,7 @@ spec:
       {{- end }}
       labels:
         {{- include "pixshar.labels" . | nindent 8 }}
-        {{- include "pixshar.api.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
         {{- with .Values.api.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
