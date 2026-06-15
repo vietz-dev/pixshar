@@ -36,8 +36,11 @@ app.use(bodyLimit({
   onError: (c) => c.json({ error: "Request body too large" }, 413),
 }));
 
-// BetterAuth routes
-app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+// BetterAuth routes — catch all methods and all subpaths
+app.all("/api/auth/*", async (c) => {
+  const response = await auth.handler(c.req.raw);
+  return response;
+});
 
 // API routes
 app.route("/api/events", events);

@@ -28,4 +28,5 @@ USER bunjs
 
 EXPOSE 3000
 
-CMD ["bun", "run", "start"]
+# With output: standalone, next start does not work. Use the standalone server directly.
+CMD ["bun", ".next/standalone/apps/web/server.js"]
