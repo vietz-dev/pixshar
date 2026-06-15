@@ -199,7 +199,7 @@ ingress:
     # - secretName: pixshar-tls
     #   hosts:
     #     - pixshar.local
-  apiDirectRouting: false
+  apiDirectRouting: true
 
 # --- Gateway API HTTPRoute ---
 httpRoute:

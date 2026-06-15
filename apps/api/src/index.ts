@@ -45,6 +45,7 @@ app.route("/api/gallery", gallery);
 app.route("/api/upload", upload);
 
 app.get("/health", (c) => c.json({ status: "ok" }));
+app.get("/api/health", (c) => c.json({ status: "ok" }));
 
 if (import.meta.main) {
   console.log(`API server running on http://localhost:${env.API_PORT}`);

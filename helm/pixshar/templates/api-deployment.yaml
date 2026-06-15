@@ -35,6 +35,40 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.api.persistence.enabled }}
+      initContainers:
+        - name: db-migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cd /app/apps/api && \
+              DATABASE_URL=file:/data/prod.db bunx prisma migrate deploy && \
+              DATABASE_URL=file:/data/prod.db bun prisma/seed.ts
+          envFrom:
+            - configMapRef:
+                name: {{ include "pixshar.configMapName" . }}
+            - secretRef:
+                name: {{ include "pixshar.secretName" . }}
+          env:
+            - name: DATABASE_URL
+              value: "file:/data/prod.db"
+          volumeMounts:
+            - name: db
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          {{- with .Values.api.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.api.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- end }}
       containers:
         - name: api
           {{- with .Values.api.securityContext }}
@@ -52,6 +86,11 @@ spec:
                 name: {{ include "pixshar.configMapName" . }}
             - secretRef:
                 name: {{ include "pixshar.secretName" . }}
+          {{- if .Values.api.persistence.enabled }}
+          env:
+            - name: DATABASE_URL
+              value: "file:/data/prod.db"
+          {{- end }}
           {{- with .Values.api.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -67,7 +106,7 @@ spec:
           volumeMounts:
             {{- if .Values.api.persistence.enabled }}
             - name: db
-              mountPath: /app/apps/api/prisma
+              mountPath: /data
             {{- end }}
             - name: tmp
               mountPath: /tmp
