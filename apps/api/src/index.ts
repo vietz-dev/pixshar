@@ -36,17 +36,16 @@ app.use(bodyLimit({
   onError: (c) => c.json({ error: "Request body too large" }, 413),
 }));
 
-const router = new Hono({ strict: false });
+const api = app.basePath("/api");
 
-app.basePath("/api")
-  .route('/', auth)
-  .route("/api/events", events)
-  .route("/api/gallery", gallery)
-  .route("/api/upload", upload)
-  .get("/api/health", (c) => c.json({ status: "ok" }));
+api.route('/', auth);
+api.route("/events", events);
+api.route("/gallery", gallery);
+api.route("/upload", upload);
 
+// health checks
+api.get("/health", (c) => c.json({ status: "ok" }));
 app.get("/health", (c) => c.json({ status: "ok" }));
-app.get("/api/health", (c) => c.json({ status: "ok" }));
 
 if (import.meta.main) {
   console.log(`API server running on http://localhost:${env.API_PORT}`);
