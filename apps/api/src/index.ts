@@ -2,14 +2,14 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
-import { auth } from "./lib/auth.js";
 import { env } from "./lib/env.js";
 import events from "./routes/events.js";
 import gallery from "./routes/gallery.js";
 import upload from "./routes/upload.js";
+import auth from "./routes/auth.js";
 import { startDebouncePoller } from "./services/downloadJob.js";
 
-const app = new Hono();
+const app = new Hono({strict: false });
 
 app.use(logger());
 app.use(cors({
@@ -36,16 +36,14 @@ app.use(bodyLimit({
   onError: (c) => c.json({ error: "Request body too large" }, 413),
 }));
 
-// BetterAuth routes — catch all methods and all subpaths
-app.all("/api/auth/*", async (c) => {
-  const response = await auth.handler(c.req.raw);
-  return response;
-});
+const router = new Hono({ strict: false });
 
-// API routes
-app.route("/api/events", events);
-app.route("/api/gallery", gallery);
-app.route("/api/upload", upload);
+app.basePath("/api")
+  .route('/', auth)
+  .route("/api/events", events)
+  .route("/api/gallery", gallery)
+  .route("/api/upload", upload)
+  .get("/api/health", (c) => c.json({ status: "ok" }));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 app.get("/api/health", (c) => c.json({ status: "ok" }));
