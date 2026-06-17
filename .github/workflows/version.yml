@@ -42,6 +42,7 @@ jobs:
         with:
           title: "chore: release"
           commit: "chore: release"
+          version: bash scripts/version.sh
           publish: bash scripts/release.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

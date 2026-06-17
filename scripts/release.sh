@@ -2,18 +2,12 @@
 set -euo pipefail
 
 # ============================================
-# Release script — called by changesets/action when a Version PR is merged.
+# Release script — called by changesets/action after the Version PR is merged.
 #
-# Flow:
-#   1. changeset version already bumped package.json versions (committed in the PR)
-#   2. This script bumps the Helm chart to match
-#   3. Creates git tags (per-package + unified v*) so the build pipeline triggers
-#   4. Pushes everything
-#
-# Idempotent: safe to re-run if the workflow retriggers after this commit.
+# The Version PR already bumped package.json + Helm chart. This script only
+# creates git tags and pushes them — no branch push needed (already on main).
 # ============================================
 
-# Read the version — all fixed packages share the same version, so any works
 VERSION=$(node -p "require('./packages/shared/package.json').version")
 
 # Skip if already released
@@ -24,27 +18,12 @@ fi
 
 echo "Releasing v${VERSION}"
 
-# ---- Bump Helm chart ----
-sed -i "s/^version:.*/version: ${VERSION}/" helm/pixshar/Chart.yaml
-sed -i "s/^appVersion:.*/appVersion: ${VERSION}/" helm/pixshar/Chart.yaml
-
-git add helm/pixshar/Chart.yaml
-# Only commit if the helm file actually changed
-if git diff --cached --quiet; then
-  echo "Helm chart already at v${VERSION}"
-else
-  git commit -m "chore: bump helm chart to v${VERSION}"
-fi
-
-# ---- Create tags ----
-
-# Per-package tags (changesets convention, e.g. @pixshar/api@1.2.3)
+# Create per-package tags (changesets convention: @pixshar/api@1.2.3 etc.)
 bunx changeset tag
 
-# Unified release tag so the release build workflow triggers on v*
+# Create unified release tag so the build pipeline triggers on v*
 git tag "v${VERSION}"
 
-# ---- Push ----
-git push origin main "v${VERSION}"
-
+# Push all tags pointing to this commit (unified v* + per-package @pixshar/*)
+git push origin $(git tag --points-at HEAD)
 echo "✔ Released v${VERSION}"
