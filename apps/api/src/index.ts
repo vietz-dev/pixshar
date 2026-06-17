@@ -38,7 +38,7 @@ app.use(bodyLimit({
 
 const api = app.basePath("/api");
 
-api.route('/', auth);
+api.route('/auth', auth);
 api.route("/events", events);
 api.route("/gallery", gallery);
 api.route("/upload", upload);

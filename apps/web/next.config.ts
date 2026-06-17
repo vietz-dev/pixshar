@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  env: {
+    API_URL: process.env.API_URL ?? "http://pixshar-api:3001"
+  },
   output: "standalone",
   // API proxying is handled by src/middleware.ts for runtime env var support
   async headers() {
