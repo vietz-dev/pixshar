@@ -45,8 +45,8 @@ spec:
             - -c
             - |
               cd /app/apps/api && \
-              DATABASE_URL=file:/data/prod.db bunx prisma migrate deploy && \
-              DATABASE_URL=file:/data/prod.db bun prisma/seed.ts
+              DATABASE_URL="file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000" bunx prisma migrate deploy && \
+              DATABASE_URL="file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000" bun prisma/seed.ts
           envFrom:
             - configMapRef:
                 name: {{ include "pixshar.configMapName" . }}
@@ -54,7 +54,7 @@ spec:
                 name: {{ include "pixshar.secretName" . }}
           env:
             - name: DATABASE_URL
-              value: "file:/data/prod.db"
+              value: "file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000"
           volumeMounts:
             - name: db
               mountPath: /data
@@ -89,7 +89,7 @@ spec:
           {{- if .Values.api.persistence.enabled }}
           env:
             - name: DATABASE_URL
-              value: "file:/data/prod.db"
+              value: "file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000"
           {{- end }}
           {{- with .Values.api.livenessProbe }}
           livenessProbe:

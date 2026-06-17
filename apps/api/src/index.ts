@@ -8,6 +8,7 @@ import gallery from "./routes/gallery.js";
 import upload from "./routes/upload.js";
 import auth from "./routes/auth.js";
 import { startDebouncePoller } from "./services/downloadJob.js";
+import { initDatabase } from "./lib/prisma.js";
 
 const app = new Hono({strict: false });
 
@@ -49,6 +50,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 
 if (import.meta.main) {
   console.log(`API server running on http://localhost:${env.API_PORT}`);
+  await initDatabase();
   startDebouncePoller();
   Bun.serve({
     port: env.API_PORT,

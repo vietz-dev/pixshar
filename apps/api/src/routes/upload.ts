@@ -47,13 +47,19 @@ app.post("/events/:id/photos", requireAdmin, async (c) => {
     }
   }
 
-  const results = await Promise.all(
-    files.map(async (file) => {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const cleanExt = ext === "png" ? "png" : "jpg";
+  // Pre-read all file buffers and extract metadata
+  const photoData = await Promise.all(files.map(async (file) => {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const cleanExt = ext === "png" ? "png" : "jpg";
+    return { buffer, ext: cleanExt };
+  }));
 
-      const photo = await prisma.photo.create({
+  // Batch-create all Photo records in a single transaction — this acquires
+  // the SQLite write lock once instead of N times, preventing P1008 timeouts.
+  const createdPhotos = await prisma.$transaction(
+    photoData.map(() =>
+      prisma.photo.create({
         data: {
           eventId: event.id,
           photographerName: null,
@@ -63,18 +69,20 @@ app.post("/events/:id/photos", requireAdmin, async (c) => {
           status: "PENDING",
           uploadedBy: "ADMIN",
         },
-      });
-
-      Effect.runFork(processImage({
-        photoId: photo.id,
-        buffer,
-        eventId: event.id,
-        ext: cleanExt,
-      }));
-
-      return { id: photo.id, status: "PENDING" };
-    })
+      })
+    )
   );
+
+  // Fork image processing for each photo
+  const results = createdPhotos.map((photo: { id: string }, i: number) => {
+    Effect.runFork(processImage({
+      photoId: photo.id,
+      buffer: photoData[i].buffer,
+      eventId: event.id,
+      ext: photoData[i].ext,
+    }));
+    return { id: photo.id, status: "PENDING" };
+  });
 
   return c.json({ photos: results }, 202);
 });
