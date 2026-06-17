@@ -9,9 +9,13 @@
     "build": "bun run build:shared && bun run build:api && bun run build:web",
     "build:shared": "cd packages/shared && bun run build",
     "build:api": "cd apps/api && bun run build",
-    "build:web": "cd apps/web && bun run build"
+    "build:web": "cd apps/web && bun run build",
+    "release": "bash scripts/release.sh",
+    "version": "changeset version"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0",
     "concurrently": "^9.0.0"
   }
 }

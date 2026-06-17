@@ -52,6 +52,8 @@ jobs:
             dockerfile: apps/web/Dockerfile
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: docker/setup-buildx-action@v3
 
@@ -104,9 +106,7 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          helm package helm/pixshar \
-            --app-version ${{ github.ref_name }} \
-            --version ${{ github.ref_name }}
+          helm package helm/pixshar
 
       - name: Upload chart artifact
         uses: actions/upload-artifact@v4
