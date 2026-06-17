@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
+// In Docker, WORKSPACE_ROOT=/app tells Turbopack where to find next/package.json.
+// Locally, leaving it unset lets Next.js auto-detect the workspace root.
+const workspaceRoot = process.env.WORKSPACE_ROOT;
+
 const nextConfig: NextConfig = {
+  ...(workspaceRoot ? { turbopack: { root: workspaceRoot } } : {}),
   env: {
     API_URL: process.env.API_URL ?? "http://pixshar-api:3001"
   },
