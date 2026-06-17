@@ -3,9 +3,9 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "bunx next dev",
+    "build": "bunx next build",
+    "start": "bunx next start"
   },
   "dependencies": {
     "@pixshar/shared": "workspace:*",
