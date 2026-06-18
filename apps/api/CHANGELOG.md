@@ -1,5 +1,14 @@
 # @pixshar/api
 
+## 0.0.16
+
+### Patch Changes
+
+- [`38547ba`](https://github.com/vietz-dev/pixshar/commit/38547badbd3b54decc2c7130d0d76e8baea87ca8) - create flow to build artifacts on new tag format
+
+- Updated dependencies [[`38547ba`](https://github.com/vietz-dev/pixshar/commit/38547badbd3b54decc2c7130d0d76e8baea87ca8)]:
+  - @pixshar/shared@0.0.16
+
 ## 0.0.15
 
 ### Patch Changes

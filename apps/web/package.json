@@ -1,6 +1,6 @@
 {
   "name": "@pixshar/web",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "type": "module",
   "scripts": {
     "dev": "bunx next dev",
