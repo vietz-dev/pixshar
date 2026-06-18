@@ -1,5 +1,14 @@
 # @pixshar/web
 
+## 0.0.17
+
+### Patch Changes
+
+- [`2c83c4f`](https://github.com/vietz-dev/pixshar/commit/2c83c4f8d412b83eaf174337409e270180266f40) - try fix release pipeline
+
+- Updated dependencies [[`2c83c4f`](https://github.com/vietz-dev/pixshar/commit/2c83c4f8d412b83eaf174337409e270180266f40)]:
+  - @pixshar/shared@0.0.17
+
 ## 0.0.16
 
 ### Patch Changes
