@@ -23,6 +23,12 @@ git tag "v${VERSION}"
 
 # Push just this tag — triggers release.yml (on: push: tags: ['v*'])
 echo "Pushing v${VERSION}…"
+
+# Use RELEASE_TOKEN (PAT) so the push triggers other workflows.
+# GITHUB_TOKEN pushes are intentionally ignored by GitHub Actions.
+if [ -n "${RELEASE_TOKEN:-}" ]; then
+  git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+fi
 git push origin "refs/tags/v${VERSION}"
 
 echo "✔ Released v${VERSION}"
