@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.18
+
+### Patch Changes
+
+- [`7897faf`](https://github.com/vietz-dev/pixshar/commit/7897faf0e07379ee59c2009aea683242b6d91665) - Use PAT for releases
+
 ## 0.0.17
 
 ### Patch Changes
