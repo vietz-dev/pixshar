@@ -1,6 +1,6 @@
 {
   "name": "@pixshar/api",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
