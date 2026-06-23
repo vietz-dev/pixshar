@@ -46,4 +46,6 @@ jobs:
           publish: bash scripts/release.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
