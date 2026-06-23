@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.19
+
+### Patch Changes
+
+- [`e9dca64`](https://github.com/vietz-dev/pixshar/commit/e9dca6449ae3686ea7f888b6f10cc637e677e63f) - fix release workflow
+
 ## 0.0.18
 
 ### Patch Changes

@@ -3,8 +3,8 @@ name: pixshar
 description: Pixshar — private event photo sharing app for Kubernetes
 
 type: application
-version: 0.0.18
-appVersion: 0.0.18
+version: 0.0.19
+appVersion: 0.0.19
 keywords:
   - photos
   - gallery
