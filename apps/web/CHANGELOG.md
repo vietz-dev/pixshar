@@ -1,5 +1,13 @@
 # @pixshar/web
 
+## 0.0.20
+
+### Patch Changes
+
+- 5b20d1e: test: release pipeline
+- Updated dependencies [5b20d1e]
+  - @pixshar/shared@0.0.20
+
 ## 0.0.19
 
 ### Patch Changes
