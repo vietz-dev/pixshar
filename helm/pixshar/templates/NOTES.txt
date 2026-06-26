@@ -34,15 +34,20 @@
 ---
 Using the bundled Postgres StatefulSet: {{ include "pixshar.postgres.fullname" . }}
 For production, prefer an external managed Postgres via externalDatabase.
+{{- else if and .Values.externalDatabase.existingSecret .Values.externalDatabase.existingSecretUrlKey }}
+
+---
+Using external Postgres: DSN from secret {{ .Values.externalDatabase.existingSecret }} (key {{ .Values.externalDatabase.existingSecretUrlKey }}).
+{{- else if .Values.externalDatabase.existingSecret }}
+
+---
+Using external Postgres: {{ .Values.externalDatabase.host }} (password from secret {{ .Values.externalDatabase.existingSecret }}).
 {{- else }}
 
 ---
-Using external Postgres.
-{{- if .Values.externalDatabase.existingSecretUrlKey }}
-DSN from secret {{ .Values.externalDatabase.existingSecret }} key {{ .Values.externalDatabase.existingSecretUrlKey }}.
-{{- else }}
-Host: {{ .Values.externalDatabase.host }} (password from secret {{ .Values.externalDatabase.existingSecret }}).
-{{- end }}
+WARNING: No database configured. Set `postgres.enabled=true` (bundled) or
+`externalDatabase.existingSecret` (link an existing Postgres) before deploying —
+the API will not start without a reachable DATABASE_URL.
 {{- end }}
 
 {{- if .Values.secrets.existingSecret }}
