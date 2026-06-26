@@ -16,6 +16,10 @@ export const s3 = new S3Client({
 // Client used only to *sign* presigned URLs. These are consumed by the browser,
 // so they must be signed against the externally reachable host — see
 // S3_PUBLIC_ENDPOINT in env.ts. Falls back to the internal endpoint.
+// forcePathStyle is intentionally NOT set here: Tigris (and most hosted S3
+// providers) use virtual-hosted style (bucket.host/key). Path-style presigned
+// URLs cause a 307 redirect on those providers, making the browser re-upload
+// the entire file body a second time — doubling upload time.
 const s3Public = new S3Client({
   endpoint: env.S3_PUBLIC_ENDPOINT ?? env.S3_ENDPOINT,
   region: env.S3_REGION,
@@ -23,7 +27,6 @@ const s3Public = new S3Client({
     accessKeyId: env.S3_ACCESS_KEY,
     secretAccessKey: env.S3_SECRET_KEY,
   },
-  forcePathStyle: true,
 });
 
 export function getPublicUrl(key: string): string {
