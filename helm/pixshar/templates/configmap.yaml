@@ -17,4 +17,7 @@ data:
   {{- if .Values.config.s3PublicUrl }}
   S3_PUBLIC_URL: {{ .Values.config.s3PublicUrl | quote }}
   {{- end }}
+  {{- if .Values.config.s3PublicEndpoint }}
+  S3_PUBLIC_ENDPOINT: {{ .Values.config.s3PublicEndpoint | quote }}
+  {{- end }}
   DOWNLOAD_DEBOUNCE_SECONDS: {{ .Values.config.downloadDebounceSeconds | quote }}

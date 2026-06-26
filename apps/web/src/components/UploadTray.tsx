@@ -5,7 +5,7 @@ import { useMemo } from "react";
 export interface UploadItem {
   id: string;
   name: string;
-  status: "queued" | "uploading" | "done" | "error";
+  status: "queued" | "uploading" | "done" | "error" | "skipped";
   progress: number;
   tint: string;
 }
@@ -41,9 +41,10 @@ export default function UploadTray({
   const isSmall = size === "small";
 
   const stats = useMemo(() => {
-    let done = 0, err = 0, up = 0, queued = 0, processed = 0;
+    let done = 0, err = 0, up = 0, queued = 0, skipped = 0, processed = 0;
     for (const it of queue) {
       if (it.status === "done") { done++; processed += 100; }
+      else if (it.status === "skipped") { skipped++; processed += 100; }
       else if (it.status === "error") { err++; processed += 100; }
       else if (it.status === "uploading") { up++; processed += it.progress; }
       else { queued++; }
@@ -52,34 +53,37 @@ export default function UploadTray({
     const active = queued + up > 0;
     const allDone = total > 0 && !active;
     const pct = total ? processed / (total * 100) : 0;
-    return { done, err, up, queued, total, active, allDone, pct };
+    return { done, err, up, queued, skipped, total, active, allDone, pct };
   }, [queue]);
 
-  const { done, err, total, active, allDone, pct } = stats;
+  const { done, err, skipped, total, active, allDone, pct } = stats;
   const pctRounded = Math.round(pct * 100);
-  const remaining = total - done - err;
+  const remaining = total - done - err - skipped;
   const etaSec = Math.max(1, Math.ceil(remaining / 4.2));
   const etaLabel = etaSec >= 60 ? Math.ceil(etaSec / 60) + " min" : etaSec + "s";
   const speed = (12.6 + (done % 6) * 0.35).toFixed(1);
   const fmt = (n: number) => n.toLocaleString();
+  const skippedNote = skipped > 0 ? ` · ${fmt(skipped)} already uploaded` : "";
 
   const title = active
     ? `Uploading ${fmt(done)} of ${fmt(total)} photos`
     : err > 0
-      ? `${fmt(done)} uploaded · ${err} failed`
+      ? `${fmt(done)} uploaded · ${err} failed${skippedNote}`
       : `All ${fmt(total)} photos uploaded`;
 
   const subtitle = active
     ? `${speed} MB/s · about ${etaLabel} left`
     : err > 0
       ? "A few photos need another try."
-      : "Added to the gallery just now.";
+      : skipped > 0
+        ? `${fmt(skipped)} ${skipped === 1 ? "was" : "were"} already in the gallery.`
+        : "Added to the gallery just now.";
 
   const ringColor = active ? "#2563eb" : "#16a34a";
   const CIRC = 100.53;
   const offset = (CIRC * (1 - pct)).toFixed(2);
 
-  const order: Record<string, number> = { error: 0, uploading: 1, queued: 2, done: 3 };
+  const order: Record<string, number> = { error: 0, uploading: 1, queued: 2, done: 3, skipped: 4 };
   const CAP = isSmall ? 60 : 60;
   const sorted = useMemo(
     () => queue.slice().sort((a, b) => order[a.status] - order[b.status]),
@@ -266,8 +270,8 @@ export default function UploadTray({
               <span style={{ flex: 1, minWidth: 0, fontSize: rowFont, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {u.name}
               </span>
-              <span style={{ fontSize: statusFont, fontWeight: 500, color: u.status === "done" ? "#16a34a" : u.status === "error" ? "#dc2626" : u.status === "uploading" ? "#2563eb" : "#a1a1aa", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                {u.status === "done" ? "Done" : u.status === "error" ? "Failed" : u.status === "uploading" ? `${Math.round(u.progress)}%` : "Queued"}
+              <span style={{ fontSize: statusFont, fontWeight: 500, color: u.status === "done" ? "#16a34a" : u.status === "error" ? "#dc2626" : u.status === "uploading" ? "#2563eb" : u.status === "skipped" ? "#0891b2" : "#a1a1aa", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                {u.status === "done" ? "Done" : u.status === "error" ? "Failed" : u.status === "uploading" ? `${Math.round(u.progress)}%` : u.status === "skipped" ? "Already uploaded" : "Queued"}
               </span>
             </div>
           ))}

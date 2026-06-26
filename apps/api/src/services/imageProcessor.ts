@@ -1,15 +1,26 @@
 import { Effect, Schedule, Console } from "effect";
-import { s3 } from "../lib/s3.js";
+import { s3, getS3Object, deleteS3Object } from "../lib/s3.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
+import { sha256Hex } from "../lib/hash.js";
+import { isValidImageBytes, MAX_FILE_SIZE } from "../lib/validate.js";
 import { triggerDebounce } from "./downloadJob.js";
 
 export interface ProcessImageInput {
   photoId: string;
-  buffer: Buffer;
   eventId: string;
   ext: string;
+  // Key of the original the client already uploaded directly to S3.
+  originalKey: string;
+  // Client-supplied hash stored at init; reconciled here against the real bytes.
+  fileHash: string;
+}
+
+// Thrown when the uploaded original isn't a valid/sane image. Not retried —
+// retrying won't change the bytes — so it bypasses the retry schedule.
+class InvalidOriginalError extends Error {
+  readonly _tag = "InvalidOriginalError";
 }
 
 export interface ProcessImageOutput {
@@ -77,17 +88,34 @@ const resizeImage = (
 
 const processImageEffect = (input: ProcessImageInput) =>
   Effect.gen(function* () {
-    const { photoId, buffer, eventId, ext } = input;
+    const { photoId, eventId, ext, originalKey, fileHash } = input;
     const base = `${eventId}/${photoId}`;
-    const originalKey = `${base}/original.${ext}`;
     const displayKey = `${base}/display.${ext}`;
     const thumbKey = `${base}/thumb.${ext}`;
 
-    const contentType = ext === "png" ? "image/png" : "image/jpeg";
-
     yield* Console.log(`Processing photo ${photoId}`);
 
-    yield* uploadToS3(originalKey, buffer, contentType);
+    // The client uploaded the original directly to S3 — fetch it back to process.
+    const buffer = yield* Effect.tryPromise({
+      try: () => getS3Object(originalKey),
+      catch: (e) => new Error(`Failed to fetch original ${originalKey}: ${e}`),
+    });
+
+    // Validation moved here (the API never saw these bytes at upload time):
+    // reject anything that isn't a sane image. Not retryable.
+    if (buffer.length > MAX_FILE_SIZE || !isValidImageBytes(buffer)) {
+      yield* Effect.fail(new InvalidOriginalError(`Original ${originalKey} is not a valid image`));
+    }
+
+    // Reconcile the stored (client-claimed) hash against the real bytes.
+    const actualHash = sha256Hex(buffer);
+    if (actualHash !== fileHash) {
+      yield* Console.error(`Hash mismatch for ${photoId}: claimed ${fileHash}, actual ${actualHash}`);
+      yield* Effect.tryPromise({
+        try: () => prisma.photo.update({ where: { id: photoId }, data: { fileHash: actualHash } }),
+        catch: (e) => new Error(`DB hash reconcile failed: ${e}`),
+      });
+    }
 
     const [displayBuf, thumbBuf] = yield* Effect.all([
       resizeImage(buffer, 1920, 1920, 85, ext === "png" ? "jpeg" : "jpeg"),
@@ -104,7 +132,6 @@ const processImageEffect = (input: ProcessImageInput) =>
         prisma.photo.update({
           where: { id: photoId },
           data: {
-            originalKey,
             displayKey,
             thumbKey,
             status: "PROCESSED",
@@ -120,13 +147,20 @@ const processImageEffect = (input: ProcessImageInput) =>
 
     return { originalKey, displayKey, thumbKey };
   }).pipe(
+    // Don't waste retries on bytes that will never become a valid image.
     Effect.retry({
       times: 3,
       schedule: Schedule.exponential("1 second"),
+      while: (e) => !(e instanceof InvalidOriginalError),
     }),
     Effect.catchAll((e) =>
       Effect.gen(function* () {
         yield* Console.error(`Failed to process photo ${input.photoId}: ${e}`);
+        // A bad/invalid original shouldn't linger in S3 (and frees the dedup
+        // hash via the FAILED-row recycling on retry).
+        if (e instanceof InvalidOriginalError) {
+          yield* Effect.promise(() => deleteS3Object(input.originalKey).catch(() => {}));
+        }
         yield* Effect.tryPromise({
           try: () =>
             prisma.photo.update({

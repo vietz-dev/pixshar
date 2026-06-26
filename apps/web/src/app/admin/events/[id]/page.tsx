@@ -10,6 +10,7 @@ import DownloadButton from "../../../../components/DownloadButton";
 import DownloadPanel from "../../../../components/DownloadPanel";
 import AlertDialog from "../../../../components/AlertDialog";
 import UploadTray, { UploadItem, randomTint } from "../../../../components/UploadTray";
+import { presignedUpload } from "../../../../lib/uploadClient";
 
 interface Photo {
   id: string;
@@ -112,42 +113,41 @@ export default function EventDetailPage() {
   }
 
   async function runUploadBatch(items: UploadItem[]) {
-    const batchSize = 4;
-    let idx = 0;
+    const uploadItems = items
+      .map((it) => {
+        const file = fileMapRef.current.get(it.id);
+        return file ? { uid: it.id, file } : null;
+      })
+      .filter((x): x is { uid: string; file: File } => x !== null);
 
-    while (idx < items.length) {
-      if (abortRef.current) break;
-      const batch = items.slice(idx, idx + batchSize);
-      const batchIds = new Set(batch.map((b) => b.id));
-
+    try {
+      await presignedUpload({
+        items: uploadItems,
+        initUrl: `/api/upload/events/${id}/photos/init`,
+        completeUrl: `/api/upload/events/${id}/photos/complete`,
+        shouldAbort: () => abortRef.current,
+        onStatus: (uid, status, progress) => {
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.id === uid
+                ? {
+                    ...q,
+                    status,
+                    progress: progress ?? (status === "done" || status === "skipped" ? 100 : q.progress),
+                  }
+                : q
+            )
+          );
+        },
+      });
+    } catch {
+      // Hard failure (e.g. init rejected / insecure context) — mark anything
+      // still pending as errored so the user can retry.
       setQueue((prev) =>
-        prev.map((q) => (batchIds.has(q.id) ? { ...q, status: "uploading" as const, progress: 0 } : q))
+        prev.map((q) =>
+          q.status === "queued" || q.status === "uploading" ? { ...q, status: "error" as const, progress: 0 } : q
+        )
       );
-
-      await Promise.allSettled(
-        batch.map(async (item) => {
-          const file = fileMapRef.current.get(item.id);
-          if (!file) {
-            setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: "error" as const, progress: 0 } : q)));
-            return;
-          }
-          const form = new FormData();
-          form.append("files", file);
-          try {
-            const res = await fetch(`/api/upload/events/${id}/photos`, {
-              method: "POST",
-              body: form,
-              credentials: "include",
-            });
-            if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
-            setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: "done" as const, progress: 100 } : q)));
-          } catch {
-            setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: "error" as const, progress: 0 } : q)));
-          }
-        })
-      );
-
-      idx += batchSize;
     }
 
     fetchEvent();

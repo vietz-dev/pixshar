@@ -1,73 +1,37 @@
-version: "3.8"
-
 services:
-  garage:
-    image: dxflrs/garage:v1.0.0
+  minio:
+    image: minio/minio:latest
     ports:
-      - "3900:3900"
-      - "3901:3901"
-      - "3902:3902"
-      - "3903:3903"
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
     environment:
-      - GARAGE_RPC_SECRET=dev-rpc-secret-do-not-use-in-production
-      - GARAGE_ADMIN_TOKEN=dev-admin-token-do-not-use-in-production
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+      # Allow browser cross-origin PUT (direct-to-S3 upload) + GET from the web app.
+      - MINIO_API_CORS_ALLOW_ORIGIN=*
     volumes:
-      - garage-meta:/var/lib/garage/meta
-      - garage-data:/var/lib/garage/data
-      - ./garage.toml:/etc/garage.toml:ro
-    command: ["server"]
+      - minio-data:/data
+    command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "/garage", "status"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 2s
-      timeout: 1s
-      retries: 15
+      timeout: 2s
+      retries: 20
 
-  garage-init:
-    image: dxflrs/garage:v1.0.0
+  # Create the bucket and allow anonymous read (presigned GET also works, this is
+  # a belt-and-suspenders fallback for display URLs).
+  minio-init:
+    image: minio/mc:latest
     depends_on:
-      garage:
+      minio:
         condition: service_healthy
-    environment:
-      - GARAGE_RPC_SECRET=dev-rpc-secret-do-not-use-in-production
-      - GARAGE_ADMIN_TOKEN=dev-admin-token-do-not-use-in-production
-    volumes:
-      - ./garage.toml:/etc/garage.toml:ro
-      - garage-keys:/keys
     entrypoint: >
       /bin/sh -c "
       set -e;
-      echo 'Configuring garage node...';
-      NODE_ID=$$(/garage node id | head -1 | awk '{print $$1}');
-      if [ -n \"$$NODE_ID\" ]; then
-        /garage node configure \"$$NODE_ID\" -c 1 -z dc1 -r 127.0.0.1 || true;
-      fi;
-      
-      echo 'Creating bucket...';
-      /garage bucket create pixshar || true;
-      
-      echo 'Allowing public read...';
-      /garage bucket allow pixshar --read --anonymous || true;
-      
-      echo 'Creating key...';
-      if [ ! -f /keys/access_key ]; then
-        /garage key create pixshar-key > /tmp/key-create.log 2>&1 || true;
-        KEY_ID=$$(/garage key info pixshar-key 2>/dev/null | grep 'Key ID' | awk '{print $$3}' | head -1 || true);
-        SECRET=$$(/garage key info pixshar-key 2>/dev/null | grep 'Secret Key' | awk '{print $$3}' | head -1 || true);
-        if [ -n \"$$KEY_ID\" ] && [ -n \"$$SECRET\" ]; then
-          echo \"$$KEY_ID\" > /keys/access_key;
-          echo \"$$SECRET\" > /keys/secret_key;
-          echo \"Key created: $$KEY_ID\";
-        else
-          echo 'Failed to extract key info. Key create output:';
-          cat /tmp/key-create.log || true;
-        fi;
-      fi;
-      
-      echo 'Allowing key on bucket...';
-      /garage key allow pixshar-key --bucket pixshar --read --write || true;
-      
-      echo 'Garage init complete';
-      exit 0;
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/pixshar;
+      mc anonymous set download local/pixshar;
+      echo 'MinIO init complete';
       "
 
   api:
@@ -83,45 +47,30 @@ services:
       - BETTER_AUTH_URL=http://localhost:3001
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - S3_ENDPOINT=http://garage:3900
+      - S3_ENDPOINT=http://minio:9000
+      # Host the browser uses for presigned URLs (direct-to-S3 upload + display).
+      - S3_PUBLIC_ENDPOINT=http://localhost:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
       - S3_BUCKET=pixshar
       - S3_REGION=us-east-1
-      - S3_PUBLIC_URL=http://localhost:3900/pixshar
+      - S3_PUBLIC_URL=http://localhost:9000/pixshar
       - API_PORT=3001
       - API_URL=http://localhost:3001
       - WEB_URL=http://localhost:3000
     depends_on:
-      garage-init:
+      minio-init:
         condition: service_completed_successfully
     volumes:
       - api-db:/app/apps/api/prisma
-      - garage-keys:/keys:ro
+    # The image drops to a non-root user, but the named DB volume is root-owned,
+    # so SQLite can't create prod.db. Run as root for the local dev stack.
+    user: "0:0"
     entrypoint: >
       /bin/sh -c "
       set -e;
-      export S3_ACCESS_KEY=$$(cat /keys/access_key 2>/dev/null || echo '${GARAGE_ACCESS_KEY:-}');
-      export S3_SECRET_KEY=$$(cat /keys/secret_key 2>/dev/null || echo '${GARAGE_SECRET_KEY:-}');
-      if [ -z \"$$S3_ACCESS_KEY\" ]; then echo 'No S3 access key found'; exit 1; fi;
-      echo \"S3 credentials loaded\";
       cd /app/apps/api && bunx prisma migrate deploy && bun prisma/seed.ts && bun run start;
       "
-
-  garage-ui:
-    image: noooste/garage-ui:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - GARAGE_UI_GARAGE_ENDPOINT=http://garage:3900
-      - GARAGE_UI_GARAGE_ADMIN_ENDPOINT=http://garage:3903
-      - GARAGE_UI_GARAGE_REGION=us-east-1
-      - GARAGE_UI_GARAGE_ADMIN_TOKEN=${GARAGE_ADMIN_TOKEN}
-      - GARAGE_UI_SERVER_HOST=0.0.0.0
-      - GARAGE_UI_SERVER_PORT=8080
-      - GARAGE_UI_SERVER_ENVIRONMENT=production
-      - GARAGE_UI_AUTH_TOKEN_ENABLED=true
-    depends_on:
-      garage-init:
-        condition: service_completed_successfully
 
   web:
     build:
@@ -135,7 +84,5 @@ services:
       - api
 
 volumes:
-  garage-meta:
-  garage-data:
+  minio-data:
   api-db:
-  garage-keys:

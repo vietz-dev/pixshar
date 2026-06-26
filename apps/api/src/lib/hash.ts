@@ -1,4 +1,9 @@
-import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+
+// SHA-256 of raw bytes, hex-encoded. Used as the per-file dedup key.
+export function sha256Hex(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("hex");
+}
 
 const CONFIG = {
   N: 16384,

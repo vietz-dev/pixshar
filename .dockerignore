@@ -7,9 +7,12 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Env files
+# Env files (root AND nested, e.g. apps/web/.env, apps/api/.env).
+# Keep these out of the image: they bake build-time values and leak secrets.
 .env
 .env.*
+**/.env
+**/.env.*
 
 # Database
 *.db

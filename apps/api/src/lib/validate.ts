@@ -11,7 +11,7 @@ const MAGIC_BYTES: Record<string, number[][]> = {
   "image/heif": [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]],
 };
 
-function checkMagicBytes(buffer: Buffer, mimeType: string): boolean {
+export function checkMagicBytes(buffer: Buffer, mimeType: string): boolean {
   const signatures = MAGIC_BYTES[mimeType];
   if (!signatures) return false;
   for (const sig of signatures) {
@@ -31,6 +31,12 @@ function checkMagicBytes(buffer: Buffer, mimeType: string): boolean {
     if (webp === "WEBP") return true;
   }
   return false;
+}
+
+// True if the bytes match the magic signature of any allowed image type.
+// Used to verify a directly-uploaded original (no declared MIME available).
+export function isValidImageBytes(buffer: Buffer): boolean {
+  return ALLOWED_MIME_TYPES.some((mime) => checkMagicBytes(buffer, mime));
 }
 
 export function validateFiles(files: File[]): { valid: boolean; error?: string } {

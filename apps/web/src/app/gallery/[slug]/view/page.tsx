@@ -54,18 +54,6 @@ export default function GalleryViewPage() {
     fetchGallery();
   }, [fetchGallery]);
 
-  async function handleUploadOne(name: string, file: File) {
-    const form = new FormData();
-    form.append("photographerName", name);
-    form.append("files", file);
-    const res = await fetch(`/api/gallery/${slug}/upload`, {
-      method: "POST",
-      body: form,
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
-  }
-
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
@@ -265,8 +253,8 @@ export default function GalleryViewPage() {
       {uploadModalOpen && (
         <UploadModal
           galleryName={gallery.name}
+          slug={slug}
           onClose={() => { setUploadModalOpen(false); fetchGallery(); }}
-          onUpload={handleUploadOne}
         />
       )}
     </div>

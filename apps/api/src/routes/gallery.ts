@@ -7,12 +7,15 @@ import { requireGallerySession } from "../middleware/requireGallerySession.js";
 import { SignJWT } from "jose";
 import { env } from "../lib/env.js";
 import { getCookie, setCookie } from "hono/cookie";
-import { processImage } from "../services/imageProcessor.js";
-import { Effect } from "effect";
 import type { HonoVariables } from "../types.js";
 import { verifyPassword } from "../lib/hash.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { validateFiles, validateFileMagicBytes } from "../lib/validate.js";
+import {
+  initUpload,
+  completeUpload,
+  uploadInitSchema,
+  uploadCompleteSchema,
+} from "../lib/uploadInit.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -90,80 +93,45 @@ app.get("/:slug", requireGallerySession, async (c) => {
   });
 });
 
-app.post("/:slug/upload", requireGallerySession, async (c) => {
-  const event = c.get("galleryEvent");
-  const form = await c.req.formData();
-  const files = form.getAll("files") as File[];
-  const photographerNameRaw = form.get("photographerName") as string;
-  const photographerName = photographerNameRaw ? photographerNameRaw.trim().slice(0, 100) : null;
+// Step 1 — dedup + presigned PUT URLs for guest uploads (direct browser → S3).
+app.post(
+  "/:slug/upload/init",
+  requireGallerySession,
+  zValidator("json", uploadInitSchema),
+  async (c) => {
+    const event = c.get("galleryEvent");
 
-  if (photographerNameRaw && photographerNameRaw.trim().length > 100) {
-    return c.json({ error: "Photographer name must be 100 characters or less" }, 400);
-  }
-
-  if (!files.length) {
-    return c.json({ error: "No files provided" }, 400);
-  }
-
-  // Rate limit: 50 uploads per minute per gallery
-  const rateKey = getRateLimitKey(c, `upload:${event.id}`);
-  if (!checkRateLimit(rateKey, 50, 60_000)) {
-    return c.json({ error: "Too many uploads. Please try again later." }, 429);
-  }
-
-  const validation = validateFiles(files);
-  if (!validation.valid) {
-    return c.json({ error: validation.error }, 400);
-  }
-
-  // Verify actual file content (magic bytes) — prevents MIME type spoofing
-  for (const file of files) {
-    const magic = await validateFileMagicBytes(file);
-    if (!magic.valid) {
-      return c.json({ error: magic.error }, 400);
+    // Rate limit: 50 init requests per minute per gallery
+    const rateKey = getRateLimitKey(c, `upload:${event.id}`);
+    if (!checkRateLimit(rateKey, 50, 60_000)) {
+      return c.json({ error: "Too many uploads. Please try again later." }, 429);
     }
-  }
 
-  // Pre-read all file buffers and extract metadata
-  const photoData = await Promise.all(files.map(async (file) => {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const cleanExt = ext === "png" ? "png" : "jpg";
-    return { buffer, ext: cleanExt };
-  }));
+    const { files, photographerName } = c.req.valid("json");
+    const name = photographerName?.trim().slice(0, 100) || null;
 
-  // Batch-create all Photo records in a single transaction — this acquires
-  // the SQLite write lock once instead of N times, preventing P1008 timeouts
-  // when uploading hundreds of photos.
-  const createdPhotos = await prisma.$transaction(
-    photoData.map(() =>
-      prisma.photo.create({
-        data: {
-          eventId: event.id,
-          photographerName: photographerName || null,
-          originalKey: "",
-          displayKey: "",
-          thumbKey: "",
-          status: "PENDING",
-          uploadedBy: "GUEST",
-        },
-      })
-    )
-  );
-
-  // Fork image processing for each photo
-  const results = createdPhotos.map((photo: { id: string }, i: number) => {
-    Effect.runFork(processImage({
-      photoId: photo.id,
-      buffer: photoData[i].buffer,
+    const photos = await initUpload({
       eventId: event.id,
-      ext: photoData[i].ext,
-    }));
-    return { id: photo.id, status: "PENDING" };
-  });
+      uploadedBy: "GUEST",
+      photographerName: name,
+      files,
+    });
+    return c.json({ photos }, 200);
+  }
+);
 
-  return c.json({ photos: results }, 202);
-});
+// Step 2 — confirm uploads landed in S3, start processing.
+app.post(
+  "/:slug/upload/complete",
+  requireGallerySession,
+  zValidator("json", uploadCompleteSchema),
+  async (c) => {
+    const event = c.get("galleryEvent");
+    const { photoIds } = c.req.valid("json");
+    await completeUpload(event.id, photoIds);
+    return c.json({ ok: true }, 202);
+  }
+);
 
 app.get("/:slug/download", requireGallerySession, async (c) => {
   // Rate limit: 30 download checks per minute per gallery

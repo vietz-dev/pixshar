@@ -2,14 +2,15 @@
 
 import { useRef, useState } from "react";
 import UploadTray, { UploadItem, randomTint } from "./UploadTray";
+import { presignedUpload } from "../lib/uploadClient";
 
 interface UploadModalProps {
   galleryName: string;
+  slug: string;
   onClose: () => void;
-  onUpload: (name: string, file: File) => Promise<void>;
 }
 
-export default function UploadModal({ galleryName, onClose, onUpload }: UploadModalProps) {
+export default function UploadModal({ galleryName, slug, onClose }: UploadModalProps) {
   const [name, setName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<UploadItem[]>([]);
@@ -57,38 +58,40 @@ export default function UploadModal({ galleryName, onClose, onUpload }: UploadMo
     abortRef.current = false;
     setSubmitted(true);
 
-    const batchSize = 4;
-    const items = queue.slice();
-    let idx = 0;
+    const uploadItems = queue
+      .map((it) => {
+        const file = fileMapRef.current.get(it.id);
+        return file ? { uid: it.id, file } : null;
+      })
+      .filter((x): x is { uid: string; file: File } => x !== null);
 
-    while (idx < items.length) {
-      if (abortRef.current) break;
-      const batch = items.slice(idx, idx + batchSize);
-      const batchIds = new Set(batch.map((b) => b.id));
-
+    try {
+      await presignedUpload({
+        items: uploadItems,
+        initUrl: `/api/gallery/${slug}/upload/init`,
+        completeUrl: `/api/gallery/${slug}/upload/complete`,
+        photographerName: name.trim(),
+        shouldAbort: () => abortRef.current,
+        onStatus: (uid, status, progress) => {
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.id === uid
+                ? {
+                    ...q,
+                    status,
+                    progress: progress ?? (status === "done" || status === "skipped" ? 100 : q.progress),
+                  }
+                : q
+            )
+          );
+        },
+      });
+    } catch {
       setQueue((prev) =>
-        prev.map((q) => (batchIds.has(q.id) ? { ...q, status: "uploading" as const, progress: 0 } : q))
+        prev.map((q) =>
+          q.status === "queued" || q.status === "uploading" ? { ...q, status: "error" as const, progress: 0 } : q
+        )
       );
-
-      const results = await Promise.allSettled(
-        batch.map(async (item) => {
-          const file = fileMapRef.current.get(item.id);
-          if (!file) throw new Error("File not found");
-          try {
-            await onUpload(name.trim(), file);
-            setQueue((prev) =>
-              prev.map((q) => (q.id === item.id ? { ...q, status: "done" as const, progress: 100 } : q))
-            );
-          } catch {
-            setQueue((prev) =>
-              prev.map((q) => (q.id === item.id ? { ...q, status: "error" as const, progress: 0 } : q))
-            );
-            throw new Error("Upload failed");
-          }
-        })
-      );
-
-      idx += batchSize;
     }
   }
 

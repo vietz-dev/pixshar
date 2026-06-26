@@ -176,6 +176,12 @@ config:
   s3Bucket: "pixshar"
   s3Region: "us-east-1"
   s3PublicUrl: ""
+  # Host the browser uses for presigned URLs (direct-to-S3 upload + display).
+  # Leave empty when s3Endpoint is already reachable from the browser. Set this
+  # if the API talks to S3 over an in-cluster/internal host the browser can't.
+  # NOTE: the S3 bucket must allow CORS (GET/PUT/HEAD) from your web origin for
+  # browser uploads to succeed.
+  s3PublicEndpoint: ""
   downloadDebounceSeconds: 600
 
 # --- Ingress ---

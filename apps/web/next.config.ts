@@ -6,9 +6,9 @@ const workspaceRoot = process.env.WORKSPACE_ROOT;
 
 const nextConfig: NextConfig = {
   ...(workspaceRoot ? { turbopack: { root: workspaceRoot } } : {}),
-  env: {
-    API_URL: process.env.API_URL ?? "http://pixshar-api:3001"
-  },
+  // NOTE: do NOT inline API_URL via `env` here — that bakes the build-time value
+  // into the bundle and defeats the runtime override. src/middleware.ts reads
+  // process.env.API_URL at runtime (e.g. http://api:3001 in compose).
   output: "standalone",
   // API proxying is handled by src/middleware.ts for runtime env var support
   async headers() {

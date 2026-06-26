@@ -1,15 +1,21 @@
 import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
-import { processImage } from "../services/imageProcessor.js";
-import { Effect } from "effect";
 import type { HonoVariables } from "../types.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { validateFiles, validateFileMagicBytes } from "../lib/validate.js";
+import {
+  initUpload,
+  completeUpload,
+  uploadInitSchema,
+  uploadCompleteSchema,
+} from "../lib/uploadInit.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
-app.post("/events/:id/photos", requireAdmin, async (c) => {
+// Step 1 — dedup the requested files and hand back presigned PUT URLs for the
+// fresh ones. The browser uploads originals directly to S3 (no proxy).
+app.post("/events/:id/photos/init", requireAdmin, zValidator("json", uploadInitSchema), async (c) => {
   const eventId = c.req.param("id");
   const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id: eventId } });
@@ -20,72 +26,43 @@ app.post("/events/:id/photos", requireAdmin, async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
 
-  const form = await c.req.formData();
-  const files = form.getAll("files") as File[];
-
-  if (!files.length) {
-    return c.json({ error: "No files provided" }, 400);
-  }
-
-  // Rate limit: 100 uploads per minute per admin
-  const userId = c.get("user").id;
-  const rateKey = getRateLimitKey(c, `admin-upload:${userId}`);
+  // Rate limit: 100 init requests per minute per admin
+  const rateKey = getRateLimitKey(c, `admin-upload:${user.id}`);
   if (!checkRateLimit(rateKey, 100, 60_000)) {
     return c.json({ error: "Too many uploads. Please try again later." }, 429);
   }
 
-  const validation = validateFiles(files);
-  if (!validation.valid) {
-    return c.json({ error: validation.error }, 400);
-  }
-
-  // Verify actual file content (magic bytes) — prevents MIME type spoofing
-  for (const file of files) {
-    const magic = await validateFileMagicBytes(file);
-    if (!magic.valid) {
-      return c.json({ error: magic.error }, 400);
-    }
-  }
-
-  // Pre-read all file buffers and extract metadata
-  const photoData = await Promise.all(files.map(async (file) => {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const cleanExt = ext === "png" ? "png" : "jpg";
-    return { buffer, ext: cleanExt };
-  }));
-
-  // Batch-create all Photo records in a single transaction — this acquires
-  // the SQLite write lock once instead of N times, preventing P1008 timeouts.
-  const createdPhotos = await prisma.$transaction(
-    photoData.map(() =>
-      prisma.photo.create({
-        data: {
-          eventId: event.id,
-          photographerName: null,
-          originalKey: "",
-          displayKey: "",
-          thumbKey: "",
-          status: "PENDING",
-          uploadedBy: "ADMIN",
-        },
-      })
-    )
-  );
-
-  // Fork image processing for each photo
-  const results = createdPhotos.map((photo: { id: string }, i: number) => {
-    Effect.runFork(processImage({
-      photoId: photo.id,
-      buffer: photoData[i].buffer,
-      eventId: event.id,
-      ext: photoData[i].ext,
-    }));
-    return { id: photo.id, status: "PENDING" };
+  const { files } = c.req.valid("json");
+  const photos = await initUpload({
+    eventId: event.id,
+    uploadedBy: "ADMIN",
+    photographerName: null,
+    files,
   });
-
-  return c.json({ photos: results }, 202);
+  return c.json({ photos }, 200);
 });
+
+// Step 2 — the client confirms which uploads landed in S3; kick off processing.
+app.post(
+  "/events/:id/photos/complete",
+  requireAdmin,
+  zValidator("json", uploadCompleteSchema),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const user = c.get("user");
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) {
+      return c.json({ error: "Event not found" }, 404);
+    }
+    if (event.createdById !== user.id) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const { photoIds } = c.req.valid("json");
+    await completeUpload(event.id, photoIds);
+    return c.json({ ok: true }, 202);
+  }
+);
 
 app.get("/events/:id/photos/status", requireAdmin, async (c) => {
   const eventId = c.req.param("id");
