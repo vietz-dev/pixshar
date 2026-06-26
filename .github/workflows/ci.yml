@@ -69,8 +69,16 @@ jobs:
             --set secrets.s3SecretKey=ci-test
       - name: Template Helm chart
         run: |
-          helm template test-release helm/pixshar \
-            --set secrets.betterAuthSecret=ci-test \
-            --set secrets.adminPassword=ci-test \
-            --set secrets.s3AccessKey=ci-test \
-            --set secrets.s3SecretKey=ci-test
+          SECRETS="--set secrets.betterAuthSecret=ci-test --set secrets.adminPassword=ci-test --set secrets.s3AccessKey=ci-test --set secrets.s3SecretKey=ci-test"
+          echo "::group::defaults (no DB configured)"
+          helm template test-release helm/pixshar $SECRETS
+          echo "::endgroup::"
+          echo "::group::bundled postgres"
+          helm template test-release helm/pixshar $SECRETS --set postgres.enabled=true --set postgres.auth.password=ci-test
+          echo "::endgroup::"
+          echo "::group::external DB via DSN secret (CNPG uri)"
+          helm template test-release helm/pixshar $SECRETS --set externalDatabase.existingSecret=mydb-app
+          echo "::endgroup::"
+          echo "::group::external DB from parts"
+          helm template test-release helm/pixshar $SECRETS --set externalDatabase.existingSecret=mydb --set externalDatabase.existingSecretUrlKey= --set externalDatabase.host=db.example.com
+          echo "::endgroup::"

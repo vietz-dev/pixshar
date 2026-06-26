@@ -65,10 +65,13 @@ Create a default fully qualified app name.
 {{- end }}
 
 {{/*
-DATABASE_URL env entries for the API + migrate initContainer. Three modes:
-  1. postgres.enabled            → bundled StatefulSet; password from chart secret.
-  2. externalDatabase + URL key  → full DSN pulled straight from a Secret (CNPG "uri").
-  3. externalDatabase parts      → assembled DSN; password from a Secret key via $(VAR).
+DATABASE_URL env entries for the API + migrate initContainer. Branch order:
+  1. postgres.enabled                         → bundled StatefulSet; password from chart secret.
+  2. externalDatabase.existingSecret + URL key → full DSN pulled straight from a Secret (CNPG "uri").
+  3. externalDatabase.existingSecret           → assembled DSN; password from a Secret key via $(VAR).
+  4. otherwise                                 → assembled DSN from parts, no secret.
+Renders cleanly with defaults (no DB configured) so `helm template`/lint pass; a real
+deploy is expected to pick one of branches 1–3.
 */}}
 {{- define "pixshar.databaseEnv" -}}
 {{- if .Values.postgres.enabled }}
@@ -79,20 +82,23 @@ DATABASE_URL env entries for the API + migrate initContainer. Three modes:
       key: password
 - name: DATABASE_URL
   value: "postgresql://{{ .Values.postgres.auth.username }}:$(POSTGRES_PASSWORD)@{{ include "pixshar.postgres.fullname" . }}:5432/{{ .Values.postgres.auth.database }}?schema=public"
-{{- else if .Values.externalDatabase.existingSecretUrlKey }}
+{{- else if and .Values.externalDatabase.existingSecret .Values.externalDatabase.existingSecretUrlKey }}
 - name: DATABASE_URL
   valueFrom:
     secretKeyRef:
-      name: {{ required "externalDatabase.existingSecret is required when externalDatabase.existingSecretUrlKey is set" .Values.externalDatabase.existingSecret }}
+      name: {{ .Values.externalDatabase.existingSecret }}
       key: {{ .Values.externalDatabase.existingSecretUrlKey }}
-{{- else }}
+{{- else if .Values.externalDatabase.existingSecret }}
 - name: POSTGRES_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: {{ required "externalDatabase.existingSecret is required" .Values.externalDatabase.existingSecret }}
+      name: {{ .Values.externalDatabase.existingSecret }}
       key: {{ .Values.externalDatabase.existingSecretPasswordKey }}
 - name: DATABASE_URL
   value: "postgresql://{{ .Values.externalDatabase.username }}:$(POSTGRES_PASSWORD)@{{ .Values.externalDatabase.host }}:{{ .Values.externalDatabase.port }}/{{ .Values.externalDatabase.database }}?sslmode={{ .Values.externalDatabase.sslmode }}"
+{{- else }}
+- name: DATABASE_URL
+  value: "postgresql://{{ .Values.externalDatabase.username }}@{{ .Values.externalDatabase.host }}:{{ .Values.externalDatabase.port }}/{{ .Values.externalDatabase.database }}?sslmode={{ .Values.externalDatabase.sslmode }}"
 {{- end }}
 {{- end }}
 
