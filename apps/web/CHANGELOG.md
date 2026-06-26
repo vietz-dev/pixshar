@@ -1,5 +1,15 @@
 # @pixshar/web
 
+## 0.0.21
+
+### Patch Changes
+
+- bdeff78: Better handling of building archieve for downlaod
+- 81f8dfb: Detect Duplicate Upload
+- Updated dependencies [bdeff78]
+- Updated dependencies [81f8dfb]
+  - @pixshar/shared@0.0.21
+
 ## 0.0.20
 
 ### Patch Changes

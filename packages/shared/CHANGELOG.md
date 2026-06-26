@@ -1,5 +1,12 @@
 # @pixshar/shared
 
+## 0.0.21
+
+### Patch Changes
+
+- bdeff78: Better handling of building archieve for downlaod
+- 81f8dfb: Detect Duplicate Upload
+
 ## 0.0.20
 
 ### Patch Changes
