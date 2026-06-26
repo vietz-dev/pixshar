@@ -1,5 +1,13 @@
 # @pixshar/api
 
+## 0.0.22
+
+### Patch Changes
+
+- 2a2322d: use forcePathStyle false because of tigris redirects
+- Updated dependencies [2a2322d]
+  - @pixshar/shared@0.0.22
+
 ## 0.0.21
 
 ### Patch Changes
