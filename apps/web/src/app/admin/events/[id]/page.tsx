@@ -49,6 +49,7 @@ export default function EventDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadStatus, setUploadStatus] = useState({ pending: 0, processed: 0, failed: 0, total: 0 });
+  const [retryingFailed, setRetryingFailed] = useState(false);
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -79,15 +80,47 @@ export default function EventDetailPage() {
     fetchEvent();
   }, [fetchEvent]);
 
+  const eventLoaded = !!event;
   useEffect(() => {
-    if (!event) return;
+    if (!eventLoaded) return;
     const es = new EventSource(`/api/upload/events/${id}/photos/status/stream`, { withCredentials: true });
     es.addEventListener("photo-status", (e) => {
       setUploadStatus(JSON.parse(e.data));
     });
-    es.onerror = () => es.close();
+    es.addEventListener("photo-new", (e) => {
+      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null };
+      setEvent((prev) => {
+        if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
+        const photo: Photo = {
+          id: p.id,
+          photographerName: p.photographerName,
+          originalKey: "",
+          displayKey: "",
+          thumbKey: "",
+          thumbUrl: p.thumbUrl,
+          displayUrl: p.displayUrl,
+          status: "PROCESSED",
+          uploadedBy: "ADMIN",
+          createdAt: new Date().toISOString(),
+        };
+        return { ...prev, photos: [photo, ...prev.photos] };
+      });
+    });
+    // Let EventSource auto-reconnect on transient drops (don't close here).
+    es.onerror = () => {};
     return () => es.close();
-  }, [id, event]);
+  }, [id, eventLoaded]);
+
+  // Backfill safety net: photo-new events can be missed across an SSE reconnect
+  // (no replay). Whenever the processed count rises — including the snapshot the
+  // stream pushes on (re)connect — refetch the event so the grid catches up.
+  const prevProcessed = useRef(0);
+  useEffect(() => {
+    if (uploadStatus.processed > prevProcessed.current) {
+      prevProcessed.current = uploadStatus.processed;
+      fetchEvent();
+    }
+  }, [uploadStatus.processed, fetchEvent]);
 
   async function handleUpload(files: FileList | null) {
     if (!files || !files.length) return;
@@ -154,6 +187,16 @@ export default function EventDetailPage() {
 
   function handleCancelUpload() {
     abortRef.current = true;
+  }
+
+  async function handleRetryFailed() {
+    setRetryingFailed(true);
+    try {
+      await fetch(`/api/events/${id}/photos/retry`, { method: "POST", credentials: "include" });
+      // Progress + new thumbnails arrive via the SSE stream.
+    } finally {
+      setRetryingFailed(false);
+    }
   }
 
   function handleClearUpload() {
@@ -315,6 +358,22 @@ export default function EventDetailPage() {
             <div style={{ height: 7, borderRadius: 999, background: "#fde68a", overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${progressPct}%`, background: "#d97706", borderRadius: 999, transition: "width .6s ease" }} />
             </div>
+          </div>
+        )}
+
+        {/* Failed processing */}
+        {uploadStatus.failed > 0 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "13px 16px", marginBottom: 16 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 500, color: "#b91c1c" }}>
+              {uploadStatus.failed} photo{uploadStatus.failed === 1 ? "" : "s"} failed to process
+            </span>
+            <button
+              onClick={handleRetryFailed}
+              disabled={retryingFailed}
+              style={{ height: 32, padding: "0 13px", borderRadius: 7, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12.5, fontWeight: 500, cursor: "pointer", opacity: retryingFailed ? 0.6 : 1 }}
+            >
+              {retryingFailed ? "Retrying…" : "Retry failed"}
+            </button>
           </div>
         )}
 

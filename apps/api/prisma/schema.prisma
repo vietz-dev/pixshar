@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -85,20 +85,29 @@ model Event {
 }
 
 model Photo {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   eventId          String
   photographerName String?
   originalKey      String
   displayKey       String
   thumbKey         String
-  status           String   @default("PENDING")
-  uploadedBy       String   @default("ADMIN")
+  // PENDING | PROCESSING | PROCESSED | FAILED. The row is also the durable
+  // resize job: claim/retry/lease columns below drive resizeWorker.ts.
+  status           String    @default("PENDING")
+  uploadedBy       String    @default("ADMIN")
   fileHash         String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  event            Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  attempts         Int       @default(0)
+  lastError        String?
+  claimedAt        DateTime?
+  claimedBy        String?
+  nextAttemptAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  event            Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, fileHash])
+  @@index([status, nextAttemptAt])
+  @@index([status, claimedAt])
   @@map("photo")
 }
 
@@ -118,12 +127,14 @@ model DownloadJob {
   photoCount      Int               @default(0)
   processedPhotos Int               @default(0)
   uploadProgress  Int               @default(0)
-  zipKey          String?
-  zipSizeBytes    Int?
-  debounceUntil   DateTime?
-  failureReason   String?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  zipKey            String?
+  zipSizeBytes      Int?
+  debounceUntil     DateTime?
+  debounceStartedAt DateTime?
+  heartbeatAt       DateTime?
+  failureReason     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 

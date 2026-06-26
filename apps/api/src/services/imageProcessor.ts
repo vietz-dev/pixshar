@@ -1,14 +1,14 @@
-import { Effect, Schedule, Console } from "effect";
-import { s3, getS3Object, deleteS3Object } from "../lib/s3.js";
+import { Effect, Console } from "effect";
+import { s3, getS3Object, getPresignedUrl } from "../lib/s3.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
 import { sha256Hex } from "../lib/hash.js";
 import { isValidImageBytes, MAX_FILE_SIZE } from "../lib/validate.js";
 import { triggerDebounce } from "./downloadJob.js";
-import { emitPhotoStatus } from "../lib/eventBus.js";
+import { emitPhotoStatus, emitPhotoProcessed } from "../lib/eventBus.js";
 
-async function pushPhotoStatus(eventId: string): Promise<void> {
+export async function pushPhotoStatus(eventId: string): Promise<void> {
   const counts = await prisma.photo.groupBy({
     by: ["status"],
     where: { eventId },
@@ -30,9 +30,9 @@ export interface ProcessImageInput {
   fileHash: string;
 }
 
-// Thrown when the uploaded original isn't a valid/sane image. Not retried —
-// retrying won't change the bytes — so it bypasses the retry schedule.
-class InvalidOriginalError extends Error {
+// Thrown when the uploaded original isn't a valid/sane image. The queue treats
+// this as terminal (no retry) and deletes the orphaned original.
+export class InvalidOriginalError extends Error {
   readonly _tag = "InvalidOriginalError";
 }
 
@@ -40,31 +40,6 @@ export interface ProcessImageOutput {
   originalKey: string;
   displayKey: string;
   thumbKey: string;
-}
-
-// Concurrency semaphore: limit to 8 concurrent image processing jobs
-const MAX_CONCURRENT = 8;
-let activeJobs = 0;
-const queue: Array<() => void> = [];
-
-function acquire(): Promise<void> {
-  return new Promise((resolve) => {
-    if (activeJobs < MAX_CONCURRENT) {
-      activeJobs++;
-      resolve();
-    } else {
-      queue.push(() => {
-        activeJobs++;
-        resolve();
-      });
-    }
-  });
-}
-
-function release(): void {
-  activeJobs = Math.max(0, activeJobs - 1);
-  const next = queue.shift();
-  if (next) next();
 }
 
 const uploadToS3 = (key: string, buffer: Buffer, contentType: string) =>
@@ -99,7 +74,10 @@ const resizeImage = (
     catch: (e) => new Error(`Resize failed: ${e}`),
   });
 
-const processImageEffect = (input: ProcessImageInput) =>
+// Pure success pipeline: fetch original → resize → upload → mark PROCESSED.
+// On any failure it FAILS (typed) — the durable queue (resizeWorker.ts) owns
+// retry/backoff and the FAILED transition, so there is no retry/catchAll here.
+export const processImageEffect = (input: ProcessImageInput) =>
   Effect.gen(function* () {
     const { photoId, eventId, ext, originalKey, fileHash } = input;
     const base = `${eventId}/${photoId}`;
@@ -115,7 +93,7 @@ const processImageEffect = (input: ProcessImageInput) =>
     });
 
     // Validation moved here (the API never saw these bytes at upload time):
-    // reject anything that isn't a sane image. Not retryable.
+    // reject anything that isn't a sane image. Terminal (not retryable).
     if (buffer.length > MAX_FILE_SIZE || !isValidImageBytes(buffer)) {
       yield* Effect.fail(new InvalidOriginalError(`Original ${originalKey} is not a valid image`));
     }
@@ -140,7 +118,7 @@ const processImageEffect = (input: ProcessImageInput) =>
       uploadToS3(thumbKey, thumbBuf, "image/jpeg"),
     ]);
 
-    yield* Effect.tryPromise({
+    const photo = yield* Effect.tryPromise({
       try: () =>
         prisma.photo.update({
           where: { id: photoId },
@@ -148,6 +126,9 @@ const processImageEffect = (input: ProcessImageInput) =>
             displayKey,
             thumbKey,
             status: "PROCESSED",
+            claimedAt: null,
+            claimedBy: null,
+            lastError: null,
           },
         }),
       catch: (e) => new Error(`DB update failed: ${e}`),
@@ -156,48 +137,26 @@ const processImageEffect = (input: ProcessImageInput) =>
     yield* Console.log(`Photo ${photoId} processed`);
     yield* Effect.promise(() => pushPhotoStatus(eventId).catch(() => {}));
 
+    // Push the new photo to live viewers (admin grid + gallery) — presign here.
+    yield* Effect.promise(async () => {
+      try {
+        const [thumbUrl, displayUrl] = await Promise.all([
+          getPresignedUrl(thumbKey, "get", 3600),
+          getPresignedUrl(displayKey, "get", 3600),
+        ]);
+        emitPhotoProcessed(eventId, {
+          id: photoId,
+          thumbUrl,
+          displayUrl,
+          photographerName: photo.photographerName,
+        });
+      } catch {
+        // best-effort live update
+      }
+    });
+
     // Trigger download archive debounce (non-blocking, failures ignored)
     yield* Effect.promise(() => triggerDebounce(eventId).catch(() => {}));
 
     return { originalKey, displayKey, thumbKey };
-  }).pipe(
-    // Don't waste retries on bytes that will never become a valid image.
-    Effect.retry({
-      times: 3,
-      schedule: Schedule.exponential("1 second"),
-      while: (e) => !(e instanceof InvalidOriginalError),
-    }),
-    Effect.catchAll((e) =>
-      Effect.gen(function* () {
-        yield* Console.error(`Failed to process photo ${input.photoId}: ${e}`);
-        // A bad/invalid original shouldn't linger in S3 (and frees the dedup
-        // hash via the FAILED-row recycling on retry).
-        if (e instanceof InvalidOriginalError) {
-          yield* Effect.promise(() => deleteS3Object(input.originalKey).catch(() => {}));
-        }
-        yield* Effect.tryPromise({
-          try: () =>
-            prisma.photo.update({
-              where: { id: input.photoId },
-              data: { status: "FAILED" },
-            }),
-          catch: () => new Error("DB update failed"),
-        });
-        yield* Effect.promise(() => pushPhotoStatus(input.eventId).catch(() => {}));
-        return { originalKey: "", displayKey: "", thumbKey: "" };
-      })
-    )
-  );
-
-export const processImage = (input: ProcessImageInput) =>
-  Effect.gen(function* () {
-    yield* Effect.promise(() => acquire());
-    const result = yield* processImageEffect(input).pipe(
-      Effect.ensuring(Effect.sync(release))
-    );
-    return result;
-  }).pipe(
-    Effect.catchAll(() =>
-      Effect.succeed({ originalKey: "", displayKey: "", thumbKey: "" })
-    )
-  );
+  });

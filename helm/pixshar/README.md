@@ -16,7 +16,7 @@ The chart deploys two components:
 
 | Component | Description | Port |
 |-----------|-------------|------|
-| **API** | Hono + Bun + Prisma + SQLite backend | 3001 |
+| **API** | Hono + Bun + Prisma + Postgres backend | 3001 |
 | **Web** | Next.js 15 frontend (proxies `/api/*` to API) | 3000 |
 
 ## Quick Start
@@ -134,19 +134,52 @@ ingress:
   apiDirectRouting: true
 ```
 
-### Persistence
+### Database (Postgres)
 
-The API uses SQLite for its database. The chart creates a PersistentVolumeClaim to store the database file:
+Pixshar uses Postgres. The API is stateless — no PVC — so it scales horizontally; durability lives in Postgres. There are three ways to wire it up.
+
+**1. Link an existing Postgres via a ready-made DSN secret (recommended).**
+A managed operator like CloudNativePG (CNPG) publishes a full `postgres://…` connection string under the `uri` key of its `<cluster>-app` secret. Point the chart at it (sync the secret with openBAO / External Secrets if you like):
 
 ```yaml
-api:
-  persistence:
-    enabled: true
-    storageClass: "fast-ssd"   # optional
-    size: 5Gi
+postgres:
+  enabled: false
+externalDatabase:
+  existingSecret: "mycluster-app"   # the CNPG app secret
+  existingSecretUrlKey: "uri"        # default
 ```
 
-**Important:** For production, consider backing up the PVC regularly. SQLite is a single file — you can use `kubectl cp` or a sidecar container to back it up.
+**2. Link an existing Postgres by parts**, with the password from a secret key:
+
+```yaml
+postgres:
+  enabled: false
+externalDatabase:
+  existingSecret: "my-db-creds"
+  existingSecretUrlKey: ""            # disable the DSN path
+  existingSecretPasswordKey: "password"
+  host: postgres.db.svc.cluster.local
+  port: 5432
+  database: pixshar
+  username: pixshar
+  sslmode: require
+```
+
+**3. Bundled fallback** — a single-replica `pixshar-postgres` StatefulSet (testing / small self-host):
+
+```yaml
+postgres:
+  enabled: true
+  auth:
+    username: pixshar
+    database: pixshar
+    password: "change-me"            # or set auth.existingSecret (key: password)
+  persistence:
+    size: 8Gi
+    storageClass: "fast-ssd"         # optional
+```
+
+Migrations (`prisma migrate deploy`) and the admin seed run from an init container on every rollout; both are idempotent, so they are safe with multiple API replicas.
 
 ### Autoscaling
 
@@ -185,14 +218,21 @@ web:
 | `config.s3Bucket` | `"pixshar"` | S3 bucket name |
 | `config.s3Region` | `"us-east-1"` | S3 region |
 | `config.s3PublicUrl` | `""` | Public URL for S3 objects (optional) |
-| `config.downloadDebounceSeconds` | `600` | ZIP archive debounce timer |
+| `config.downloadDebounceSeconds` | `60` | ZIP archive debounce timer (quiet period) |
+| `postgres.enabled` | `false` | Spin up the bundled `pixshar-postgres` StatefulSet |
+| `postgres.auth.username` | `pixshar` | Bundled DB user |
+| `postgres.auth.database` | `pixshar` | Bundled DB name |
+| `postgres.auth.password` | `""` | Bundled DB password (or use `auth.existingSecret`) |
+| `postgres.auth.existingSecret` | `""` | Secret holding key `password` for the bundled DB |
+| `postgres.persistence.size` | `8Gi` | Bundled DB volume size |
+| `externalDatabase.existingSecret` | `""` | Secret holding the external DB credentials |
+| `externalDatabase.existingSecretUrlKey` | `"uri"` | Secret key with a full DSN (CNPG). Empty = assemble from parts |
+| `externalDatabase.existingSecretPasswordKey` | `"password"` | Secret key with the password (parts mode) |
+| `externalDatabase.host` / `.port` / `.database` / `.username` / `.sslmode` | — | External DB parts (parts mode) |
 | `api.image.repository` | `"pixshar/api"` | API image repository |
 | `api.image.tag` | `""` | API image tag (defaults to appVersion) |
 | `api.replicaCount` | `1` | API replicas |
 | `api.resources` | see `values.yaml` | API resource requests/limits |
-| `api.persistence.enabled` | `true` | Enable SQLite PVC |
-| `api.persistence.size` | `1Gi` | PVC size |
-| `api.persistence.storageClass` | `""` | Storage class (empty = default) |
 | `api.autoscaling.enabled` | `false` | Enable API HPA |
 | `web.image.repository` | `"pixshar/web"` | Web image repository |
 | `web.image.tag` | `""` | Web image tag (defaults to appVersion) |
@@ -215,7 +255,7 @@ web:
 - All capabilities are dropped
 - Service account token auto-mounting is disabled by default
 - Secrets are stored in Kubernetes Secrets (not in ConfigMaps)
-- SQLite database is persisted on a PVC
+- The API is stateless; durable data lives in Postgres
 
 ## Uninstall
 
@@ -223,8 +263,8 @@ web:
 helm uninstall pixshar --namespace pixshar
 ```
 
-To also delete the PVC (and the database):
+If you used the bundled Postgres, its data volume is retained on uninstall. To also delete it:
 
 ```bash
-kubectl delete pvc -n pixshar -l app.kubernetes.io/name=pixshar
+kubectl delete pvc -n pixshar -l app.kubernetes.io/component=postgres
 ```

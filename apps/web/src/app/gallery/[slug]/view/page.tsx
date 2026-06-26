@@ -54,6 +54,29 @@ export default function GalleryViewPage() {
     fetchGallery();
   }, [fetchGallery]);
 
+  // Live feed: new photos (from any guest's upload) appear without a refresh.
+  const galleryLoaded = !!gallery;
+  useEffect(() => {
+    if (!galleryLoaded) return;
+    const es = new EventSource(`/api/gallery/${slug}/photos/stream`, { withCredentials: true });
+    es.addEventListener("photo-new", (e) => {
+      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null };
+      setGallery((prev) => {
+        if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
+        const photo: GalleryPhoto = {
+          id: p.id,
+          photographerName: p.photographerName,
+          thumbUrl: p.thumbUrl,
+          displayUrl: p.displayUrl,
+          status: "PROCESSED",
+        };
+        return { ...prev, photos: [photo, ...prev.photos] };
+      });
+    });
+    es.onerror = () => {};
+    return () => es.close();
+  }, [slug, galleryLoaded]);
+
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>

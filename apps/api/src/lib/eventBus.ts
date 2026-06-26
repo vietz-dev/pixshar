@@ -23,6 +23,13 @@ export interface DownloadStatusPayload {
   updatedAt: string;
 }
 
+export interface PhotoProcessedPayload {
+  id: string;
+  thumbUrl: string;
+  displayUrl: string;
+  photographerName: string | null;
+}
+
 export function emitPhotoStatus(eventId: string, payload: PhotoStatusPayload): void {
   bus.emit(`photo-status:${eventId}`, payload);
 }
@@ -45,4 +52,16 @@ export function onDownloadStatus(
 ): () => void {
   bus.on(`download-status:${eventId}`, cb);
   return () => bus.off(`download-status:${eventId}`, cb);
+}
+
+export function emitPhotoProcessed(eventId: string, payload: PhotoProcessedPayload): void {
+  bus.emit(`photo-processed:${eventId}`, payload);
+}
+
+export function onPhotoProcessed(
+  eventId: string,
+  cb: (p: PhotoProcessedPayload) => void
+): () => void {
+  bus.on(`photo-processed:${eventId}`, cb);
+  return () => bus.off(`photo-processed:${eventId}`, cb);
 }

@@ -27,7 +27,8 @@ export default function DownloadButton({ slug }: { slug: string }) {
         es.close();
       }
     });
-    es.onerror = () => es.close();
+    // Auto-reconnect on transient drops; we still close on terminal status above.
+    es.onerror = () => {};
     return () => es.close();
   }, [slug]);
 

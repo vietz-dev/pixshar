@@ -29,11 +29,20 @@
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
 {{- end }}
 
-{{- if .Values.api.persistence.enabled }}
+{{- if .Values.postgres.enabled }}
 
 ---
-Database persistence is enabled.
-PVC: {{ include "pixshar.pvcName" . }}
+Using the bundled Postgres StatefulSet: {{ include "pixshar.postgres.fullname" . }}
+For production, prefer an external managed Postgres via externalDatabase.
+{{- else }}
+
+---
+Using external Postgres.
+{{- if .Values.externalDatabase.existingSecretUrlKey }}
+DSN from secret {{ .Values.externalDatabase.existingSecret }} key {{ .Values.externalDatabase.existingSecretUrlKey }}.
+{{- else }}
+Host: {{ .Values.externalDatabase.host }} (password from secret {{ .Values.externalDatabase.existingSecret }}).
+{{- end }}
 {{- end }}
 
 {{- if .Values.secrets.existingSecret }}

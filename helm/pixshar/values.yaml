@@ -11,9 +11,45 @@ serviceAccount:
   annotations: {}
   name: ""
 
+# --- Database ---
+# Pixshar uses Postgres. Recommended: link an existing managed Postgres (CNPG,
+# RDS, …) via `externalDatabase`. For quick testing the chart can also spin up a
+# single-replica `pixshar-postgres` StatefulSet by setting `postgres.enabled`.
+#
+# Bundled fallback Postgres — disabled by default; prefer an external DB.
+postgres:
+  enabled: false
+  image: postgres:17-alpine
+  auth:
+    username: pixshar
+    database: pixshar
+    # Used to create the chart-managed secret when enabled and no existingSecret.
+    password: ""
+    # Reference an existing secret holding key `password` instead of the above.
+    existingSecret: ""
+  persistence:
+    size: 8Gi
+    storageClass: ""
+  resources: {}
+
+# External Postgres (used when postgres.enabled=false — the recommended path).
+externalDatabase:
+  # Option A (preferred — CNPG / openBAO): pull a ready-made DSN from a Secret.
+  # CNPG publishes a full `postgres://…` connection string under the "uri" key of
+  # its "<cluster>-app" secret; point existingSecret at it and you're done.
+  existingSecret: ""
+  existingSecretUrlKey: "uri"
+  # Option B: assemble the DSN from parts; password comes from a Secret key.
+  # Set existingSecretUrlKey: "" to use this path.
+  host: ""
+  port: 5432
+  database: pixshar
+  username: pixshar
+  existingSecretPasswordKey: "password"
+  sslmode: require
+
 # --- API ---
-# The Pixshar API (Hono + Bun + Prisma + SQLite).
-# The SQLite database is stored on a PVC.
+# The Pixshar API (Hono + Bun + Prisma + Postgres).
 api:
   enabled: true
   image:
@@ -66,14 +102,6 @@ api:
     periodSeconds: 5
     timeoutSeconds: 3
     failureThreshold: 3
-
-  # SQLite database persistence.
-  persistence:
-    enabled: true
-    storageClass: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 1Gi
 
   # Extra volumes for the API pod.
   extraVolumes: []

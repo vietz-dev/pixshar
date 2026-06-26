@@ -35,8 +35,10 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.api.persistence.enabled }}
       initContainers:
+        # Runs prisma migrate deploy + seed against Postgres before the API starts.
+        # Safe to run on every rollout; with multiple replicas each pod runs it but
+        # migrate deploy is idempotent and the seed is upsert-based.
         - name: db-migrate
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
@@ -44,20 +46,15 @@ spec:
             - /bin/sh
             - -c
             - |
-              cd /app/apps/api && \
-              DATABASE_URL="file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000" bunx prisma migrate deploy && \
-              DATABASE_URL="file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000" bun prisma/seed.ts
+              cd /app/apps/api && bunx prisma migrate deploy && bun prisma/seed.ts
           envFrom:
             - configMapRef:
                 name: {{ include "pixshar.configMapName" . }}
             - secretRef:
                 name: {{ include "pixshar.secretName" . }}
           env:
-            - name: DATABASE_URL
-              value: "file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000"
+            {{- include "pixshar.databaseEnv" . | nindent 12 }}
           volumeMounts:
-            - name: db
-              mountPath: /data
             - name: tmp
               mountPath: /tmp
           {{- with .Values.api.securityContext }}
@@ -68,7 +65,6 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- end }}
       containers:
         - name: api
           {{- with .Values.api.securityContext }}
@@ -86,11 +82,8 @@ spec:
                 name: {{ include "pixshar.configMapName" . }}
             - secretRef:
                 name: {{ include "pixshar.secretName" . }}
-          {{- if .Values.api.persistence.enabled }}
           env:
-            - name: DATABASE_URL
-              value: "file:/data/prod.db?_journal_mode=WAL&_busy_timeout=30000"
-          {{- end }}
+            {{- include "pixshar.databaseEnv" . | nindent 12 }}
           {{- with .Values.api.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -104,21 +97,12 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            {{- if .Values.api.persistence.enabled }}
-            - name: db
-              mountPath: /data
-            {{- end }}
             - name: tmp
               mountPath: /tmp
             {{- with .Values.api.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
-        {{- if .Values.api.persistence.enabled }}
-        - name: db
-          persistentVolumeClaim:
-            claimName: {{ include "pixshar.pvcName" . }}
-        {{- end }}
         - name: tmp
           emptyDir: {}
         {{- with .Values.api.extraVolumes }}

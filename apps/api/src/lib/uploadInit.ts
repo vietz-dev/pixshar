@@ -1,9 +1,8 @@
 import { z } from "zod";
-import { Effect } from "effect";
 import { prisma } from "./prisma.js";
 import { getPresignedPutUrl, deleteS3Object } from "./s3.js";
 import { MAX_FILE_SIZE, MAX_FILES_PER_UPLOAD, ALLOWED_MIME_TYPES } from "./validate.js";
-import { processImage } from "../services/imageProcessor.js";
+import { wakeResizeWorker } from "../services/resizeWorker.js";
 import type { UploadInitResult } from "@pixshar/shared";
 
 // Shared logic for the presigned, deduplicated upload flow used by both the
@@ -162,21 +161,12 @@ export async function initUpload(opts: {
 }
 
 /**
- * After the client has PUT the originals to S3, kick off processing for the
- * given PENDING photos belonging to this event. Idempotent: rows that are
- * missing, already PROCESSED, or belong to another event are ignored.
+ * The client has PUT the originals to S3. Processing is driven by the durable
+ * resize queue (resizeWorker.ts), which polls for PENDING rows — so this only
+ * needs to wake the worker for low latency. Correctness does not depend on it:
+ * an abandoned upload (tab closed before this fires) is still picked up by the
+ * poll loop, and crash recovery is handled by the stale-PROCESSING reaper.
  */
-export async function completeUpload(eventId: string, photoIds: string[]): Promise<void> {
-  const photos = await prisma.photo.findMany({
-    where: { id: { in: photoIds }, eventId, status: "PENDING" },
-    select: { id: true, originalKey: true, fileHash: true },
-  });
-
-  for (const p of photos) {
-    if (!p.originalKey || !p.fileHash) continue;
-    const ext = p.originalKey.split(".").pop() || "jpg";
-    Effect.runFork(
-      processImage({ photoId: p.id, eventId, ext, originalKey: p.originalKey, fileHash: p.fileHash })
-    );
-  }
+export async function completeUpload(_eventId: string, _photoIds: string[]): Promise<void> {
+  wakeResizeWorker();
 }

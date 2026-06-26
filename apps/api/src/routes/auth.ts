@@ -1,12 +1,9 @@
 import { Hono } from "hono"
-import { auth } from "src/lib/auth.js"
-
+import { auth } from "../lib/auth.js"
 
 const router = new Hono({ strict: false })
 
-router.all('**', (c) => {
-  console.log(c.req.raw);
-  return auth.handler(c.req.raw)
-})
+// Mounted at /api/auth — forward every method/path under it to BetterAuth.
+router.all("/*", (c) => auth.handler(c.req.raw))
 
 export default router

@@ -10,7 +10,6 @@ data:
   API_URL: {{ .Values.config.apiUrl | quote }}
   WEB_URL: {{ .Values.config.webUrl | quote }}
   BETTER_AUTH_URL: {{ .Values.config.betterAuthUrl | quote }}
-  DATABASE_URL: "file:./prisma/prod.db"
   S3_ENDPOINT: {{ .Values.config.s3Endpoint | quote }}
   S3_BUCKET: {{ .Values.config.s3Bucket | quote }}
   S3_REGION: {{ .Values.config.s3Region | quote }}

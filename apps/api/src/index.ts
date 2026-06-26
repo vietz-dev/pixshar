@@ -7,7 +7,8 @@ import events from "./routes/events.js";
 import gallery from "./routes/gallery.js";
 import upload from "./routes/upload.js";
 import auth from "./routes/auth.js";
-import { startDebouncePoller } from "./services/downloadJob.js";
+import { startDebouncePoller, startZipReaper } from "./services/downloadJob.js";
+import { startResizeWorker, startProcessingReaper } from "./services/resizeWorker.js";
 import { initDatabase } from "./lib/prisma.js";
 
 const app = new Hono({strict: false });
@@ -52,8 +53,15 @@ if (import.meta.main) {
   console.log(`API server running on http://localhost:${env.API_PORT}`);
   await initDatabase();
   startDebouncePoller();
+  startResizeWorker(env.POD_ID);
+  startProcessingReaper();
+  startZipReaper();
   Bun.serve({
     port: env.API_PORT,
+    // SSE streams are mostly idle between events; Bun's default idleTimeout
+    // (~10s) would close them before the keepalive ping. Raise it well past the
+    // keepalive interval so long-lived event streams stay open.
+    idleTimeout: 120,
     fetch: app.fetch,
   });
 }

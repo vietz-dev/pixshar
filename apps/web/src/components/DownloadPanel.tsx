@@ -36,9 +36,10 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
       setState(JSON.parse(e.data));
       setLoading(false);
     });
+    // Don't close on error — let EventSource auto-reconnect after a transient
+    // drop (the browser stops on its own for hard failures like 401/404).
     es.onerror = () => {
       setLoading(false);
-      es.close();
     };
     return () => es.close();
   }, [eventId]);

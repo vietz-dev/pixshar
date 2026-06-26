@@ -17,7 +17,7 @@ import {
   uploadCompleteSchema,
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
-import { onDownloadStatus } from "../lib/eventBus.js";
+import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -256,7 +256,30 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
 
     const keepAlive = setInterval(() => {
       stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
-    }, 30_000);
+    }, 15_000);
+
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        unsubscribe();
+        clearInterval(keepAlive);
+        resolve();
+      });
+    });
+  });
+});
+
+// Live feed of newly-processed photos so the guest grid fills in without a refresh.
+app.get("/:slug/photos/stream", requireGallerySession, async (c) => {
+  const event = c.get("galleryEvent");
+
+  return streamSSE(c, async (stream) => {
+    const unsubscribe = onPhotoProcessed(event.id, async (payload) => {
+      await stream.writeSSE({ data: JSON.stringify(payload), event: "photo-new" });
+    });
+
+    const keepAlive = setInterval(() => {
+      stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
+    }, 15_000);
 
     await new Promise<void>((resolve) => {
       stream.onAbort(() => {

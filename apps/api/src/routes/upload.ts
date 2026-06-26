@@ -11,7 +11,7 @@ import {
   uploadCompleteSchema,
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
-import { onPhotoStatus } from "../lib/eventBus.js";
+import { onPhotoStatus, onPhotoProcessed } from "../lib/eventBus.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -118,17 +118,21 @@ app.get("/events/:id/photos/status/stream", requireAdmin, async (c) => {
       event: "photo-status",
     });
 
-    const unsubscribe = onPhotoStatus(eventId, async (payload) => {
+    const unsubStatus = onPhotoStatus(eventId, async (payload) => {
       await stream.writeSSE({ data: JSON.stringify(payload), event: "photo-status" });
+    });
+    const unsubPhoto = onPhotoProcessed(eventId, async (payload) => {
+      await stream.writeSSE({ data: JSON.stringify(payload), event: "photo-new" });
     });
 
     const keepAlive = setInterval(() => {
       stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
-    }, 30_000);
+    }, 15_000);
 
     await new Promise<void>((resolve) => {
       stream.onAbort(() => {
-        unsubscribe();
+        unsubStatus();
+        unsubPhoto();
         clearInterval(keepAlive);
         resolve();
       });

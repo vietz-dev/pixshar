@@ -45,9 +45,55 @@ Create a default fully qualified app name.
 {{- printf "%s-config" (include "pixshar.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/* PVC name */}}
+{{/* PVC name (legacy; retained for compatibility) */}}
 {{- define "pixshar.pvcName" -}}
 {{- printf "%s-db" (include "pixshar.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/* Bundled Postgres component name */}}
+{{- define "pixshar.postgres.fullname" -}}
+{{- printf "%s-postgres" (include "pixshar.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/* Bundled Postgres secret name (chart-managed unless an existing secret is given) */}}
+{{- define "pixshar.postgres.secretName" -}}
+{{- if .Values.postgres.auth.existingSecret }}
+{{- .Values.postgres.auth.existingSecret }}
+{{- else }}
+{{- include "pixshar.postgres.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+DATABASE_URL env entries for the API + migrate initContainer. Three modes:
+  1. postgres.enabled            → bundled StatefulSet; password from chart secret.
+  2. externalDatabase + URL key  → full DSN pulled straight from a Secret (CNPG "uri").
+  3. externalDatabase parts      → assembled DSN; password from a Secret key via $(VAR).
+*/}}
+{{- define "pixshar.databaseEnv" -}}
+{{- if .Values.postgres.enabled }}
+- name: POSTGRES_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "pixshar.postgres.secretName" . }}
+      key: password
+- name: DATABASE_URL
+  value: "postgresql://{{ .Values.postgres.auth.username }}:$(POSTGRES_PASSWORD)@{{ include "pixshar.postgres.fullname" . }}:5432/{{ .Values.postgres.auth.database }}?schema=public"
+{{- else if .Values.externalDatabase.existingSecretUrlKey }}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "externalDatabase.existingSecret is required when externalDatabase.existingSecretUrlKey is set" .Values.externalDatabase.existingSecret }}
+      key: {{ .Values.externalDatabase.existingSecretUrlKey }}
+{{- else }}
+- name: POSTGRES_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "externalDatabase.existingSecret is required" .Values.externalDatabase.existingSecret }}
+      key: {{ .Values.externalDatabase.existingSecretPasswordKey }}
+- name: DATABASE_URL
+  value: "postgresql://{{ .Values.externalDatabase.username }}:$(POSTGRES_PASSWORD)@{{ .Values.externalDatabase.host }}:{{ .Values.externalDatabase.port }}/{{ .Values.externalDatabase.database }}?sslmode={{ .Values.externalDatabase.sslmode }}"
+{{- end }}
 {{- end }}
 
 {{/* Chart name and version */}}

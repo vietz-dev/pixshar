@@ -1,0 +1,31 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pixshar.postgres.fullname" . }}
+  labels:
+    {{- include "pixshar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "pixshar.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+{{- if not .Values.postgres.auth.existingSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "pixshar.postgres.fullname" . }}
+  labels:
+    {{- include "pixshar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+type: Opaque
+stringData:
+  password: {{ .Values.postgres.auth.password | required "postgres.auth.password is required when postgres.enabled and no existingSecret is set" | quote }}
+{{- end }}
+{{- end }}

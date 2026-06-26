@@ -22,7 +22,18 @@ const schema = z.object({
   API_PORT: z.string().transform(Number).default("3001"),
   API_URL: z.string().url(),
   WEB_URL: z.string().url(),
-  DOWNLOAD_DEBOUNCE_SECONDS: z.string().transform(Number).default("600"),
+  // Resize queue (resizeWorker.ts)
+  PROCESS_POLL_MS: z.string().transform(Number).default("2000"),
+  PROCESS_LEASE_SECONDS: z.string().transform(Number).default("120"),
+  PROCESS_MAX_ATTEMPTS: z.string().transform(Number).default("4"),
+  PROCESS_MIN_AGE_MS: z.string().transform(Number).default("3000"),
+  PROCESS_BATCH: z.string().transform(Number).default("8"),
+  // Identifies this pod/process for job claims + lease ownership.
+  POD_ID: z.string().default(process.env.HOSTNAME || crypto.randomUUID()),
+  // Zip archive job (downloadJob.ts)
+  DOWNLOAD_DEBOUNCE_SECONDS: z.string().transform(Number).default("60"),
+  DOWNLOAD_MAX_WAIT_SECONDS: z.string().transform(Number).default("120"),
+  DOWNLOAD_BUILD_LEASE_SECONDS: z.string().transform(Number).default("300"),
 });
 
 export const env = schema.parse(process.env);

@@ -44,9 +44,14 @@ async function pushDownloadStatus(eventId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function triggerDebounce(eventId: string): Promise<void> {
-  const debounceMs = env.DOWNLOAD_DEBOUNCE_SECONDS * 1000;
-  const debounceUntil = new Date(Date.now() + debounceMs);
+  const now = Date.now();
+  const debounceUntil = new Date(now + env.DOWNLOAD_DEBOUNCE_SECONDS * 1000);
+  const debounceStartedAt = new Date(now);
   console.log(`[Debounce] event=${eventId} debounceUntil=${debounceUntil.toISOString()}`);
+
+  // A stale READY zip must be deleted from S3 once it's superseded — capture the
+  // key inside the tx and delete after commit (no S3 calls inside a tx).
+  let staleZipKey: string | null = null;
 
   await prisma.$transaction(async (tx) => {
     // Increment processed photo count
@@ -55,18 +60,16 @@ export async function triggerDebounce(eventId: string): Promise<void> {
       data: { processedPhotoCount: { increment: 1 } },
     });
 
-    // Upsert DownloadJob with state-machine transitions
+    // Upsert DownloadJob with state-machine transitions. `debounceStartedAt` is
+    // set only when *entering* DEBOUNCING (never on extend) so checkDebounceTimers
+    // can enforce a max-wait ceiling and the zip still builds during bulk uploads.
     const existing = await tx.downloadJob.findUnique({
       where: { eventId },
     });
 
     if (!existing) {
       await tx.downloadJob.create({
-        data: {
-          eventId,
-          status: "DEBOUNCING",
-          debounceUntil,
-        },
+        data: { eventId, status: "DEBOUNCING", debounceUntil, debounceStartedAt },
       });
       console.log(`[Debounce] event=${eventId} created new DEBOUNCING job`);
       return;
@@ -74,6 +77,7 @@ export async function triggerDebounce(eventId: string): Promise<void> {
 
     switch (existing.status) {
       case "DEBOUNCING": {
+        // Extend the quiet timer but keep the original debounceStartedAt.
         await tx.downloadJob.update({
           where: { id: existing.id },
           data: { debounceUntil, processedPhotos: 0 },
@@ -84,7 +88,7 @@ export async function triggerDebounce(eventId: string): Promise<void> {
       case "QUEUED": {
         await tx.downloadJob.update({
           where: { id: existing.id },
-          data: { status: "DEBOUNCING", debounceUntil, processedPhotos: 0 },
+          data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, processedPhotos: 0 },
         });
         console.log(`[Debounce] event=${eventId} QUEUED -> DEBOUNCING`);
         break;
@@ -95,11 +99,13 @@ export async function triggerDebounce(eventId: string): Promise<void> {
         break;
       }
       case "READY": {
+        staleZipKey = existing.zipKey;
         await tx.downloadJob.update({
           where: { id: existing.id },
           data: {
             status: "DEBOUNCING",
             debounceUntil,
+            debounceStartedAt,
             zipKey: null,
             zipSizeBytes: null,
             processedPhotos: 0,
@@ -112,13 +118,19 @@ export async function triggerDebounce(eventId: string): Promise<void> {
       case "CANCELLED": {
         await tx.downloadJob.update({
           where: { id: existing.id },
-          data: { status: "DEBOUNCING", debounceUntil, failureReason: null, processedPhotos: 0 },
+          data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, failureReason: null, processedPhotos: 0 },
         });
         console.log(`[Debounce] event=${eventId} ${existing.status} -> DEBOUNCING`);
         break;
       }
     }
   });
+
+  if (staleZipKey) {
+    deleteS3Object(staleZipKey)
+      .then(() => console.log(`[Debounce] event=${eventId} deleted stale READY zip`))
+      .catch((e) => console.error(`[Debounce] event=${eventId} failed to delete stale zip: ${e}`));
+  }
   pushDownloadStatus(eventId).catch(() => {});
 }
 
@@ -126,59 +138,76 @@ export async function triggerDebounce(eventId: string): Promise<void> {
 // 2. Debounce poller — background loop
 // ---------------------------------------------------------------------------
 
-let pollerInterval: ReturnType<typeof setInterval> | null = null;
+let pollerRunning = false;
 
 export function startDebouncePoller(): void {
-  if (pollerInterval) {
-    console.log(`[Poller] already running (interval=${pollerInterval})`);
-    return;
-  }
-
-  console.log(`[Poller] starting…`);
-
-  // Recover stale BUILDING jobs (> 30 min) back to QUEUED
-  prisma.downloadJob
-    .updateMany({
-      where: {
-        status: "BUILDING",
-        updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) },
-      },
-      data: { status: "QUEUED", processedPhotos: 0 },
-    })
-    .then((result) => {
-      console.log(`[Poller] recovery done, recovered ${result.count} stale BUILDING jobs`);
-      pollerInterval = setInterval(() => {
-        checkDebounceTimers().catch(() => {});
-      }, 60_000);
-      console.log(`[Poller] interval set (60s)`);
-    })
-    .catch((e) => {
-      console.error(`[Poller] recovery failed: ${e}`);
-    });
+  if (pollerRunning) return;
+  pollerRunning = true;
+  console.log(`[Poller] starting (interval=15s)`);
+  setInterval(() => {
+    checkDebounceTimers().catch(() => {});
+  }, 15_000);
 }
 
 async function checkDebounceTimers(): Promise<void> {
   const now = new Date();
-  console.log(`[Poller] tick at ${now.toISOString()}`);
+  const maxWaitCutoff = new Date(now.getTime() - env.DOWNLOAD_MAX_WAIT_SECONDS * 1000);
 
+  // Build when the quiet period elapsed OR the max-wait ceiling is hit (so a
+  // continuous stream of uploads can't starve the archive indefinitely).
   const ready = await prisma.downloadJob.findMany({
     where: {
       status: "DEBOUNCING",
-      debounceUntil: { lte: now },
+      OR: [
+        { debounceUntil: { lte: now } },
+        { debounceStartedAt: { lte: maxWaitCutoff } },
+      ],
     },
   });
 
-  console.log(`[Poller] found ${ready.length} expired DEBOUNCING job(s)`);
-
   for (const job of ready) {
-    console.log(`[Poller] queuing build for event=${job.eventId}`);
-    await prisma.downloadJob.update({
-      where: { id: job.id },
+    // Count-checked transition so two replicas can't both launch a build.
+    const res = await prisma.downloadJob.updateMany({
+      where: { id: job.id, status: "DEBOUNCING" },
       data: { status: "QUEUED", processedPhotos: 0 },
     });
+    if (res.count !== 1) continue;
+    console.log(`[Poller] queuing build for event=${job.eventId}`);
     pushDownloadStatus(job.eventId).catch(() => {});
     runBuildZip(job.eventId);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 2b. Stale-BUILDING reaper — recover a build a crashed pod left mid-flight.
+// ---------------------------------------------------------------------------
+
+export async function reapStaleBuilding(): Promise<number> {
+  const cutoff = new Date(Date.now() - env.DOWNLOAD_BUILD_LEASE_SECONDS * 1000);
+  const res = await prisma.downloadJob.updateMany({
+    where: {
+      status: "BUILDING",
+      OR: [
+        { heartbeatAt: { lt: cutoff } },
+        { heartbeatAt: null, updatedAt: { lt: cutoff } }, // legacy/never-heartbeated rows
+      ],
+    },
+    data: { status: "QUEUED", processedPhotos: 0 },
+  });
+  if (res.count > 0) console.log(`[ZipReaper] requeued ${res.count} stale BUILDING job(s)`);
+  return res.count;
+}
+
+let zipReaperRunning = false;
+
+export function startZipReaper(): void {
+  if (zipReaperRunning) return;
+  zipReaperRunning = true;
+  reapStaleBuilding().catch(() => {}); // startup sweep
+  setInterval(
+    () => reapStaleBuilding().catch(() => {}),
+    (env.DOWNLOAD_BUILD_LEASE_SECONDS * 1000) / 2
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -200,8 +229,9 @@ export async function forceBuild(eventId: string): Promise<void> {
 
   // Delete any existing S3 ZIP so the old build can't overwrite with stale data
   if (job.zipKey) {
-    await deleteS3Object(job.zipKey).catch(() => {});
-    console.log(`[ForceBuild] event=${eventId} deleted old S3 zip`);
+    await deleteS3Object(job.zipKey)
+      .then(() => console.log(`[ForceBuild] event=${eventId} deleted old S3 zip`))
+      .catch((e) => console.error(`[ForceBuild] event=${eventId} failed to delete old zip: ${e}`));
   }
 
   // Reset job to QUEUED regardless of current state — this cancels debounce,
@@ -313,8 +343,13 @@ const buildZip = (eventId: string) =>
       return;
     }
 
-    console.log(`[BuildZip] event=${eventId} marking READY (zipSize=${result.zipSizeBytes})`);
-    yield* markReady(job.id, result.zipKey, result.zipSizeBytes);
+    const readyCount = yield* markReady(job.id, result.zipKey, result.zipSizeBytes);
+    if (readyCount === 0) {
+      // Superseded by a forceBuild (row no longer BUILDING) — drop this result.
+      console.log(`[BuildZip] event=${eventId} markReady no-op (superseded), skipping push`);
+      return;
+    }
+    console.log(`[BuildZip] event=${eventId} marked READY (zipSize=${result.zipSizeBytes})`);
     yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
   }).pipe(
     Effect.catchAll((e) =>
@@ -342,7 +377,7 @@ const claimJob = (eventId: string) =>
       try {
         return await prisma.downloadJob.update({
           where: { eventId, status: "QUEUED" },
-          data: { status: "BUILDING", processedPhotos: 0 },
+          data: { status: "BUILDING", processedPhotos: 0, heartbeatAt: new Date() },
         });
       } catch {
         return null;
@@ -361,51 +396,47 @@ const loadPhotos = (eventId: string) =>
     catch: (e) => new Error(`Load photos failed: ${e}`),
   });
 
+// All BUILDING-phase writes are guarded `where {id, status:"BUILDING"}` so a
+// concurrent forceBuild (which resets the row to QUEUED) makes a stale fiber's
+// writes no-ops instead of clobbering the new build. They also refresh the
+// heartbeat lease used by reapStaleBuilding.
 const markBuilding = (jobId: string, photoCount: number) =>
   Effect.tryPromise({
     try: () =>
-      prisma.downloadJob.update({
-        where: { id: jobId },
-        data: { photoCount, processedPhotos: 0 },
+      prisma.downloadJob.updateMany({
+        where: { id: jobId, status: "BUILDING" },
+        data: { photoCount, processedPhotos: 0, heartbeatAt: new Date() },
       }),
     catch: (e) => new Error(`Mark building failed: ${e}`),
   });
 
+// Returns the update count so the caller can skip the READY push on a no-op
+// (the build was superseded by a forceBuild).
 const markReady = (jobId: string, zipKey: string, zipSizeBytes: number) =>
   Effect.tryPromise({
     try: () =>
-      prisma.downloadJob.update({
-        where: { id: jobId },
-        data: { status: "READY", zipKey, zipSizeBytes, processedPhotos: 0, uploadProgress: 100 },
-      }),
+      prisma.downloadJob.updateMany({
+        where: { id: jobId, status: "BUILDING" },
+        data: { status: "READY", zipKey, zipSizeBytes, processedPhotos: 0, uploadProgress: 100, heartbeatAt: new Date() },
+      }).then((r) => r.count),
     catch: (e) => new Error(`Mark ready failed: ${e}`),
   });
 
 const markUploading = (jobId: string) =>
   Effect.tryPromise({
     try: () =>
-      prisma.downloadJob.update({
-        where: { id: jobId },
-        data: { processedPhotos: -1, uploadProgress: 0 },
+      prisma.downloadJob.updateMany({
+        where: { id: jobId, status: "BUILDING" },
+        data: { processedPhotos: -1, uploadProgress: 0, heartbeatAt: new Date() },
       }),
     catch: (e) => new Error(`Mark uploading failed: ${e}`),
-  });
-
-const updateUploadProgress = (jobId: string, pct: number) =>
-  Effect.tryPromise({
-    try: () =>
-      prisma.downloadJob.update({
-        where: { id: jobId },
-        data: { uploadProgress: pct },
-      }),
-    catch: (e) => new Error(`Upload progress update failed: ${e}`),
   });
 
 const markFailed = (jobId: string, reason: string) =>
   Effect.tryPromise({
     try: () =>
-      prisma.downloadJob.update({
-        where: { id: jobId },
+      prisma.downloadJob.updateMany({
+        where: { id: jobId, status: "BUILDING" },
         data: { status: "FAILED", failureReason: reason, processedPhotos: 0 },
       }),
     catch: (e) => new Error(`Mark failed failed: ${e}`),
@@ -452,9 +483,9 @@ const streamZipToS3 = (eventId: string, photos: Photo[], jobId: string) =>
       // Throttle DB writes: only update every 10%
       if (pct !== lastUploadPct && pct % 10 === 0) {
         lastUploadPct = pct;
-        prisma.downloadJob.update({
-          where: { id: jobId },
-          data: { uploadProgress: pct },
+        prisma.downloadJob.updateMany({
+          where: { id: jobId, status: "BUILDING" },
+          data: { uploadProgress: pct, heartbeatAt: new Date() },
         }).then(() => pushDownloadStatus(eventId)).catch(() => {});
       }
     });
@@ -556,9 +587,9 @@ const checkNotCancelled = (jobId: string) =>
 const updateProgress = (jobId: string, processed: number) =>
   Effect.tryPromise({
     try: () =>
-      prisma.downloadJob.update({
-        where: { id: jobId },
-        data: { processedPhotos: processed },
+      prisma.downloadJob.updateMany({
+        where: { id: jobId, status: "BUILDING" },
+        data: { processedPhotos: processed, heartbeatAt: new Date() },
       }),
     catch: (e) => new Error(`Progress update failed: ${e}`),
   });

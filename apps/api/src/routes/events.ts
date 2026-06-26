@@ -8,6 +8,7 @@ import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
 import { getDownloadJobStatus, forceBuild, cancelJob, statusMessage } from "../services/downloadJob.js";
+import { wakeResizeWorker } from "../services/resizeWorker.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";
@@ -233,7 +234,7 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
 
     const keepAlive = setInterval(() => {
       stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
-    }, 30_000);
+    }, 15_000);
 
     await new Promise<void>((resolve) => {
       stream.onAbort(() => {
@@ -304,6 +305,35 @@ app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
     `attachment; filename="${filename}"`
   );
   return c.json({ url });
+});
+
+// Re-queue all FAILED photos for an event. Reuses the existing rows (originals
+// still in S3, except invalid ones which will re-fail cleanly).
+app.post("/:id/photos/retry", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const res = await prisma.photo.updateMany({
+    where: { eventId: id, status: "FAILED" },
+    data: {
+      status: "PENDING",
+      attempts: 0,
+      nextAttemptAt: null,
+      lastError: null,
+      claimedAt: null,
+      claimedBy: null,
+    },
+  });
+  wakeResizeWorker();
+  return c.json({ success: true, requeued: res.count });
 });
 
 app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
