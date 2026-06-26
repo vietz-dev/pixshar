@@ -17,32 +17,19 @@ interface DownloadState {
 
 export default function DownloadButton({ slug }: { slug: string }) {
   const [state, setState] = useState<DownloadState | null>(null);
-  const [polling, setPolling] = useState(true);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/gallery/${slug}/download`, { credentials: "include" });
-        const data = await res.json();
-        setState(data);
-        if (data.status === "READY" || data.status === "FAILED") {
-          setPolling(false);
-          clearInterval(interval);
-        }
-      } catch {
-        setPolling(false);
-        clearInterval(interval);
+    const es = new EventSource(`/api/gallery/${slug}/download/stream`, { withCredentials: true });
+    es.addEventListener("download-status", (e) => {
+      const data = JSON.parse(e.data);
+      setState(data);
+      if (data.status === "READY" || data.status === "FAILED") {
+        es.close();
       }
-    };
-
-    poll();
-    if (polling) {
-      interval = setInterval(poll, 5000);
-    }
-    return () => clearInterval(interval);
-  }, [slug, polling]);
+    });
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [slug]);
 
   if (!state) {
     return (

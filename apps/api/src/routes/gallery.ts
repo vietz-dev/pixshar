@@ -16,6 +16,8 @@ import {
   uploadInitSchema,
   uploadCompleteSchema,
 } from "../lib/uploadInit.js";
+import { streamSSE } from "hono/streaming";
+import { onDownloadStatus } from "../lib/eventBus.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -192,6 +194,77 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
     url,
     sizeBytes,
     photoCount: job.photoCount,
+  });
+});
+
+app.get("/:slug/download/stream", requireGallerySession, async (c) => {
+  const event = c.get("galleryEvent");
+
+  return streamSSE(c, async (stream) => {
+    const fullEvent = await prisma.event.findUnique({
+      where: { id: event.id },
+      include: { downloadJob: true },
+    });
+    const job = fullEvent?.downloadJob ?? null;
+
+    async function buildInitialPayload() {
+      if (!job) {
+        return { status: "NONE", message: "No archive available yet." };
+      }
+      if (job.status === "DEBOUNCING") {
+        return {
+          status: "DEBOUNCING",
+          message: "New photos are still being uploaded. Your archive will be ready shortly.",
+          debounceUntil: job.debounceUntil?.toISOString() ?? null,
+        };
+      }
+      if (job.status === "QUEUED" || job.status === "BUILDING") {
+        return {
+          status: "BUILDING",
+          message: "Your archive is being prepared. This may take a few minutes.",
+          photoCount: job.photoCount,
+          processedPhotos: job.processedPhotos,
+          uploadProgress: job.uploadProgress,
+        };
+      }
+      if (job.status === "FAILED" || job.status === "CANCELLED") {
+        return { status: "FAILED", message: "Archive generation failed. Please try again later." };
+      }
+      // READY
+      const url = await getPresignedUrl(job.zipKey!, "get", 60 * 60);
+      return { status: "READY", url, sizeBytes: job.zipSizeBytes ?? 0, photoCount: job.photoCount };
+    }
+
+    await stream.writeSSE({ data: JSON.stringify(await buildInitialPayload()), event: "download-status" });
+
+    const unsubscribe = onDownloadStatus(event.id, async (payload) => {
+      // Guest view needs a slightly different shape: remap to gallery format
+      if (payload.status === "READY") {
+        // Presigned URL must be generated fresh here
+        const fullJob = await prisma.downloadJob.findUnique({ where: { eventId: event.id } });
+        if (fullJob?.zipKey) {
+          const url = await getPresignedUrl(fullJob.zipKey, "get", 60 * 60);
+          await stream.writeSSE({
+            data: JSON.stringify({ status: "READY", url, sizeBytes: fullJob.zipSizeBytes ?? 0, photoCount: fullJob.photoCount }),
+            event: "download-status",
+          });
+          return;
+        }
+      }
+      await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
+    });
+
+    const keepAlive = setInterval(() => {
+      stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
+    }, 30_000);
+
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        unsubscribe();
+        clearInterval(keepAlive);
+        resolve();
+      });
+    });
   });
 });
 

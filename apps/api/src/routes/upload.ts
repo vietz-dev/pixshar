@@ -10,6 +10,8 @@ import {
   uploadInitSchema,
   uploadCompleteSchema,
 } from "../lib/uploadInit.js";
+import { streamSSE } from "hono/streaming";
+import { onPhotoStatus } from "../lib/eventBus.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -90,6 +92,48 @@ app.get("/events/:id/photos/status", requireAdmin, async (c) => {
   const failed = counts.find((c: typeof counts[0]) => c.status === "FAILED")?._count.status ?? 0;
 
   return c.json({ pending, processed, failed, total: pending + processed + failed });
+});
+
+app.get("/events/:id/photos/status/stream", requireAdmin, async (c) => {
+  const eventId = c.req.param("id");
+  const user = c.get("user");
+
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event || event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  return streamSSE(c, async (stream) => {
+    const counts = await prisma.photo.groupBy({
+      by: ["status"],
+      where: { eventId },
+      _count: { status: true },
+    });
+    const pending = counts.find((r: typeof counts[0]) => r.status === "PENDING")?._count.status ?? 0;
+    const processed = counts.find((r: typeof counts[0]) => r.status === "PROCESSED")?._count.status ?? 0;
+    const failed = counts.find((r: typeof counts[0]) => r.status === "FAILED")?._count.status ?? 0;
+
+    await stream.writeSSE({
+      data: JSON.stringify({ pending, processed, failed, total: pending + processed + failed }),
+      event: "photo-status",
+    });
+
+    const unsubscribe = onPhotoStatus(eventId, async (payload) => {
+      await stream.writeSSE({ data: JSON.stringify(payload), event: "photo-status" });
+    });
+
+    const keepAlive = setInterval(() => {
+      stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
+    }, 30_000);
+
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        unsubscribe();
+        clearInterval(keepAlive);
+        resolve();
+      });
+    });
+  });
 });
 
 export default app;

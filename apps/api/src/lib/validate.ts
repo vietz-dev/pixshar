@@ -1,5 +1,5 @@
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-export const MAX_FILES_PER_UPLOAD = 20;
+export const MAX_FILES_PER_UPLOAD = 200;
 export const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 
 // Magic bytes for image type verification (more reliable than client MIME type)

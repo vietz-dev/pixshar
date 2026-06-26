@@ -6,6 +6,19 @@ import { env } from "../lib/env.js";
 import { sha256Hex } from "../lib/hash.js";
 import { isValidImageBytes, MAX_FILE_SIZE } from "../lib/validate.js";
 import { triggerDebounce } from "./downloadJob.js";
+import { emitPhotoStatus } from "../lib/eventBus.js";
+
+async function pushPhotoStatus(eventId: string): Promise<void> {
+  const counts = await prisma.photo.groupBy({
+    by: ["status"],
+    where: { eventId },
+    _count: { status: true },
+  });
+  const pending = counts.find((r: typeof counts[0]) => r.status === "PENDING")?._count.status ?? 0;
+  const processed = counts.find((r: typeof counts[0]) => r.status === "PROCESSED")?._count.status ?? 0;
+  const failed = counts.find((r: typeof counts[0]) => r.status === "FAILED")?._count.status ?? 0;
+  emitPhotoStatus(eventId, { pending, processed, failed, total: pending + processed + failed });
+}
 
 export interface ProcessImageInput {
   photoId: string;
@@ -141,6 +154,7 @@ const processImageEffect = (input: ProcessImageInput) =>
     });
 
     yield* Console.log(`Photo ${photoId} processed`);
+    yield* Effect.promise(() => pushPhotoStatus(eventId).catch(() => {}));
 
     // Trigger download archive debounce (non-blocking, failures ignored)
     yield* Effect.promise(() => triggerDebounce(eventId).catch(() => {}));
@@ -169,6 +183,7 @@ const processImageEffect = (input: ProcessImageInput) =>
             }),
           catch: () => new Error("DB update failed"),
         });
+        yield* Effect.promise(() => pushPhotoStatus(input.eventId).catch(() => {}));
         return { originalKey: "", displayKey: "", thumbKey: "" };
       })
     )

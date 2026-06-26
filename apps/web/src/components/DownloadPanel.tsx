@@ -30,23 +30,17 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  async function fetchStatus() {
-    try {
-      const res = await fetch(`/api/events/${eventId}/download/status`, { credentials: "include" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setState(data);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 3000);
-    return () => clearInterval(interval);
+    const es = new EventSource(`/api/events/${eventId}/download/status/stream`, { withCredentials: true });
+    es.addEventListener("download-status", (e) => {
+      setState(JSON.parse(e.data));
+      setLoading(false);
+    });
+    es.onerror = () => {
+      setLoading(false);
+      es.close();
+    };
+    return () => es.close();
   }, [eventId]);
 
   async function handleBuild() {
@@ -56,7 +50,6 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
         method: "POST",
         credentials: "include",
       });
-      await fetchStatus();
     } finally {
       setActionLoading(null);
     }
@@ -70,7 +63,6 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
         method: "POST",
         credentials: "include",
       });
-      await fetchStatus();
     } finally {
       setActionLoading(null);
     }

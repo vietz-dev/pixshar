@@ -7,7 +7,9 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { getDownloadJobStatus, forceBuild, cancelJob } from "../services/downloadJob.js";
+import { getDownloadJobStatus, forceBuild, cancelJob, statusMessage } from "../services/downloadJob.js";
+import { streamSSE } from "hono/streaming";
+import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
 
@@ -193,6 +195,56 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
   });
 });
 
+app.get("/:id/download/status/stream", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: { downloadJob: true },
+  });
+  if (!event) return c.json({ error: "Event not found" }, 404);
+  if (event.createdById !== user.id) return c.json({ error: "Forbidden" }, 403);
+
+  return streamSSE(c, async (stream) => {
+    const job = event.downloadJob;
+    const totalPhotos = await prisma.photo.count({ where: { eventId: id, status: "PROCESSED" } });
+
+    const initial = job
+      ? {
+          status: job.status,
+          message: statusMessage(job.status),
+          photoCount: job.photoCount,
+          processedPhotos: job.processedPhotos,
+          uploadProgress: job.uploadProgress,
+          totalPhotos,
+          zipSizeBytes: job.zipSizeBytes,
+          debounceUntil: job.debounceUntil?.toISOString() ?? null,
+          failureReason: job.failureReason,
+          updatedAt: job.updatedAt.toISOString(),
+        }
+      : { status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, zipSizeBytes: null, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
+
+    await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
+
+    const unsubscribe = onDownloadStatus(id, async (payload) => {
+      await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
+    });
+
+    const keepAlive = setInterval(() => {
+      stream.writeSSE({ data: "ping", event: "keep-alive" }).catch(() => {});
+    }, 30_000);
+
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        unsubscribe();
+        clearInterval(keepAlive);
+        resolve();
+      });
+    });
+  });
+});
+
 app.post("/:id/download/build", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
@@ -220,19 +272,6 @@ app.post("/:id/download/cancel", requireAdmin, async (c) => {
   await cancelJob(id);
   return c.json({ success: true });
 });
-
-function statusMessage(status: string): string {
-  switch (status) {
-    case "NONE": return "No archive created yet.";
-    case "DEBOUNCING": return "Waiting for uploads to settle.";
-    case "QUEUED": return "Queued for building.";
-    case "BUILDING": return "Building archive…";
-    case "READY": return "Archive ready for download.";
-    case "FAILED": return "Archive build failed.";
-    case "CANCELLED": return "Archive build was cancelled.";
-    default: return "Unknown status.";
-  }
-}
 
 app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
   const eventId = c.req.param("id");

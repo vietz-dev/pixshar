@@ -81,13 +81,12 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     if (!event) return;
-    const interval = setInterval(() => {
-      fetch(`/api/upload/events/${id}/photos/status`, { credentials: "include" })
-        .then((res) => res.json())
-        .then((status) => setUploadStatus(status))
-        .catch(() => {});
-    }, 2000);
-    return () => clearInterval(interval);
+    const es = new EventSource(`/api/upload/events/${id}/photos/status/stream`, { withCredentials: true });
+    es.addEventListener("photo-status", (e) => {
+      setUploadStatus(JSON.parse(e.data));
+    });
+    es.onerror = () => es.close();
+    return () => es.close();
   }, [id, event]);
 
   async function handleUpload(files: FileList | null) {
