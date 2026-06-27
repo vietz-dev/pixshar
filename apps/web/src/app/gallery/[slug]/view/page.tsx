@@ -30,6 +30,7 @@ export default function GalleryViewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [layout, setLayout] = useState<"masonry" | "uniform">("masonry");
+  const [isMobile, setIsMobile] = useState(false);
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -53,6 +54,13 @@ export default function GalleryViewPage() {
   useEffect(() => {
     fetchGallery();
   }, [fetchGallery]);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Live feed: new photos (from any guest's upload) appear without a refresh.
   const galleryLoaded = !!gallery;
@@ -200,6 +208,7 @@ export default function GalleryViewPage() {
         <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>{photoCountLabel}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <DownloadButton slug={slug} />
+          {!isMobile && (
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>Layout</span>
           <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
@@ -232,6 +241,7 @@ export default function GalleryViewPage() {
             })}
           </div>
         </div>
+          )}
       </div>
       </div>
 
@@ -245,7 +255,7 @@ export default function GalleryViewPage() {
             photographerName: p.photographerName,
             status: p.status,
           }))}
-          layout={layout}
+          layout={isMobile ? "uniform" : layout}
           onPhotoClick={(p, i) => {
             setLbIndex(i);
             setLbOpen(true);

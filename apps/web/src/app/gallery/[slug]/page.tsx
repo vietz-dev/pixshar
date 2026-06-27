@@ -114,6 +114,7 @@ export default function GalleryGatePage() {
               style={{
                 height: 42,
                 width: "100%",
+                boxSizing: "border-box",
                 padding: "0 14px",
                 border: "1px solid #e4e4e7",
                 borderRadius: 9,

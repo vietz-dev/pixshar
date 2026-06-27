@@ -1,3 +1,4 @@
+import "./globals.css";
 import { Toaster } from "sonner";
 
 export const metadata = {

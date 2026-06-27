@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@example.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,6 +62,7 @@ export default function LoginPage() {
               style={{
                 height: 40,
                 width: "100%",
+                boxSizing: "border-box",
                 padding: "0 12px",
                 border: "1px solid #e4e4e7",
                 borderRadius: 8,
@@ -93,6 +94,7 @@ export default function LoginPage() {
               style={{
                 height: 40,
                 width: "100%",
+                boxSizing: "border-box",
                 padding: "0 12px",
                 border: "1px solid #e4e4e7",
                 borderRadius: 8,
