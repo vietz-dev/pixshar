@@ -20,3 +20,4 @@ data:
   S3_PUBLIC_ENDPOINT: {{ .Values.config.s3PublicEndpoint | quote }}
   {{- end }}
   DOWNLOAD_DEBOUNCE_SECONDS: {{ .Values.config.downloadDebounceSeconds | quote }}
+  PROCESS_BATCH: {{ .Values.api.processWorkerConcurrency | default 2 | quote }}

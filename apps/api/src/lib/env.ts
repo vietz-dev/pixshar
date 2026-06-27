@@ -27,7 +27,7 @@ const schema = z.object({
   PROCESS_LEASE_SECONDS: z.string().transform(Number).default("120"),
   PROCESS_MAX_ATTEMPTS: z.string().transform(Number).default("4"),
   PROCESS_MIN_AGE_MS: z.string().transform(Number).default("3000"),
-  PROCESS_BATCH: z.string().transform(Number).default("8"),
+  PROCESS_BATCH: z.string().transform(Number).default("2"),
   // Identifies this pod/process for job claims + lease ownership.
   POD_ID: z.string().default(process.env.HOSTNAME || crypto.randomUUID()),
   // Zip archive job (downloadJob.ts)

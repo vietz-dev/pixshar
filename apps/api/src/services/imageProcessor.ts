@@ -108,10 +108,8 @@ export const processImageEffect = (input: ProcessImageInput) =>
       });
     }
 
-    const [displayBuf, thumbBuf] = yield* Effect.all([
-      resizeImage(buffer, 1920, 1920, 85, ext === "png" ? "jpeg" : "jpeg"),
-      resizeImage(buffer, 400, 400, 80, "jpeg"),
-    ]);
+    const displayBuf = yield* resizeImage(buffer, 1920, 1920, 85, "jpeg");
+    const thumbBuf = yield* resizeImage(buffer, 400, 400, 80, "jpeg");
 
     yield* Effect.all([
       uploadToS3(displayKey, displayBuf, "image/jpeg"),

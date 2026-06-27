@@ -452,7 +452,7 @@ const streamZipToS3 = (eventId: string, photos: Photo[], jobId: string) =>
       try: () => import("archiver"),
       catch: (e) => new Error(`Archiver import failed: ${e}`),
     });
-    const { PassThrough } = yield* Effect.tryPromise({
+    const { PassThrough, Readable } = yield* Effect.tryPromise({
       try: () => import("node:stream"),
       catch: (e) => new Error(`Stream import failed: ${e}`),
     });
@@ -527,11 +527,17 @@ const streamZipToS3 = (eventId: string, photos: Photo[], jobId: string) =>
         .replace(/[^a-zA-Z0-9_-]/g, "_")
         .toLowerCase();
       const filename = `${folderName}/${name}/${photo.id}.jpg`;
-      const buffer = yield* Effect.tryPromise({
-        try: () => Body.transformToByteArray(),
-        catch: (e) => new Error(`Buffer read failed: ${e}`),
+      // AWS SDK v3 Body is a Node.js Readable in Bun/Node environments via SdkStreamMixin
+      const nodeStream = Body as unknown as InstanceType<typeof Readable>;
+      yield* Effect.tryPromise({
+        try: () =>
+          new Promise<void>((resolve, reject) => {
+            nodeStream.once("end", resolve);
+            nodeStream.once("error", reject);
+            archive.append(nodeStream, { name: filename });
+          }),
+        catch: (e) => new Error(`Stream append failed: ${e}`),
       });
-      archive.append(Buffer.from(buffer), { name: filename });
 
       // Update progress every 3 photos (throttle DB writes)
       if ((i + 1) % 3 === 0 || i === photos.length - 1) {

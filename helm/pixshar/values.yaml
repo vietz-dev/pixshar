@@ -59,13 +59,18 @@ api:
   replicaCount: 1
   port: 3001
 
+  # Max concurrent image resize jobs per pod. Lower = less memory pressure.
+  # Each slot uses ~50–200 MB depending on original file size.
+  # At 2 slots with sequential variant resizes: ~300–400 MB peak for image work.
+  processWorkerConcurrency: 2
+
   resources:
     requests:
       cpu: 250m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: 1000m
-      memory: 512Mi
+      memory: 2Gi
 
   nodeSelector: {}
   tolerations: []

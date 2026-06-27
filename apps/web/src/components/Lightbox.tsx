@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 
 interface LightboxPhoto {
   id: string;
@@ -23,6 +23,24 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
   const photo = photos[index];
   const counter = `${index + 1} / ${photos.length}`;
   const [downloading, setDownloading] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const swipeHandled = useRef(false);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+    swipeHandled.current = false;
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (touchStartX.current === null) return;
+    const delta = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(delta) > 50) {
+      swipeHandled.current = true;
+      if (delta < 0) onNext();
+      else onPrev();
+    }
+    touchStartX.current = null;
+  }
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
@@ -57,7 +75,9 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
 
   return (
     <div
-      onClick={onClose}
+      onClick={() => { if (!swipeHandled.current) onClose(); }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
       style={{
         position: "fixed",
         inset: 0,
