@@ -1,5 +1,13 @@
 # @pixshar/web
 
+## 0.0.23
+
+### Patch Changes
+
+- c8aa82b: Sequential processing of images
+- Updated dependencies [c8aa82b]
+  - @pixshar/shared@0.0.23
+
 ## 0.0.22
 
 ### Patch Changes

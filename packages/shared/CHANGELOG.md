@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.23
+
+### Patch Changes
+
+- c8aa82b: Sequential processing of images
+
 ## 0.0.22
 
 ### Patch Changes
