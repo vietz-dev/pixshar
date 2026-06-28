@@ -1,5 +1,13 @@
 # @pixshar/api
 
+## 0.0.24
+
+### Patch Changes
+
+- c378559: Added image processor
+- Updated dependencies [c378559]
+  - @pixshar/shared@0.0.24
+
 ## 0.0.23
 
 ### Patch Changes
