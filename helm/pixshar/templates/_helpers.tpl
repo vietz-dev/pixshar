@@ -135,6 +135,17 @@ app.kubernetes.io/component: api
 app.kubernetes.io/component: web
 {{- end }}
 
+{{/* Image processor component name */}}
+{{- define "pixshar.imageProcessor.fullname" -}}
+{{- printf "%s-image-processor" (include "pixshar.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/* Image processor selector labels */}}
+{{- define "pixshar.imageProcessor.selectorLabels" -}}
+{{ include "pixshar.selectorLabels" . }}
+app.kubernetes.io/component: image-processor
+{{- end }}
+
 {{/* Service account name */}}
 {{- define "pixshar.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}

@@ -20,4 +20,5 @@ data:
   S3_PUBLIC_ENDPOINT: {{ .Values.config.s3PublicEndpoint | quote }}
   {{- end }}
   DOWNLOAD_DEBOUNCE_SECONDS: {{ .Values.config.downloadDebounceSeconds | quote }}
-  PROCESS_BATCH: {{ .Values.api.processWorkerConcurrency | default 2 | quote }}
+  WORKER_CONCURRENCY: {{ .Values.imageProcessor.concurrency | default 2 | quote }}
+  WORKER_METRICS_PORT: {{ .Values.imageProcessor.metricsPort | default 4000 | quote }}

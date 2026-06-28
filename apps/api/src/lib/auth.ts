@@ -24,9 +24,11 @@ export const auth = betterAuth({
       httpOnly: true,
     },
   },
+  // BetterAuth's built-in rate limiter is intentionally generous here.
+  // App-level per-endpoint rate limits (rateLimit.ts) are the primary defence.
   rateLimit: {
     enabled: true,
-    window: 60,
-    max: 100,
+    window: 10,
+    max: 1000,
   },
 });

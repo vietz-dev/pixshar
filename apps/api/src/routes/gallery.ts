@@ -18,6 +18,11 @@ import {
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
+import {
+  galleryUnlocksTotal,
+  photoDownloadsTotal,
+  archiveDownloadsTotal,
+} from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -25,6 +30,18 @@ const secret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
 const unlockSchema = z.object({
   password: z.string().min(1).max(128),
+});
+
+// Public endpoint — returns only event name/description so the gate page can
+// display the event title before the guest authenticates.
+app.get("/:slug/info", async (c) => {
+  const slug = c.req.param("slug");
+  const event = await prisma.event.findUnique({
+    where: { slug },
+    select: { id: true, name: true, description: true },
+  });
+  if (!event) return c.json({ error: "Gallery not found" }, 404);
+  return c.json(event);
 });
 
 app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
@@ -43,6 +60,7 @@ app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
   }
 
   const valid = await verifyPassword(body.password, event.passwordHash);
+  galleryUnlocksTotal.inc({ result: valid ? "success" : "failure" });
   if (!valid) {
     return c.json({ error: "Invalid password" }, 401);
   }
@@ -187,6 +205,7 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
 
   // READY — generate presigned URL
   const url = await getPresignedUrl(job.zipKey!, "get", 60 * 60); // 1 hour
+  archiveDownloadsTotal.inc();
   const sizeBytes = job.zipSizeBytes ?? 0;
 
   return c.json({
@@ -232,6 +251,7 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
       }
       // READY
       const url = await getPresignedUrl(job.zipKey!, "get", 60 * 60);
+      archiveDownloadsTotal.inc();
       return { status: "READY", url, sizeBytes: job.zipSizeBytes ?? 0, photoCount: job.photoCount };
     }
 
@@ -244,6 +264,7 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
         const fullJob = await prisma.downloadJob.findUnique({ where: { eventId: event.id } });
         if (fullJob?.zipKey) {
           const url = await getPresignedUrl(fullJob.zipKey, "get", 60 * 60);
+          archiveDownloadsTotal.inc();
           await stream.writeSSE({
             data: JSON.stringify({ status: "READY", url, sizeBytes: fullJob.zipSizeBytes ?? 0, photoCount: fullJob.photoCount }),
             event: "download-status",
@@ -315,6 +336,7 @@ app.get("/:slug/photos/:photoId/download", requireGallerySession, async (c) => {
     60 * 60,
     `attachment; filename="${filename}"`
   );
+  photoDownloadsTotal.inc({ actor: "guest" });
   return c.json({ url });
 });
 

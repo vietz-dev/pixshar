@@ -8,11 +8,13 @@ import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
 import { getDownloadJobStatus, forceBuild, cancelJob, statusMessage } from "../services/downloadJob.js";
-import { wakeResizeWorker } from "../services/resizeWorker.js";
+import { getBoss } from "../lib/pgboss.js";
+import { env } from "../lib/env.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
+import { photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -44,9 +46,9 @@ app.post("/", requireAdmin, zValidator("json", createSchema), async (c) => {
   const body = c.req.valid("json");
   const user = c.get("user");
 
-  // Rate limit: 10 event creations per minute per IP
+  // Rate limit: 50 event creations per minute per IP
   const rateKey = getRateLimitKey(c, "create-event");
-  if (!checkRateLimit(rateKey, 10, 60_000)) {
+  if (!checkRateLimit(rateKey, 50, 60_000)) {
     return c.json({ error: "Too many requests. Please try again later." }, 429);
   }
 
@@ -304,6 +306,7 @@ app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
     60 * 60,
     `attachment; filename="${filename}"`
   );
+  photoDownloadsTotal.inc({ actor: "admin" });
   return c.json({ url });
 });
 
@@ -321,18 +324,35 @@ app.post("/:id/photos/retry", requireAdmin, async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
 
+  const failedPhotos = await prisma.photo.findMany({
+    where: { eventId: id, status: "FAILED" },
+    select: { id: true },
+  });
+
   const res = await prisma.photo.updateMany({
     where: { eventId: id, status: "FAILED" },
     data: {
       status: "PENDING",
       attempts: 0,
-      nextAttemptAt: null,
       lastError: null,
-      claimedAt: null,
-      claimedBy: null,
     },
   });
-  wakeResizeWorker();
+
+  const boss = getBoss();
+  await Promise.all(
+    failedPhotos.map((p) =>
+      boss.send(
+        "photo-resize",
+        { photoId: p.id },
+        {
+          singletonKey: p.id,
+          retryLimit: env.PROCESS_MAX_ATTEMPTS - 1,
+          retryDelay: 10,
+          retryBackoff: true,
+        }
+      )
+    )
+  );
   return c.json({ success: true, requeued: res.count });
 });
 

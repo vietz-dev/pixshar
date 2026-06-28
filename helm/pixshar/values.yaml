@@ -59,11 +59,6 @@ api:
   replicaCount: 1
   port: 3001
 
-  # Max concurrent image resize jobs per pod. Lower = less memory pressure.
-  # Each slot uses ~50–200 MB depending on original file size.
-  # At 2 slots with sequential variant resizes: ~300–400 MB peak for image work.
-  processWorkerConcurrency: 2
-
   resources:
     requests:
       cpu: 250m
@@ -118,6 +113,49 @@ api:
     maxReplicas: 3
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+
+# --- Image Processor ---
+# Separate worker pool for image resizing and ZIP archive building.
+# Uses the same Docker image as the API but starts worker.ts as entry point.
+# Scale replicas or WORKER_CONCURRENCY to increase throughput without affecting API.
+imageProcessor:
+  enabled: true
+  replicaCount: 1
+
+  # Parallel jobs per pod. Total throughput = replicaCount × concurrency.
+  concurrency: 2
+  metricsPort: 4000
+
+  podSecurityContext:
+    fsGroup: 1001
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  # Workers are CPU + memory intensive; give them more headroom than the API.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 # --- Web ---
 # The Pixshar frontend (Next.js 15).
@@ -239,6 +277,22 @@ ingress:
     #   hosts:
     #     - pixshar.local
   apiDirectRouting: true
+
+# --- Prometheus ServiceMonitor ---
+# Requires prometheus-operator (e.g. kube-prometheus-stack) to be installed.
+# The `prometheusRelease` label must match the Prometheus Operator's serviceMonitorSelector.
+serviceMonitor:
+  enabled: false
+  prometheusRelease: kube-prometheus-stack
+  interval: 30s
+  scrapeTimeout: 10s
+
+# --- Grafana Dashboard ConfigMap ---
+# Creates a ConfigMap labeled `grafana_dashboard: "1"` that the kube-prometheus-stack
+# Grafana sidecar picks up automatically. Set to false to import the dashboard manually
+# from helm/pixshar/dashboards/pixshar-overview.json via Grafana UI instead.
+grafanaDashboard:
+  enabled: false
 
 # --- Gateway API HTTPRoute ---
 httpRoute:

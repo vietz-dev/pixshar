@@ -75,7 +75,7 @@ const resizeImage = (
   });
 
 // Pure success pipeline: fetch original → resize → upload → mark PROCESSED.
-// On any failure it FAILS (typed) — the durable queue (resizeWorker.ts) owns
+// On any failure it FAILS (typed) — the pg-boss job handler owns
 // retry/backoff and the FAILED transition, so there is no retry/catchAll here.
 export const processImageEffect = (input: ProcessImageInput) =>
   Effect.gen(function* () {
@@ -124,8 +124,7 @@ export const processImageEffect = (input: ProcessImageInput) =>
             displayKey,
             thumbKey,
             status: "PROCESSED",
-            claimedAt: null,
-            claimedBy: null,
+            sizeBytes: buffer.length + displayBuf.length + thumbBuf.length,
             lastError: null,
           },
         }),

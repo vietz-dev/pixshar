@@ -19,7 +19,7 @@ export function statusMessage(status: string): string {
   }
 }
 
-async function pushDownloadStatus(eventId: string): Promise<void> {
+export async function pushDownloadStatus(eventId: string): Promise<void> {
   const [job, totalPhotos] = await Promise.all([
     prisma.downloadJob.findUnique({ where: { eventId } }),
     prisma.photo.count({ where: { eventId, status: "PROCESSED" } }),
@@ -176,6 +176,16 @@ async function checkDebounceTimers(): Promise<void> {
     pushDownloadStatus(job.eventId).catch(() => {});
     runBuildZip(job.eventId);
   }
+
+  // Also pick up any QUEUED jobs created by forceBuild (which bypasses DEBOUNCING).
+  // runBuildZip atomically claims QUEUED→BUILDING so concurrent workers are safe.
+  const queued = await prisma.downloadJob.findMany({
+    where: { status: "QUEUED" },
+  });
+  for (const job of queued) {
+    console.log(`[Poller] building queued job for event=${job.eventId}`);
+    runBuildZip(job.eventId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +233,7 @@ export async function forceBuild(eventId: string): Promise<void> {
     });
     console.log(`[ForceBuild] event=${eventId} created new QUEUED job`);
     pushDownloadStatus(eventId).catch(() => {});
-    runBuildZip(eventId);
+    // Worker's debounce poller picks up QUEUED within its next cycle (~15s).
     return;
   }
 
@@ -249,8 +259,7 @@ export async function forceBuild(eventId: string): Promise<void> {
   });
   console.log(`[ForceBuild] event=${eventId} reset job to QUEUED (was ${job.status})`);
   pushDownloadStatus(eventId).catch(() => {});
-
-  runBuildZip(eventId);
+  // Worker's debounce poller picks up QUEUED within its next cycle (~15s).
 }
 
 export async function cancelJob(eventId: string): Promise<void> {
