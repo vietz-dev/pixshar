@@ -9,7 +9,6 @@ import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
 import { getDownloadJobStatus, forceBuild, cancelJob, statusMessage } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
-import { env } from "../lib/env.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";

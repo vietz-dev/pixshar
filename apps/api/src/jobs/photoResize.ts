@@ -22,8 +22,6 @@ export async function photoResizeHandler(
   job: PgBoss.Job<PhotoResizeData>
 ): Promise<void> {
   const { photoId } = job.data;
-  // pg-boss retrycount starts at 0 on first attempt.
-  const attempt = (job.retrycount ?? 0) + 1;
 
   const photo = await prisma.photo.findUnique({ where: { id: photoId } });
   if (!photo) {
@@ -34,6 +32,9 @@ export async function photoResizeHandler(
     // Already handled (e.g., duplicate job).
     return;
   }
+
+  // Derive attempt number from DB so we don't need pg-boss metadata fields.
+  const attempt = photo.attempts + 1;
 
   await prisma.photo.updateMany({
     where: { id: photoId, status: { notIn: ["PROCESSED"] } },

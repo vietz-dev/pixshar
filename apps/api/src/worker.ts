@@ -16,7 +16,7 @@ if (import.meta.main) {
 
   await boss.work<{ photoId: string }>(
     "photo-resize",
-    { teamSize: env.WORKER_CONCURRENCY, teamConcurrency: env.WORKER_CONCURRENCY },
+    { batchSize: env.WORKER_CONCURRENCY },
     async (jobs) => {
       const batch = Array.isArray(jobs) ? jobs : [jobs];
       resizeQueueInflight.inc(batch.length);
