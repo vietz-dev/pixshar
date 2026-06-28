@@ -92,22 +92,19 @@ model Photo {
   displayKey       String
   thumbKey         String
   // PENDING | PROCESSING | PROCESSED | FAILED. The row is also the durable
-  // resize job: claim/retry/lease columns below drive resizeWorker.ts.
+  // PENDING | PROCESSING | PROCESSED | FAILED.
+  // attempts and lastError retained for admin UI visibility; pg-boss manages retry scheduling.
   status           String    @default("PENDING")
   uploadedBy       String    @default("ADMIN")
   fileHash         String?
+  sizeBytes        Int?
   attempts         Int       @default(0)
   lastError        String?
-  claimedAt        DateTime?
-  claimedBy        String?
-  nextAttemptAt    DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   event            Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, fileHash])
-  @@index([status, nextAttemptAt])
-  @@index([status, claimedAt])
   @@map("photo")
 }
 

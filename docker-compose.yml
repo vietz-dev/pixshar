@@ -85,6 +85,49 @@ services:
       cd /app/apps/api && bunx prisma migrate deploy && bun prisma/seed.ts && bun run start;
       "
 
+  image-processor:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: >
+      /bin/sh -c "cd /app/apps/api && bun run start:worker"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://pixshar:pixshar@postgres:5432/pixshar?schema=public
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=http://localhost:3001
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - S3_ENDPOINT=http://minio:9000
+      - S3_PUBLIC_ENDPOINT=http://localhost:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=pixshar
+      - S3_REGION=us-east-1
+      - S3_PUBLIC_URL=http://localhost:9000/pixshar
+      - API_PORT=4000
+      - API_URL=http://localhost:3001
+      - WEB_URL=http://localhost:3000
+      - WORKER_CONCURRENCY=2
+      - WORKER_METRICS_PORT=4000
+      - PROCESS_MIN_AGE_MS=3000
+      - PROCESS_MAX_ATTEMPTS=4
+      - DOWNLOAD_DEBOUNCE_SECONDS=60
+      - DOWNLOAD_MAX_WAIT_SECONDS=120
+      - DOWNLOAD_BUILD_LEASE_SECONDS=300
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   web:
     build:
       context: .
@@ -96,6 +139,51 @@ services:
     depends_on:
       - api
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   minio-data:
   postgres-data:
+  prometheus-data:
+  grafana-data:

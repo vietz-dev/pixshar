@@ -1,0 +1,4 @@
+[test]
+# Restrict bun test to the API integration tests only.
+# E2E Playwright specs live in tests/e2e/ and are run via `bun run test:e2e`.
+root = "./tests/api"

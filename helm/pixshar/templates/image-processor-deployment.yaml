@@ -1,0 +1,91 @@
+{{- if .Values.imageProcessor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pixshar.imageProcessor.fullname" . }}
+  labels:
+    {{- include "pixshar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: image-processor
+spec:
+  {{- if not .Values.imageProcessor.autoscaling.enabled }}
+  replicas: {{ .Values.imageProcessor.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "pixshar.imageProcessor.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pixshar.labels" . | nindent 8 }}
+        app.kubernetes.io/component: image-processor
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "pixshar.serviceAccountName" . }}
+      {{- with .Values.imageProcessor.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: image-processor
+          {{- with .Values.imageProcessor.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - "cd /app/apps/api && bun run start:worker"
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.imageProcessor.metricsPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "pixshar.configMapName" . }}
+            - secretRef:
+                name: {{ include "pixshar.secretName" . }}
+          env:
+            {{- include "pixshar.databaseEnv" . | nindent 12 }}
+            - name: API_PORT
+              value: {{ .Values.imageProcessor.metricsPort | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- with .Values.imageProcessor.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.imageProcessor.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imageProcessor.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imageProcessor.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

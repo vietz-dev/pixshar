@@ -1,0 +1,12 @@
+{{- if .Values.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pixshar.fullname" . }}-grafana-dashboard
+  labels:
+    {{- include "pixshar.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  pixshar-overview.json: |
+{{ .Files.Get "dashboards/pixshar-overview.json" | indent 4 }}
+{{- end }}

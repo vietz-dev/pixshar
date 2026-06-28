@@ -2,7 +2,8 @@ import { z } from "zod";
 import { prisma } from "./prisma.js";
 import { getPresignedPutUrl, deleteS3Object } from "./s3.js";
 import { MAX_FILE_SIZE, MAX_FILES_PER_UPLOAD, ALLOWED_MIME_TYPES } from "./validate.js";
-import { wakeResizeWorker } from "../services/resizeWorker.js";
+import { getBoss } from "./pgboss.js";
+import { env } from "./env.js";
 import type { UploadInitResult } from "@pixshar/shared";
 
 // Shared logic for the presigned, deduplicated upload flow used by both the
@@ -162,11 +163,28 @@ export async function initUpload(opts: {
 
 /**
  * The client has PUT the originals to S3. Processing is driven by the durable
- * resize queue (resizeWorker.ts), which polls for PENDING rows — so this only
+ * pg-boss, which polls for PENDING rows — so this only
  * needs to wake the worker for low latency. Correctness does not depend on it:
  * an abandoned upload (tab closed before this fires) is still picked up by the
  * poll loop, and crash recovery is handled by the stale-PROCESSING reaper.
  */
-export async function completeUpload(_eventId: string, _photoIds: string[]): Promise<void> {
-  wakeResizeWorker();
+export async function completeUpload(_eventId: string, photoIds: string[]): Promise<void> {
+  const boss = getBoss();
+  await Promise.all(
+    photoIds.map((photoId) =>
+      boss.send(
+        "photo-resize",
+        { photoId },
+        {
+          // Deduplicate: skip if a job for this photo is already pending/active.
+          singletonKey: photoId,
+          retryLimit: env.PROCESS_MAX_ATTEMPTS - 1,
+          retryDelay: 10,
+          retryBackoff: true,
+          // Wait for S3 object consistency before the worker fetches it.
+          startAfter: Math.ceil(env.PROCESS_MIN_AGE_MS / 1000),
+        }
+      )
+    )
+  );
 }

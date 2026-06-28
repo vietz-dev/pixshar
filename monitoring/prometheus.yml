@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: pixshar-api
+    static_configs:
+      - targets: ['api:3001']
+    metrics_path: /metrics
+
+  - job_name: pixshar-worker
+    static_configs:
+      - targets: ['image-processor:4000']
+    metrics_path: /metrics

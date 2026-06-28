@@ -1,0 +1,18 @@
+{{- if .Values.imageProcessor.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pixshar.imageProcessor.fullname" . }}
+  labels:
+    {{- include "pixshar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: image-processor
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.imageProcessor.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "pixshar.imageProcessor.selectorLabels" . | nindent 4 }}
+{{- end }}

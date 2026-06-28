@@ -21,20 +21,21 @@ export default function GalleryGatePage() {
   const slug = params.slug as string;
 
   useEffect(() => {
+    // Check if already unlocked — if so, skip straight to the view.
     fetch(`/api/gallery/${slug}`, { credentials: "include" })
       .then((res) => {
         if (res.ok) {
-          // Already unlocked
           router.push(`/gallery/${slug}/view`);
-          return null;
+          return;
         }
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.id) {
-          setEvent(data);
-        }
-        setLoadingEvent(false);
+        // Fetch public event info separately so the gate page can show the event name.
+        fetch(`/api/gallery/${slug}/info`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (data && data.id) setEvent(data);
+          })
+          .catch(() => {})
+          .finally(() => setLoadingEvent(false));
       })
       .catch(() => setLoadingEvent(false));
   }, [slug, router]);

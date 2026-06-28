@@ -10,12 +10,23 @@
     "build:shared": "cd packages/shared && bun run build",
     "build:api": "cd apps/api && bun run build",
     "build:web": "cd apps/web && bun run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "bunx playwright test",
+    "test:e2e:ui": "bunx playwright test --ui",
+    "test:all": "bun run test && bun run test:e2e",
     "release": "bash scripts/release.sh",
     "version": "changeset version"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@types/bun": "latest",
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
-    "concurrently": "^9.0.0"
+    "@playwright/test": "^1.61.1",
+    "@vitest/coverage-v8": "^4.1.9",
+    "concurrently": "^9.0.0",
+    "vitest": "^4.1.9"
   }
 }
