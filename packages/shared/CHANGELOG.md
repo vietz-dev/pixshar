@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.25
+
+### Patch Changes
+
+- de78a3c: Fix linting errors
+
 ## 0.0.24
 
 ### Patch Changes

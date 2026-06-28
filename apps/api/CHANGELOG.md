@@ -1,5 +1,13 @@
 # @pixshar/api
 
+## 0.0.25
+
+### Patch Changes
+
+- de78a3c: Fix linting errors
+- Updated dependencies [de78a3c]
+  - @pixshar/shared@0.0.25
+
 ## 0.0.24
 
 ### Patch Changes
