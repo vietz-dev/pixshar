@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import UploadModal from "../../../../components/UploadModal";
@@ -24,6 +25,8 @@ interface GalleryData {
 }
 
 export default function GalleryViewPage() {
+  const t = useTranslations("gallery.view");
+  const tCommon = useTranslations("common");
   const params = useParams();
   const slug = params.slug as string;
   const [gallery, setGallery] = useState<GalleryData | null>(null);
@@ -38,7 +41,7 @@ export default function GalleryViewPage() {
   const fetchGallery = useCallback(() => {
     fetch(`/api/gallery/${slug}`, { credentials: "include" })
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to load gallery");
+        if (!res.ok) throw new Error(t("loadFailed"));
         return res.json();
       })
       .then((data) => {
@@ -49,7 +52,7 @@ export default function GalleryViewPage() {
         setError(err.message);
         setLoading(false);
       });
-  }, [slug]);
+  }, [slug, t]);
 
   useEffect(() => {
     fetchGallery();
@@ -88,7 +91,7 @@ export default function GalleryViewPage() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
-        Loading...
+        {tCommon("loading")}
       </div>
     );
   }
@@ -102,11 +105,11 @@ export default function GalleryViewPage() {
   if (!gallery) return null;
 
   const coverGradient = "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)";
-  const photoCountLabel = `${gallery.photos.length} photos`;
+  const photoCountLabel = t("photoCount", { count: gallery.photos.length });
 
   const layoutItems = [
-    { key: "masonry" as const, label: "Masonry" },
-    { key: "uniform" as const, label: "Grid" },
+    { key: "masonry" as const, label: t("masonry") },
+    { key: "uniform" as const, label: t("grid") },
   ];
 
   return (
@@ -138,7 +141,7 @@ export default function GalleryViewPage() {
         >
           <div>
             <div style={{ fontSize: 11.5, letterSpacing: ".2em", textTransform: "uppercase", color: "rgba(255,255,255,.85)", fontWeight: 500, marginBottom: 9 }}>
-              Event
+              {t("eventLabel")}
             </div>
             <h1
               style={{
@@ -155,7 +158,7 @@ export default function GalleryViewPage() {
               {gallery.name}
             </h1>
             <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.85)", marginTop: 13 }}>
-              {gallery.description || "A private photo collection"} · {photoCountLabel}
+              {gallery.description || t("descriptionFallback")} · {photoCountLabel}
             </div>
           </div>
           <button
@@ -183,7 +186,7 @@ export default function GalleryViewPage() {
               <path d="M12 17V3m0 0L7 8m5-5 5 5"></path>
               <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"></path>
             </svg>
-            Upload your photos
+            {t("uploadButton")}
           </button>
         </div>
       </div>
@@ -209,40 +212,40 @@ export default function GalleryViewPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <DownloadButton slug={slug} />
           {!isMobile && (
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>Layout</span>
-          <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
-            {layoutItems.map((l) => {
-              const active = layout === l.key;
-              return (
-                <button
-                  key={l.key}
-                  onClick={() => setLayout(l.key)}
-                  style={{
-                    height: 28,
-                    padding: "0 11px",
-                    borderRadius: 7,
-                    border: "none",
-                    fontSize: 12.5,
-                    fontWeight: 500,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    background: active ? "#fff" : "transparent",
-                    color: active ? "#18181b" : "#71717a",
-                    boxShadow: active ? "0 1px 2px rgba(0,0,0,.1)" : "none",
-                    transition: "all .15s",
-                    cursor: "pointer",
-                  }}
-                >
-                  {l.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>{t("layout")}</span>
+              <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
+                {layoutItems.map((l) => {
+                  const active = layout === l.key;
+                  return (
+                    <button
+                      key={l.key}
+                      onClick={() => setLayout(l.key)}
+                      style={{
+                        height: 28,
+                        padding: "0 11px",
+                        borderRadius: 7,
+                        border: "none",
+                        fontSize: 12.5,
+                        fontWeight: 500,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: active ? "#fff" : "transparent",
+                        color: active ? "#18181b" : "#71717a",
+                        boxShadow: active ? "0 1px 2px rgba(0,0,0,.1)" : "none",
+                        transition: "all .15s",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {l.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
-      </div>
+        </div>
       </div>
 
       {/* Photos */}

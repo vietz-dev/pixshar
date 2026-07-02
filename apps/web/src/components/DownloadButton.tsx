@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 
 type DownloadStatus = "NONE" | "DEBOUNCING" | "BUILDING" | "READY" | "FAILED";
 
@@ -16,6 +17,7 @@ interface DownloadState {
 }
 
 export default function DownloadButton({ slug }: { slug: string }) {
+  const t = useTranslations("download.button");
   const [state, setState] = useState<DownloadState | null>(null);
 
   useEffect(() => {
@@ -57,15 +59,13 @@ export default function DownloadButton({ slug }: { slug: string }) {
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        Download all
+        {t("downloadAll")}
       </button>
     );
   }
 
   if (state.status === "READY" && state.url) {
-    const sizeLabel = state.sizeBytes
-      ? ` (${formatBytes(state.sizeBytes)})`
-      : "";
+    const sizeLabel = state.sizeBytes ? formatBytes(state.sizeBytes) : null;
     return (
       <a
         href={state.url}
@@ -94,7 +94,7 @@ export default function DownloadButton({ slug }: { slug: string }) {
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        Download all{sizeLabel}
+        {sizeLabel ? t("downloadAllSize", { size: sizeLabel }) : t("downloadAll")}
       </a>
     );
   }
@@ -102,6 +102,7 @@ export default function DownloadButton({ slug }: { slug: string }) {
   if (state.status === "BUILDING" && state.photoCount && state.photoCount > 0) {
     const isUploading = state.processedPhotos === -1;
     const pct = isUploading ? (state.uploadProgress ?? 0) : Math.round((state.processedPhotos ?? 0) / state.photoCount * 100);
+    const label = isUploading ? t("uploadingS3", { pct }) : t("buildingPct", { pct });
     return (
       <button
         disabled
@@ -134,13 +135,13 @@ export default function DownloadButton({ slug }: { slug: string }) {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "pxSpin 1s linear infinite" }}>
             <path d="M21 12a9 9 0 1 1-6.2-8.5"></path>
           </svg>
-          {isUploading ? `Uploading to S3… ${pct}%` : `Building archive… ${pct}%`}
+          {label}
         </span>
       </button>
     );
   }
 
-  const label = labelFor(state.status);
+  const label = labelFor(t, state.status);
   const isDisabled = state.status === "FAILED";
 
   return (
@@ -180,18 +181,13 @@ export default function DownloadButton({ slug }: { slug: string }) {
   );
 }
 
-function labelFor(status: DownloadStatus): string {
+function labelFor(t: ReturnType<typeof useTranslations<"download.button">>, status: DownloadStatus): string {
   switch (status) {
-    case "NONE":
-      return "Preparing download…";
-    case "DEBOUNCING":
-      return "Waiting for uploads to settle…";
-    case "BUILDING":
-      return "Building archive…";
-    case "FAILED":
-      return "Archive unavailable";
-    default:
-      return "Download all";
+    case "NONE": return t("preparing");
+    case "DEBOUNCING": return t("waitingUploads");
+    case "BUILDING": return t("building");
+    case "FAILED": return t("unavailable");
+    default: return t("downloadAll");
   }
 }
 

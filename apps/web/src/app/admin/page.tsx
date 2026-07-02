@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 interface EventItem {
   id: string;
@@ -29,18 +30,9 @@ const GRADS = [
   "radial-gradient(120% 90% at 28% 16%,rgba(255,255,255,.5) 0%,rgba(255,255,255,0) 46%),linear-gradient(150deg,#f4e9d4 0%,#d7be8c 100%)",
 ];
 
-function statusMeta(st: string) {
-  return st === "READY"
-    ? { statusLabel: "Ready", statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
-    : { statusLabel: "Processing", statusBg: "rgba(254,243,199,.92)", statusColor: "#d97706" };
-}
-
-function formatDate(d: string) {
-  const date = new Date(d);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
 export default function AdminPage() {
+  const t = useTranslations("admin");
+  const tCommon = useTranslations("common");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -61,12 +53,24 @@ export default function AdminPage() {
       .catch(() => setLoading(false));
   }, [router]);
 
-  const eventCountLabel = `${events.length} ${events.length === 1 ? "event" : "events"} · ${events.filter((e) => e.status === "PROCESSING").length} processing`;
+  function statusMeta(st: string) {
+    return st === "READY"
+      ? { statusLabel: t("events.status.ready"), statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
+      : { statusLabel: t("events.status.processing"), statusBg: "rgba(254,243,199,.92)", statusColor: "#d97706" };
+  }
+
+  function formatDate(d: string) {
+    const date = new Date(d);
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  const processingCount = events.filter((e) => e.status === "PROCESSING").length;
+  const eventCountLabel = t("events.eventCount", { count: events.length, processing: processingCount });
 
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
-        Loading...
+        {tCommon("loading")}
       </div>
     );
   }
@@ -86,7 +90,7 @@ export default function AdminPage() {
           <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.01em" }}>Pixshar</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 13, color: "#71717a" }}>Admin Studio</span>
+          <span style={{ fontSize: 13, color: "#71717a" }}>{t("header.adminStudio")}</span>
           <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#18181b", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600 }}>
             A
           </div>
@@ -96,7 +100,7 @@ export default function AdminPage() {
       <div style={{ maxWidth: 1040, margin: "0 auto", padding: "34px 28px 48px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginBottom: 26 }}>
           <div>
-            <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-.025em", margin: 0 }}>Events</h1>
+            <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-.025em", margin: 0 }}>{t("events.title")}</h1>
             <p style={{ fontSize: 14.5, color: "#71717a", margin: "6px 0 0" }}>{eventCountLabel}</p>
           </div>
           <Link href="/admin/events/new">
@@ -123,7 +127,7 @@ export default function AdminPage() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                 <path d="M12 5v14M5 12h14"></path>
               </svg>
-              New event
+              {t("events.newEvent")}
             </button>
           </Link>
         </div>
@@ -167,7 +171,7 @@ export default function AdminPage() {
                 <div style={{ padding: "15px 16px 16px" }}>
                   <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.01em", marginBottom: 3 }}>{ev.name}</div>
                   <div style={{ fontSize: 13, color: "#71717a" }}>
-                    Event · {formatDate(ev.createdAt)}
+                    {t("events.eventDate", { date: formatDate(ev.createdAt) })}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, paddingTop: 13, borderTop: "1px solid #f4f4f5" }}>
                     <span style={{ fontSize: 13, color: "#52525b", display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -176,7 +180,7 @@ export default function AdminPage() {
                         <circle cx="8.5" cy="8.5" r="1.8"></circle>
                         <path d="m21 15-4.5-4.5L7 20"></path>
                       </svg>
-                      {ev._count.photos} photos
+                      {t("events.photos", { count: ev._count.photos })}
                     </span>
                     <span
                       onClick={(e) => { e.stopPropagation(); router.push(`/gallery/${ev.slug}`); }}
@@ -184,7 +188,7 @@ export default function AdminPage() {
                       onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
                     >
-                      View gallery
+                      {t("events.viewGallery")}
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                         <path d="M7 17 17 7M9 7h8v8"></path>
                       </svg>
@@ -198,7 +202,7 @@ export default function AdminPage() {
 
         {events.length === 0 && (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "#a1a1aa", fontSize: 14 }}>
-            No events yet — create your first one above.
+            {t("events.noEvents")}
           </div>
         )}
       </div>

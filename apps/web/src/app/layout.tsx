@@ -1,18 +1,23 @@
 import "./globals.css";
 import { Toaster } from "sonner";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getMessages } from "next-intl/server";
 
 export const metadata = {
   title: "Pixshar",
   description: "Private event photo sharing",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const locale = await getLocale();
+  const messages = await getMessages();
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -22,8 +27,10 @@ export default function RootLayout({
         />
       </head>
       <body style={{ fontFamily: "'Geist', system-ui, -apple-system, sans-serif" }}>
-        {children}
-        <Toaster position="bottom-right" richColors />
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          {children}
+          <Toaster position="bottom-right" richColors />
+        </NextIntlClientProvider>
       </body>
     </html>
   );

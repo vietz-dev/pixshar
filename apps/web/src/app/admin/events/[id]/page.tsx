@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import DownloadButton from "../../../../components/DownloadButton";
@@ -35,13 +35,10 @@ interface EventDetail {
   photos: Photo[];
 }
 
-function statusMeta(st: string) {
-  return st === "READY"
-    ? { statusLabel: "Ready", statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
-    : { statusLabel: "Processing", statusBg: "rgba(254,243,199,.92)", statusColor: "#d97706" };
-}
-
 export default function EventDetailPage() {
+  const t = useTranslations("admin.eventDetail");
+  const tEvents = useTranslations("admin.events");
+  const tCommon = useTranslations("common");
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
@@ -215,7 +212,6 @@ export default function EventDetailPage() {
   }
 
   async function handleDeleteEvent() {
-    if (!confirm("Delete this event and all photos?")) return;
     const res = await fetch(`/api/events/${id}`, {
       method: "DELETE",
       credentials: "include",
@@ -223,7 +219,7 @@ export default function EventDetailPage() {
     if (res.ok) {
       router.push("/admin");
     } else {
-      setError("Failed to delete event");
+      setError(t("deleteEvent.failed"));
     }
   }
 
@@ -233,10 +229,10 @@ export default function EventDetailPage() {
       credentials: "include",
     });
     if (res.ok) {
-      toast.success("Photo deleted");
+      toast.success(t("deletePhoto.success"));
       fetchEvent();
     } else {
-      toast.error("Failed to delete photo");
+      toast.error(t("deletePhoto.failed"));
     }
   }
 
@@ -247,7 +243,13 @@ export default function EventDetailPage() {
     setTimeout(() => setCopied(false), 1600);
   }
 
-  if (loading) return <div style={{ minHeight: "100vh", background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>Loading...</div>;
+  function statusMeta(st: string) {
+    return st === "READY"
+      ? { statusLabel: t("status.ready"), statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
+      : { statusLabel: t("status.processing"), statusBg: "rgba(254,243,199,.92)", statusColor: "#d97706" };
+  }
+
+  if (loading) return <div style={{ minHeight: "100vh", background: "#fafafa", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>{tCommon("loading")}</div>;
   if (!event) return null;
 
   const meta = statusMeta(event.status);
@@ -266,6 +268,8 @@ export default function EventDetailPage() {
   const total = uploadStatus.pending + uploadStatus.processed;
   const progressPct = total ? Math.round((uploadStatus.processed / total) * 100) : 0;
 
+  const eventDate = new Date(event.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
   return (
     <div style={{ minHeight: "100vh", background: "#fafafa", animation: "pxFade .35s ease both" }}>
       <div style={{ maxWidth: 920, margin: "0 auto", padding: "30px 28px 48px" }}>
@@ -278,7 +282,7 @@ export default function EventDetailPage() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="m15 18-6-6 6-6"></path>
           </svg>
-          Back to events
+          {t("backToEvents")}
         </button>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", marginBottom: 22 }}>
@@ -291,7 +295,7 @@ export default function EventDetailPage() {
               </div>
             </div>
             <p style={{ fontSize: 14, color: "#71717a", margin: "7px 0 0" }}>
-              Event · {new Date(event.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              {tEvents("eventDate", { date: eventDate })}
             </p>
           </div>
           <div style={{ display: "flex", gap: 9 }}>
@@ -306,7 +310,7 @@ export default function EventDetailPage() {
                 <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path>
                 <circle cx="12" cy="12" r="3"></circle>
               </svg>
-              Preview
+              {t("preview")}
             </button>
             <button
               onClick={handleDeleteEvent}
@@ -317,7 +321,7 @@ export default function EventDetailPage() {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
               </svg>
-              Delete
+              {tCommon("delete")}
             </button>
           </div>
         </div>
@@ -329,7 +333,7 @@ export default function EventDetailPage() {
               <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path>
               <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path>
             </svg>
-            Share this gallery
+            {t("shareGallery")}
           </div>
           <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 200, height: 38, display: "flex", alignItems: "center", padding: "0 12px", background: "#f4f4f5", borderRadius: 8, fontSize: 13, fontFamily: "'Geist Mono', monospace", color: "#3f3f46", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
@@ -339,7 +343,7 @@ export default function EventDetailPage() {
               onClick={copyLink}
               style={{ height: 38, padding: "0 14px", borderRadius: 8, border: "1px solid #e4e4e7", background: copied ? "#ecfdf5" : "#fff", color: copied ? "#16a34a" : "#18181b", fontSize: 13.5, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", transition: "all .15s" }}
             >
-              {copied ? "Copied!" : "Copy link"}
+              {copied ? t("copied") : t("copyLink")}
             </button>
           </div>
         </div>
@@ -352,7 +356,7 @@ export default function EventDetailPage() {
                 <path d="M21 12a9 9 0 1 1-6.2-8.5"></path>
               </svg>
               <span style={{ fontSize: 13.5, fontWeight: 500, color: "#92400e" }}>
-                Processing {uploadStatus.processed} of {total} photos
+                {t("processing.banner", { processed: uploadStatus.processed, total })}
               </span>
             </div>
             <div style={{ height: 7, borderRadius: 999, background: "#fde68a", overflow: "hidden" }}>
@@ -365,14 +369,14 @@ export default function EventDetailPage() {
         {uploadStatus.failed > 0 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "13px 16px", marginBottom: 16 }}>
             <span style={{ fontSize: 13.5, fontWeight: 500, color: "#b91c1c" }}>
-              {uploadStatus.failed} photo{uploadStatus.failed === 1 ? "" : "s"} failed to process
+              {t("processing.failed", { count: uploadStatus.failed })}
             </span>
             <button
               onClick={handleRetryFailed}
               disabled={retryingFailed}
               style={{ height: 32, padding: "0 13px", borderRadius: 7, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12.5, fontWeight: 500, cursor: "pointer", opacity: retryingFailed ? 0.6 : 1 }}
             >
-              {retryingFailed ? "Retrying…" : "Retry failed"}
+              {retryingFailed ? t("processing.retrying") : t("processing.retryFailed")}
             </button>
           </div>
         )}
@@ -399,9 +403,9 @@ export default function EventDetailPage() {
             </svg>
           </div>
           <div style={{ fontSize: 14.5, fontWeight: 500, marginBottom: 3 }}>
-            Drop photos here, or <span style={{ color: "#2563eb" }}>browse</span>
+            {t("upload.dropzoneMain")} <span style={{ color: "#2563eb" }}>{t("upload.browse")}</span>
           </div>
-          <div style={{ fontSize: 12.5, color: "#a1a1aa" }}>JPEG, PNG or HEIC · up to 4 uploading at once</div>
+          <div style={{ fontSize: 12.5, color: "#a1a1aa" }}>{t("upload.hint")}</div>
         </div>
 
         {/* Upload tray */}
@@ -419,14 +423,14 @@ export default function EventDetailPage() {
 
         {/* Download archive */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 14px" }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Download archive</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{t("downloadArchive")}</h2>
         </div>
         <DownloadPanel eventId={event.id} slug={event.slug} />
 
         {/* Photos */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 14px" }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Photos</h2>
-          <span style={{ fontSize: 13, color: "#71717a" }}>{event.photos.length} total</span>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{t("photos")}</h2>
+          <span style={{ fontSize: 13, color: "#71717a" }}>{t("totalPhotos", { count: event.photos.length })}</span>
         </div>
         <PhotoGrid
           photos={gridPhotos.filter((p) => p.status === "PROCESSED")}
@@ -458,13 +462,17 @@ export default function EventDetailPage() {
           />
         )}
 
+        {error && (
+          <div style={{ fontSize: 13, color: "#dc2626", marginTop: 12 }}>{error}</div>
+        )}
+
         {/* Delete confirmation dialog */}
         <AlertDialog
           open={deleteTarget !== null}
-          title="Delete this photo?"
-          description="This action cannot be undone. The photo will be permanently removed from the event."
-          cancelLabel="Cancel"
-          confirmLabel="Delete"
+          title={t("deletePhoto.title")}
+          description={t("deletePhoto.description")}
+          cancelLabel={tCommon("cancel")}
+          confirmLabel={t("deletePhoto.deleteButton")}
           destructive
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {

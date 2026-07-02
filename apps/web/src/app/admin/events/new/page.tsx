@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 function slugify(name: string): string {
   return name
@@ -11,6 +12,7 @@ function slugify(name: string): string {
 }
 
 export default function NewEventPage() {
+  const t = useTranslations("admin.newEvent");
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
@@ -47,13 +49,13 @@ export default function NewEventPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create event");
+        throw new Error(data.error || t("createFailed"));
       }
 
       const event = await res.json();
       router.push(`/admin/events/${event.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create event");
+      setError(err instanceof Error ? err.message : t("createFailed"));
       setLoading(false);
     }
   }
@@ -70,17 +72,17 @@ export default function NewEventPage() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="m15 18-6-6 6-6"></path>
           </svg>
-          Back to events
+          {t("backToEvents")}
         </button>
-        <h1 style={{ fontSize: 25, fontWeight: 600, letterSpacing: "-.025em", margin: "0 0 5px" }}>Create event</h1>
-        <p style={{ fontSize: 14.5, color: "#71717a", margin: "0 0 26px" }}>Set up a new private gallery for your client.</p>
+        <h1 style={{ fontSize: 25, fontWeight: 600, letterSpacing: "-.025em", margin: "0 0 5px" }}>{t("title")}</h1>
+        <p style={{ fontSize: 14.5, color: "#71717a", margin: "0 0 26px" }}>{t("subtitle")}</p>
         <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.05)", padding: "26px 24px" }}>
           <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>Event name</label>
+            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>{t("nameLabel")}</label>
             <input
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="e.g. Marlowe & June"
+              placeholder={t("namePlaceholder")}
               required
               style={{
                 height: 40,
@@ -104,7 +106,7 @@ export default function NewEventPage() {
               }}
             />
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>Share link</label>
+            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>{t("shareLinkLabel")}</label>
             <div
               style={{
                 display: "flex",
@@ -122,21 +124,21 @@ export default function NewEventPage() {
               <input
                 value={slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
-                placeholder="slug"
+                placeholder={t("slugPlaceholder")}
                 required
                 pattern="[a-z0-9-]+"
                 style={{ flex: 1, height: 40, padding: "0 12px", border: "none", fontSize: 13, background: "#fff", outline: "none", fontFamily: "'Geist Mono', monospace", color: "#09090b" }}
               />
             </div>
-            <p style={{ fontSize: 12.5, color: "#a1a1aa", margin: "0 0 18px" }}>Auto-generated from the name. Edit if you like.</p>
+            <p style={{ fontSize: 12.5, color: "#a1a1aa", margin: "0 0 18px" }}>{t("slugHint")}</p>
 
             <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
-              Description <span style={{ color: "#a1a1aa", fontWeight: 400 }}>(optional)</span>
+              {t("descriptionLabel")} <span style={{ color: "#a1a1aa", fontWeight: 400 }}>{t("optional")}</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="A note your guests will see on the cover."
+              placeholder={t("descriptionPlaceholder")}
               style={{
                 width: "100%",
                 minHeight: 74,
@@ -161,11 +163,11 @@ export default function NewEventPage() {
               }}
             />
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>Gallery password</label>
+            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>{t("passwordLabel")}</label>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Guests enter this to unlock"
+              placeholder={t("passwordPlaceholder")}
               required
               style={{
                 height: 40,
@@ -210,7 +212,7 @@ export default function NewEventPage() {
             onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
           >
-            Cancel
+            {t("cancelButton")}
           </button>
           <button
             onClick={handleSubmit}
@@ -229,7 +231,7 @@ export default function NewEventPage() {
               cursor: loading ? "not-allowed" : "pointer",
             }}
           >
-            {loading ? "Creating..." : "Create event"}
+            {loading ? t("creating") : t("createButton")}
           </button>
         </div>
       </div>

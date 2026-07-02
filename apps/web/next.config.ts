@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 // In Docker, WORKSPACE_ROOT=/app tells Turbopack where to find next/package.json.
 // Locally, leaving it unset lets Next.js auto-detect the workspace root.
@@ -27,4 +28,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+export default withNextIntl(nextConfig);

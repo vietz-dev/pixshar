@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useState, useRef } from "react";
+import { useTranslations } from "next-intl";
 
 interface LightboxPhoto {
   id: string;
@@ -20,6 +21,8 @@ interface LightboxProps {
 }
 
 export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDownload, onDelete }: LightboxProps) {
+  const t = useTranslations("lightbox");
+  const tCommon = useTranslations("common");
   const photo = photos[index];
   const counter = `${index + 1} / ${photos.length}`;
   const [downloading, setDownloading] = useState(false);
@@ -136,7 +139,7 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              {downloading ? "Loading…" : "Download"}
+              {downloading ? t("downloading") : t("download")}
             </button>
           )}
           {onDelete && (
@@ -163,7 +166,7 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
               </svg>
-              Delete
+              {tCommon("delete")}
             </button>
           )}
           <button
@@ -231,7 +234,7 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
         {photo.url ? (
           <img
             src={photo.url}
-            alt={photo.photographerName || "Photo"}
+            alt={photo.photographerName || t("photoAlt")}
             style={{
               maxWidth: "min(88vw, 1180px)",
               maxHeight: "80vh",
@@ -275,10 +278,10 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
               color: "#fff",
             }}
           >
-            {(photo.photographerName || "?").charAt(0)}
+            {(photo.photographerName || tCommon("anonymous")).charAt(0).toUpperCase()}
           </div>
           <span style={{ fontSize: 13, color: "rgba(255,255,255,.92)" }}>
-            {photo.photographerName || "Anonymous"}
+            {photo.photographerName || tCommon("anonymous")}
           </span>
         </div>
       </div>

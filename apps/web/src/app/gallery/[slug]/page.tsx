@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 interface GalleryEvent {
   id: string;
@@ -11,6 +12,7 @@ interface GalleryEvent {
 }
 
 export default function GalleryGatePage() {
+  const t = useTranslations("gallery.gate");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,12 +56,12 @@ export default function GalleryGatePage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Invalid password");
+        throw new Error(data.error || t("invalidPassword"));
       }
 
       router.push(`/gallery/${slug}/view`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to unlock");
+      setError(err instanceof Error ? err.message : t("unlockFailed"));
     } finally {
       setLoading(false);
     }
@@ -70,7 +72,7 @@ export default function GalleryGatePage() {
   if (loadingEvent) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
-        Loading...
+        <span>…</span>
       </div>
     );
   }
@@ -90,13 +92,13 @@ export default function GalleryGatePage() {
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(15,15,18,.32) 0%,rgba(15,15,18,.55) 100%)" }} />
       <div style={{ position: "relative", width: "100%", maxWidth: 400, textAlign: "center", animation: "pxRise .55s ease both" }}>
         <div style={{ fontSize: 12, letterSpacing: ".22em", textTransform: "uppercase", color: "rgba(255,255,255,.82)", fontWeight: 500, marginBottom: 14 }}>
-          Private Gallery
+          {t("privateGallery")}
         </div>
         <h1 style={{ fontFamily: "'Newsreader', serif", fontWeight: 300, fontSize: 46, lineHeight: 1.08, color: "#fff", margin: "0 0 12px", letterSpacing: "-.01em", textShadow: "0 2px 20px rgba(0,0,0,.25)" }}>
-          {event?.name || "Gallery"}
+          {event?.name || t("galleryFallback")}
         </h1>
         <div style={{ fontSize: 14, color: "rgba(255,255,255,.85)", marginBottom: 30 }}>
-          {event?.description || "A private photo collection"}
+          {event?.description || t("descriptionFallback")}
         </div>
         <div style={{ background: "rgba(255,255,255,.97)", backdropFilter: "blur(8px)", borderRadius: 16, boxShadow: "0 20px 50px -18px rgba(0,0,0,.5)", padding: "24px 22px", textAlign: "left" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", fontSize: 13.5, fontWeight: 500, color: "#52525b", marginBottom: 16 }}>
@@ -104,14 +106,14 @@ export default function GalleryGatePage() {
               <rect x="4" y="11" width="16" height="10" rx="2"></rect>
               <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
             </svg>
-            This gallery is private
+            {t("isPrivate")}
           </div>
           <form onSubmit={handleSubmit}>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
+              placeholder={t("passwordPlaceholder")}
               style={{
                 height: 42,
                 width: "100%",
@@ -159,13 +161,13 @@ export default function GalleryGatePage() {
                 cursor: loading ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "Unlocking..." : "Unlock gallery"}
+              {loading ? t("unlocking") : t("unlock")}
             </button>
           </form>
         </div>
         <div style={{ marginTop: 22, fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <div style={{ width: 13, height: 13, borderRadius: 4, background: "rgba(255,255,255,.85)" }} />
-          Powered by Pixshar
+          {t("poweredBy")}
         </div>
       </div>
     </div>

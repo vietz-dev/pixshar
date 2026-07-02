@@ -1,0 +1,197 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "close": "Close",
+    "anonymous": "Anonymous"
+  },
+  "auth": {
+    "login": {
+      "subtitle": "Sign in to your studio",
+      "emailLabel": "Email",
+      "passwordLabel": "Password",
+      "forgotPassword": "Forgot?",
+      "signingIn": "Signing in...",
+      "signIn": "Sign in",
+      "adminOnly": "Admin access only · self-hosted",
+      "loginFailed": "Login failed"
+    }
+  },
+  "admin": {
+    "header": {
+      "adminStudio": "Admin Studio"
+    },
+    "events": {
+      "title": "Events",
+      "eventCount": "{count, plural, one {# event} other {# events}} · {processing} processing",
+      "newEvent": "New event",
+      "noEvents": "No events yet — create your first one above.",
+      "eventDate": "Event · {date}",
+      "photos": "{count, plural, one {# photo} other {# photos}}",
+      "viewGallery": "View gallery",
+      "status": {
+        "ready": "Ready",
+        "processing": "Processing"
+      }
+    },
+    "newEvent": {
+      "backToEvents": "Back to events",
+      "title": "Create event",
+      "subtitle": "Set up a new private gallery for your client.",
+      "namePlaceholder": "e.g. Marlowe & June",
+      "nameLabel": "Event name",
+      "shareLinkLabel": "Share link",
+      "slugPlaceholder": "slug",
+      "slugHint": "Auto-generated from the name. Edit if you like.",
+      "descriptionLabel": "Description",
+      "optional": "(optional)",
+      "descriptionPlaceholder": "A note your guests will see on the cover.",
+      "passwordLabel": "Gallery password",
+      "passwordPlaceholder": "Guests enter this to unlock",
+      "cancelButton": "Cancel",
+      "creating": "Creating...",
+      "createButton": "Create event",
+      "createFailed": "Failed to create event"
+    },
+    "eventDetail": {
+      "backToEvents": "Back to events",
+      "preview": "Preview",
+      "shareGallery": "Share this gallery",
+      "copied": "Copied!",
+      "copyLink": "Copy link",
+      "processing": {
+        "banner": "Processing {processed} of {total} photos",
+        "failed": "{count, plural, one {# photo failed to process} other {# photos failed to process}}",
+        "retrying": "Retrying…",
+        "retryFailed": "Retry failed"
+      },
+      "upload": {
+        "dropzoneMain": "Drop photos here, or",
+        "browse": "browse",
+        "hint": "JPEG, PNG or HEIC · up to 4 uploading at once"
+      },
+      "downloadArchive": "Download archive",
+      "photos": "Photos",
+      "totalPhotos": "{count} total",
+      "deleteEvent": {
+        "title": "Delete this event?",
+        "description": "This will permanently delete all photos and cannot be undone.",
+        "failed": "Failed to delete event"
+      },
+      "deletePhoto": {
+        "title": "Delete this photo?",
+        "description": "This action cannot be undone. The photo will be permanently removed from the event.",
+        "success": "Photo deleted",
+        "failed": "Failed to delete photo",
+        "deleteButton": "Delete photo"
+      },
+      "status": {
+        "ready": "Ready",
+        "processing": "Processing"
+      }
+    }
+  },
+  "gallery": {
+    "gate": {
+      "privateGallery": "Private Gallery",
+      "galleryFallback": "Gallery",
+      "descriptionFallback": "A private photo collection",
+      "isPrivate": "This gallery is private",
+      "passwordPlaceholder": "Enter password",
+      "unlocking": "Unlocking...",
+      "unlock": "Unlock gallery",
+      "invalidPassword": "Invalid password",
+      "unlockFailed": "Failed to unlock",
+      "poweredBy": "Powered by Pixshar"
+    },
+    "view": {
+      "eventLabel": "Event",
+      "descriptionFallback": "A private photo collection",
+      "photoCount": "{count, plural, one {# photo} other {# photos}}",
+      "uploadButton": "Upload your photos",
+      "layout": "Layout",
+      "masonry": "Masonry",
+      "grid": "Grid",
+      "loadFailed": "Failed to load gallery"
+    }
+  },
+  "upload": {
+    "modal": {
+      "title": "Share your photos",
+      "subtitle": "Add your shots to {galleryName}.",
+      "nameLabel": "Your name",
+      "namePlaceholder": "So we know whose photos these are",
+      "chooseTap": "Tap to choose photos",
+      "chooseDrag": "or drag them here",
+      "staying": "Please stay on this page until your upload finishes.",
+      "uploaded": "Uploaded — thank you!",
+      "uploadCount": "{count, plural, one {Upload # photo} other {Upload # photos}}",
+      "chooseFirst": "Choose photos to upload"
+    },
+    "tray": {
+      "uploadingTitle": "Uploading {done} of {total} photos",
+      "uploadedWithFailedTitle": "{done} uploaded · {failed} failed",
+      "allUploadedTitle": "All {total} photos uploaded",
+      "speedSubtitle": "{speed} MB/s · about {eta} left",
+      "retryNeededSubtitle": "A few photos need another try.",
+      "alreadyInGallerySubtitle": "{count, plural, one {# was already in gallery.} other {# were already in gallery.}}",
+      "addedNowSubtitle": "Added to gallery just now.",
+      "cancelButton": "Cancel",
+      "clearButton": "Clear",
+      "failedCount": "{count, plural, one {# photo failed to upload} other {# photos failed to upload}}",
+      "retryButton": "Retry",
+      "statusDone": "Done",
+      "statusFailed": "Failed",
+      "statusAlreadyUploaded": "Already uploaded",
+      "statusQueued": "Queued",
+      "overflow": "+ {count} more in this upload",
+      "skippedNote": " · {count} already uploaded"
+    }
+  },
+  "download": {
+    "button": {
+      "downloadAll": "Download all",
+      "downloadAllSize": "Download all ({size})",
+      "uploadingS3": "Uploading to S3… {pct}%",
+      "buildingPct": "Building archive… {pct}%",
+      "preparing": "Preparing download…",
+      "waitingUploads": "Waiting for uploads to settle…",
+      "building": "Building archive…",
+      "unavailable": "Archive unavailable"
+    },
+    "panel": {
+      "loadingStatus": "Loading archive status…",
+      "cancelButton": "Cancel",
+      "cancellingButton": "Cancelling…",
+      "rebuildButton": "Rebuild archive",
+      "startingButton": "Starting…",
+      "processedPhotos": "Processed photos",
+      "archiveSize": "Archive size",
+      "lastUpdated": "Last updated",
+      "settlesAt": "Settles at",
+      "zipping": "Zipping photos",
+      "uploadingS3": "Uploading to S3",
+      "photosZipped": "{processed} of {total} photos zipped",
+      "uploadingArchive": "{total} photos zipped — uploading archive to S3",
+      "cancelConfirm": "Cancel the current archive build?",
+      "statusNone": "None",
+      "statusWaiting": "Waiting",
+      "statusQueued": "Queued",
+      "statusBuilding": "Building",
+      "statusReady": "Ready",
+      "statusFailed": "Failed",
+      "statusCancelled": "Cancelled"
+    }
+  },
+  "lightbox": {
+    "download": "Download",
+    "downloading": "Loading…",
+    "photoAlt": "Photo"
+  },
+  "photoGrid": {
+    "noPhotos": "No photos yet — upload some to get started.",
+    "statusProcessing": "Processing...",
+    "statusFailed": "Failed"
+  }
+}

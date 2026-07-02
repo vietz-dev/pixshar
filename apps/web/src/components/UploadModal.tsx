@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import UploadTray, { UploadItem, randomTint } from "./UploadTray";
 import { presignedUpload } from "../lib/uploadClient";
 
@@ -11,6 +12,8 @@ interface UploadModalProps {
 }
 
 export default function UploadModal({ galleryName, slug, onClose }: UploadModalProps) {
+  const t = useTranslations("upload.modal");
+  const tCommon = useTranslations("common");
   const [name, setName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<UploadItem[]>([]);
@@ -24,10 +27,10 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
   const allDone = total > 0 && !active && !queue.some((q) => q.status === "error");
 
   const submitLabel = submitted && allDone
-    ? "Uploaded — thank you!"
+    ? t("uploaded")
     : total > 0
-      ? `Upload ${total} photo${total === 1 ? "" : "s"}`
-      : "Choose photos to upload";
+      ? t("uploadCount", { count: total })
+      : t("chooseFirst");
   const submitBg = nameOk
     ? submitted && allDone
       ? "#16a34a"
@@ -144,9 +147,9 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
       >
         <div style={{ padding: "20px 22px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.01em", margin: 0 }}>Share your photos</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.01em", margin: 0 }}>{t("title")}</h2>
             <p style={{ fontSize: 13.5, color: "#71717a", margin: "5px 0 0" }}>
-              Add your shots to <span style={{ fontWeight: 500, color: "#3f3f46" }}>{galleryName}</span>.
+              {t("subtitle", { galleryName })}
             </p>
           </div>
           <button
@@ -175,12 +178,12 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
 
         <div style={{ padding: "18px 22px 22px" }}>
           <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
-            Your name <span style={{ color: "#dc2626" }}>*</span>
+            {t("nameLabel")} <span style={{ color: "#dc2626" }}>*</span>
           </label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="So we know whose photos these are"
+            placeholder={t("namePlaceholder")}
             style={{
               height: 40,
               width: "100%",
@@ -237,8 +240,8 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
                 <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
               </svg>
             </div>
-            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>Tap to choose photos</div>
-            <div style={{ fontSize: 12, color: "#a1a1aa" }}>or drag them here</div>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{t("chooseTap")}</div>
+            <div style={{ fontSize: 12, color: "#a1a1aa" }}>{t("chooseDrag")}</div>
           </div>
 
           {total > 0 && (
@@ -261,7 +264,7 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
                 <path d="M12 16v-4M12 8h.01" />
               </svg>
               <span style={{ fontSize: 12, color: "#1e40af", fontWeight: 500 }}>
-                Please stay on this page until your upload finishes.
+                {t("staying")}
               </span>
             </div>
           )}
@@ -286,7 +289,7 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
               onMouseEnter={(e) => { e.currentTarget.style.background = "#15803d"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#16a34a"; }}
             >
-              Close
+              {tCommon("close")}
             </button>
           ) : (
             <button

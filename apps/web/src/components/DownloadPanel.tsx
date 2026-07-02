@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 
 interface AdminDownloadState {
   status: string;
@@ -15,20 +16,21 @@ interface AdminDownloadState {
   updatedAt: string;
 }
 
-const STATUS_META: Record<string, { label: string; bg: string; color: string; dot: string }> = {
-  NONE: { label: "None", bg: "#f4f4f5", color: "#71717a", dot: "#a1a1aa" },
-  DEBOUNCING: { label: "Waiting", bg: "#fffbeb", color: "#d97706", dot: "#d97706" },
-  QUEUED: { label: "Queued", bg: "#eff6ff", color: "#2563eb", dot: "#2563eb" },
-  BUILDING: { label: "Building", bg: "#eff6ff", color: "#2563eb", dot: "#2563eb" },
-  READY: { label: "Ready", bg: "#ecfdf5", color: "#16a34a", dot: "#16a34a" },
-  FAILED: { label: "Failed", bg: "#fef2f2", color: "#dc2626", dot: "#dc2626" },
-  CANCELLED: { label: "Cancelled", bg: "#fef2f2", color: "#dc2626", dot: "#dc2626" },
-};
-
 export default function DownloadPanel({ eventId, slug }: { eventId: string; slug: string }) {
+  const t = useTranslations("download.panel");
   const [state, setState] = useState<AdminDownloadState | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const STATUS_META: Record<string, { label: string; bg: string; color: string; dot: string }> = {
+    NONE:      { label: t("statusNone"),      bg: "#f4f4f5", color: "#71717a", dot: "#a1a1aa" },
+    DEBOUNCING:{ label: t("statusWaiting"),   bg: "#fffbeb", color: "#d97706", dot: "#d97706" },
+    QUEUED:    { label: t("statusQueued"),    bg: "#eff6ff", color: "#2563eb", dot: "#2563eb" },
+    BUILDING:  { label: t("statusBuilding"),  bg: "#eff6ff", color: "#2563eb", dot: "#2563eb" },
+    READY:     { label: t("statusReady"),     bg: "#ecfdf5", color: "#16a34a", dot: "#16a34a" },
+    FAILED:    { label: t("statusFailed"),    bg: "#fef2f2", color: "#dc2626", dot: "#dc2626" },
+    CANCELLED: { label: t("statusCancelled"), bg: "#fef2f2", color: "#dc2626", dot: "#dc2626" },
+  };
 
   useEffect(() => {
     const es = new EventSource(`/api/events/${eventId}/download/status/stream`, { withCredentials: true });
@@ -57,7 +59,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
   }
 
   async function handleCancel() {
-    if (!confirm("Cancel the current archive build?")) return;
+    if (!confirm(t("cancelConfirm"))) return;
     setActionLoading("cancel");
     try {
       await fetch(`/api/events/${eventId}/download/cancel`, {
@@ -72,7 +74,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
   if (loading) {
     return (
       <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: "#a1a1aa" }}>Loading archive status…</div>
+        <div style={{ fontSize: 13, color: "#a1a1aa" }}>{t("loadingStatus")}</div>
       </div>
     );
   }
@@ -136,7 +138,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
                 <circle cx="12" cy="12" r="10" />
                 <path d="m15 9-6 6M9 9l6 6" />
               </svg>
-              {actionLoading === "cancel" ? "Cancelling…" : "Cancel"}
+              {actionLoading === "cancel" ? t("cancellingButton") : t("cancelButton")}
             </button>
           )}
           {isTerminal && (
@@ -167,7 +169,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              {actionLoading === "build" ? "Starting…" : "Rebuild archive"}
+              {actionLoading === "build" ? t("startingButton") : t("rebuildButton")}
             </button>
           )}
         </div>
@@ -176,26 +178,26 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
       {/* Stats grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: isZipping || isUploading ? 12 : 0 }}>
         <div>
-          <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>Processed photos</div>
+          <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>{t("processedPhotos")}</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#18181b" }}>
             {state.processedPhotos} / {state.totalPhotos}
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>Archive size</div>
+          <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>{t("archiveSize")}</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#18181b" }}>
             {state.zipSizeBytes ? formatBytes(state.zipSizeBytes) : "—"}
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>Last updated</div>
+          <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>{t("lastUpdated")}</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "#18181b" }}>
             {state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : "—"}
           </div>
         </div>
         {state.debounceUntil && (
           <div>
-            <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>Settles at</div>
+            <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>{t("settlesAt")}</div>
             <div style={{ fontSize: 14, fontWeight: 500, color: "#18181b" }}>
               {new Date(state.debounceUntil).toLocaleTimeString()}
             </div>
@@ -207,14 +209,14 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
       {isZipping && (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 500, color: "#52525b" }}>Zipping photos</span>
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: "#52525b" }}>{t("zipping")}</span>
             <span style={{ fontSize: 12.5, color: "#71717a" }}>{zipPct}%</span>
           </div>
           <div style={{ height: 7, borderRadius: 999, background: "#f4f4f5", overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${zipPct}%`, background: "#2563eb", borderRadius: 999, transition: "width .6s ease" }} />
           </div>
           <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 5 }}>
-            {state.processedPhotos} of {state.photoCount} photos zipped
+            {t("photosZipped", { processed: state.processedPhotos, total: state.photoCount })}
           </div>
         </div>
       )}
@@ -223,14 +225,14 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
       {isUploading && (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 500, color: "#52525b" }}>Uploading to S3</span>
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: "#52525b" }}>{t("uploadingS3")}</span>
             <span style={{ fontSize: 12.5, color: "#71717a" }}>{uploadPct}%</span>
           </div>
           <div style={{ height: 7, borderRadius: 999, background: "#f4f4f5", overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${uploadPct}%`, background: "#2563eb", borderRadius: 999, transition: "width .6s ease" }} />
           </div>
           <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 5 }}>
-            {state.photoCount} photos zipped — uploading archive to S3
+            {t("uploadingArchive", { total: state.photoCount })}
           </div>
         </div>
       )}

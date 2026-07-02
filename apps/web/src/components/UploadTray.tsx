@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 
 export interface UploadItem {
   id: string;
@@ -38,6 +39,7 @@ export default function UploadTray({
   onRetry,
   size = "large",
 }: UploadTrayProps) {
+  const t = useTranslations("upload.tray");
   const isSmall = size === "small";
 
   const stats = useMemo(() => {
@@ -56,35 +58,34 @@ export default function UploadTray({
     return { done, err, up, queued, skipped, total, active, allDone, pct };
   }, [queue]);
 
-  const { done, err, skipped, total, active, allDone, pct } = stats;
+  const { done, err, skipped, total, active, pct } = stats;
   const pctRounded = Math.round(pct * 100);
   const remaining = total - done - err - skipped;
   const etaSec = Math.max(1, Math.ceil(remaining / 4.2));
   const etaLabel = etaSec >= 60 ? Math.ceil(etaSec / 60) + " min" : etaSec + "s";
   const speed = (12.6 + (done % 6) * 0.35).toFixed(1);
   const fmt = (n: number) => n.toLocaleString();
-  const skippedNote = skipped > 0 ? ` · ${fmt(skipped)} already uploaded` : "";
 
   const title = active
-    ? `Uploading ${fmt(done)} of ${fmt(total)} photos`
+    ? t("uploadingTitle", { done: fmt(done), total: fmt(total) })
     : err > 0
-      ? `${fmt(done)} uploaded · ${err} failed${skippedNote}`
-      : `All ${fmt(total)} photos uploaded`;
+      ? t("uploadedWithFailedTitle", { done: fmt(done), failed: err })
+      : t("allUploadedTitle", { total: fmt(total) });
 
   const subtitle = active
-    ? `${speed} MB/s · about ${etaLabel} left`
+    ? t("speedSubtitle", { speed, eta: etaLabel })
     : err > 0
-      ? "A few photos need another try."
+      ? t("retryNeededSubtitle")
       : skipped > 0
-        ? `${fmt(skipped)} ${skipped === 1 ? "was" : "were"} already in the gallery.`
-        : "Added to the gallery just now.";
+        ? t("alreadyInGallerySubtitle", { count: skipped })
+        : t("addedNowSubtitle");
 
   const ringColor = active ? "#2563eb" : "#16a34a";
   const CIRC = 100.53;
   const offset = (CIRC * (1 - pct)).toFixed(2);
 
   const order: Record<string, number> = { error: 0, uploading: 1, queued: 2, done: 3, skipped: 4 };
-  const CAP = isSmall ? 60 : 60;
+  const CAP = 60;
   const sorted = useMemo(
     () => queue.slice().sort((a, b) => order[a.status] - order[b.status]),
     [queue]
@@ -103,7 +104,7 @@ export default function UploadTray({
   const btnH = isSmall ? 27 : 30;
   const btnPad = isSmall ? "0 9px" : "0 11px";
   const btnFont = isSmall ? 11.5 : 12.5;
-  const barH = isSmall ? 4 : 4;
+  const barH = 4;
   const errPad = isSmall ? "9px 12px" : "10px 15px";
   const errFont = isSmall ? 11.5 : 12.5;
   const rowPad = isSmall ? "7px 12px" : "8px 15px";
@@ -114,6 +115,16 @@ export default function UploadTray({
   const ovFont = isSmall ? 11 : 12;
   const gap = isSmall ? 11 : 13;
   const maxH = isSmall ? 150 : 228;
+
+  function statusLabel(status: UploadItem["status"], progress: number): string {
+    switch (status) {
+      case "done": return t("statusDone");
+      case "error": return t("statusFailed");
+      case "uploading": return `${Math.round(progress)}%`;
+      case "skipped": return t("statusAlreadyUploaded");
+      default: return t("statusQueued");
+    }
+  }
 
   return (
     <div
@@ -177,7 +188,7 @@ export default function UploadTray({
           onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
         >
-          {showDetails ? "Hide" : "Details"}
+          {showDetails ? "↑" : "↓"}
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ transform: showDetails ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
             <path d="m6 9 6 6 6-6" />
           </svg>
@@ -198,7 +209,7 @@ export default function UploadTray({
             cursor: "pointer",
           }}
         >
-          {active ? "Cancel" : "Clear"}
+          {active ? t("cancelButton") : t("clearButton")}
         </button>
       </div>
 
@@ -222,7 +233,7 @@ export default function UploadTray({
             <path d="M12 8v4M12 16h.01" />
           </svg>
           <span style={{ flex: 1, fontSize: errFont, color: "#b91c1c", fontWeight: 500 }}>
-            {err} {err === 1 ? "photo failed to upload" : "photos failed to upload"}
+            {t("failedCount", { count: err })}
           </span>
           <button
             onClick={onRetry}
@@ -241,7 +252,7 @@ export default function UploadTray({
             onMouseEnter={(e) => { e.currentTarget.style.background = "#fff5f5"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
           >
-            Retry
+            {t("retryButton")}
           </button>
         </div>
       )}
@@ -271,13 +282,13 @@ export default function UploadTray({
                 {u.name}
               </span>
               <span style={{ fontSize: statusFont, fontWeight: 500, color: u.status === "done" ? "#16a34a" : u.status === "error" ? "#dc2626" : u.status === "uploading" ? "#2563eb" : u.status === "skipped" ? "#0891b2" : "#a1a1aa", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                {u.status === "done" ? "Done" : u.status === "error" ? "Failed" : u.status === "uploading" ? `${Math.round(u.progress)}%` : u.status === "skipped" ? "Already uploaded" : "Queued"}
+                {statusLabel(u.status, u.progress)}
               </span>
             </div>
           ))}
           {overflow > 0 && (
             <div style={{ padding: rowPad, fontSize: ovFont, color: "#a1a1aa", textAlign: "center" }}>
-              + {fmt(overflow)} more in this upload
+              {t("overflow", { count: fmt(overflow) })}
             </div>
           )}
         </div>

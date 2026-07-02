@@ -1,0 +1,197 @@
+{
+  "common": {
+    "loading": "Wird geladen...",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "close": "Schließen",
+    "anonymous": "Anonym"
+  },
+  "auth": {
+    "login": {
+      "subtitle": "In dein Studio einloggen",
+      "emailLabel": "E-Mail",
+      "passwordLabel": "Passwort",
+      "forgotPassword": "Vergessen?",
+      "signingIn": "Wird eingeloggt...",
+      "signIn": "Einloggen",
+      "adminOnly": "Nur für Admins · selbst gehostet",
+      "loginFailed": "Login fehlgeschlagen"
+    }
+  },
+  "admin": {
+    "header": {
+      "adminStudio": "Admin Studio"
+    },
+    "events": {
+      "title": "Events",
+      "eventCount": "{count, plural, one {# Event} other {# Events}} · {processing} in Bearbeitung",
+      "newEvent": "Neues Event",
+      "noEvents": "Noch keine Events — erstelle oben dein erstes.",
+      "eventDate": "Event · {date}",
+      "photos": "{count, plural, one {# Foto} other {# Fotos}}",
+      "viewGallery": "Galerie öffnen",
+      "status": {
+        "ready": "Bereit",
+        "processing": "In Bearbeitung"
+      }
+    },
+    "newEvent": {
+      "backToEvents": "Zurück zu Events",
+      "title": "Event erstellen",
+      "subtitle": "Erstelle eine neue private Galerie für deinen Kunden.",
+      "namePlaceholder": "z. B. Marlowe & June",
+      "nameLabel": "Eventname",
+      "shareLinkLabel": "Freigabelink",
+      "slugPlaceholder": "slug",
+      "slugHint": "Wird automatisch aus dem Namen generiert. Kann geändert werden.",
+      "descriptionLabel": "Beschreibung",
+      "optional": "(optional)",
+      "descriptionPlaceholder": "Eine Notiz, die deine Gäste auf dem Cover sehen.",
+      "passwordLabel": "Galerie-Passwort",
+      "passwordPlaceholder": "Gäste geben dies zum Entsperren ein",
+      "cancelButton": "Abbrechen",
+      "creating": "Wird erstellt...",
+      "createButton": "Event erstellen",
+      "createFailed": "Event konnte nicht erstellt werden"
+    },
+    "eventDetail": {
+      "backToEvents": "Zurück zu Events",
+      "preview": "Vorschau",
+      "shareGallery": "Galerie teilen",
+      "copied": "Kopiert!",
+      "copyLink": "Link kopieren",
+      "processing": {
+        "banner": "{processed} von {total} Fotos werden verarbeitet",
+        "failed": "{count, plural, one {# Foto konnte nicht verarbeitet werden} other {# Fotos konnten nicht verarbeitet werden}}",
+        "retrying": "Wird wiederholt…",
+        "retryFailed": "Fehlgeschlagene wiederholen"
+      },
+      "upload": {
+        "dropzoneMain": "Fotos hierher ziehen oder",
+        "browse": "durchsuchen",
+        "hint": "JPEG, PNG oder HEIC · bis zu 4 gleichzeitig"
+      },
+      "downloadArchive": "Download-Archiv",
+      "photos": "Fotos",
+      "totalPhotos": "{count} gesamt",
+      "deleteEvent": {
+        "title": "Dieses Event löschen?",
+        "description": "Alle Fotos werden unwiderruflich gelöscht.",
+        "failed": "Event konnte nicht gelöscht werden"
+      },
+      "deletePhoto": {
+        "title": "Dieses Foto löschen?",
+        "description": "Diese Aktion kann nicht rückgängig gemacht werden. Das Foto wird dauerhaft aus dem Event entfernt.",
+        "success": "Foto gelöscht",
+        "failed": "Foto konnte nicht gelöscht werden",
+        "deleteButton": "Foto löschen"
+      },
+      "status": {
+        "ready": "Bereit",
+        "processing": "In Bearbeitung"
+      }
+    }
+  },
+  "gallery": {
+    "gate": {
+      "privateGallery": "Private Galerie",
+      "galleryFallback": "Galerie",
+      "descriptionFallback": "Eine private Fotosammlung",
+      "isPrivate": "Diese Galerie ist privat",
+      "passwordPlaceholder": "Passwort eingeben",
+      "unlocking": "Wird entsperrt...",
+      "unlock": "Galerie entsperren",
+      "invalidPassword": "Falsches Passwort",
+      "unlockFailed": "Entsperren fehlgeschlagen",
+      "poweredBy": "Powered by Pixshar"
+    },
+    "view": {
+      "eventLabel": "Event",
+      "descriptionFallback": "Eine private Fotosammlung",
+      "photoCount": "{count, plural, one {# Foto} other {# Fotos}}",
+      "uploadButton": "Fotos hochladen",
+      "layout": "Layout",
+      "masonry": "Mosaik",
+      "grid": "Raster",
+      "loadFailed": "Galerie konnte nicht geladen werden"
+    }
+  },
+  "upload": {
+    "modal": {
+      "title": "Fotos teilen",
+      "subtitle": "Füge deine Fotos zu {galleryName} hinzu.",
+      "nameLabel": "Dein Name",
+      "namePlaceholder": "Damit wir wissen, wessen Fotos das sind",
+      "chooseTap": "Fotos auswählen",
+      "chooseDrag": "oder hierher ziehen",
+      "staying": "Bitte bleib auf dieser Seite, bis der Upload abgeschlossen ist.",
+      "uploaded": "Hochgeladen — vielen Dank!",
+      "uploadCount": "{count, plural, one {# Foto hochladen} other {# Fotos hochladen}}",
+      "chooseFirst": "Fotos zum Hochladen auswählen"
+    },
+    "tray": {
+      "uploadingTitle": "{done} von {total} Fotos werden hochgeladen",
+      "uploadedWithFailedTitle": "{done} hochgeladen · {failed} fehlgeschlagen",
+      "allUploadedTitle": "Alle {total} Fotos hochgeladen",
+      "speedSubtitle": "{speed} MB/s · noch ca. {eta}",
+      "retryNeededSubtitle": "Einige Fotos müssen erneut versucht werden.",
+      "alreadyInGallerySubtitle": "{count, plural, one {# war bereits in der Galerie.} other {# waren bereits in der Galerie.}}",
+      "addedNowSubtitle": "Gerade zur Galerie hinzugefügt.",
+      "cancelButton": "Abbrechen",
+      "clearButton": "Leeren",
+      "failedCount": "{count, plural, one {# Foto konnte nicht hochgeladen werden} other {# Fotos konnten nicht hochgeladen werden}}",
+      "retryButton": "Wiederholen",
+      "statusDone": "Fertig",
+      "statusFailed": "Fehlgeschlagen",
+      "statusAlreadyUploaded": "Bereits hochgeladen",
+      "statusQueued": "In Warteschlange",
+      "overflow": "+ {count} weitere in diesem Upload",
+      "skippedNote": " · {count} bereits hochgeladen"
+    }
+  },
+  "download": {
+    "button": {
+      "downloadAll": "Alle herunterladen",
+      "downloadAllSize": "Alle herunterladen ({size})",
+      "uploadingS3": "Wird auf S3 hochgeladen… {pct}%",
+      "buildingPct": "Archiv wird erstellt… {pct}%",
+      "preparing": "Download wird vorbereitet…",
+      "waitingUploads": "Warte auf abgeschlossene Uploads…",
+      "building": "Archiv wird erstellt…",
+      "unavailable": "Archiv nicht verfügbar"
+    },
+    "panel": {
+      "loadingStatus": "Archivstatus wird geladen…",
+      "cancelButton": "Abbrechen",
+      "cancellingButton": "Wird abgebrochen…",
+      "rebuildButton": "Archiv neu erstellen",
+      "startingButton": "Wird gestartet…",
+      "processedPhotos": "Verarbeitete Fotos",
+      "archiveSize": "Archivgröße",
+      "lastUpdated": "Zuletzt aktualisiert",
+      "settlesAt": "Bereit um",
+      "zipping": "Fotos werden gezippt",
+      "uploadingS3": "Wird auf S3 hochgeladen",
+      "photosZipped": "{processed} von {total} Fotos gezippt",
+      "uploadingArchive": "{total} Fotos gezippt — Archiv wird auf S3 hochgeladen",
+      "cancelConfirm": "Aktuellen Archivaufbau abbrechen?",
+      "statusNone": "Keines",
+      "statusWaiting": "Wartend",
+      "statusQueued": "In Warteschlange",
+      "statusBuilding": "Wird erstellt",
+      "statusReady": "Bereit",
+      "statusFailed": "Fehlgeschlagen",
+      "statusCancelled": "Abgebrochen"
+    }
+  },
+  "lightbox": {
+    "download": "Herunterladen",
+    "downloading": "Lädt…",
+    "photoAlt": "Foto"
+  },
+  "photoGrid": {
+    "noPhotos": "Noch keine Fotos — lade welche hoch, um loszulegen.",
+    "statusProcessing": "Wird verarbeitet...",
+    "statusFailed": "Fehlgeschlagen"
+  }
+}

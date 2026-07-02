@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 export default function LoginPage() {
+  const t = useTranslations("auth.login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,13 +26,13 @@ export default function LoginPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || data.error || "Login failed");
+        throw new Error(data.message || data.error || t("loginFailed"));
       }
 
       router.push("/admin");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : t("loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -49,12 +51,12 @@ export default function LoginPage() {
           </div>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>Pixshar</div>
-            <div style={{ fontSize: 14, color: "#71717a", marginTop: 3 }}>Sign in to your studio</div>
+            <div style={{ fontSize: 14, color: "#71717a", marginTop: 3 }}>{t("subtitle")}</div>
           </div>
         </div>
         <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.05)", padding: "26px 24px" }}>
           <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>Email</label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>{t("emailLabel")}</label>
             <input
               type="email"
               value={email}
@@ -83,8 +85,8 @@ export default function LoginPage() {
               }}
             />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
-              <label style={{ fontSize: 13, fontWeight: 500 }}>Password</label>
-              <span style={{ fontSize: 12.5, color: "#2563eb", cursor: "pointer" }}>Forgot?</span>
+              <label style={{ fontSize: 13, fontWeight: 500 }}>{t("passwordLabel")}</label>
+              <span style={{ fontSize: 12.5, color: "#2563eb", cursor: "pointer" }}>{t("forgotPassword")}</span>
             </div>
             <input
               type="password"
@@ -134,7 +136,7 @@ export default function LoginPage() {
                 cursor: loading ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? t("signingIn") : t("signIn")}
             </button>
           </form>
         </div>
@@ -143,7 +145,7 @@ export default function LoginPage() {
             <rect x="4" y="11" width="16" height="10" rx="2"></rect>
             <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
           </svg>
-          Admin access only · self-hosted
+          {t("adminOnly")}
         </div>
       </div>
     </div>
