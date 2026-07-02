@@ -7,6 +7,7 @@ import events from "./routes/events.js";
 import gallery from "./routes/gallery.js";
 import upload from "./routes/upload.js";
 import auth from "./routes/auth.js";
+import backfill from "./routes/backfill.js";
 import metricsRoute from "./routes/metrics.js";
 import { initDatabase } from "./lib/prisma.js";
 import { startBoss } from "./lib/pgboss.js";
@@ -67,6 +68,7 @@ api.get("/health", (c) => c.json({ status: "ok" }));
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 // Prometheus metrics — no auth, reachable only within the cluster via ClusterIP
+app.route("/api/admin/backfill", backfill);
 app.route("/metrics", metricsRoute);
 
 if (import.meta.main) {

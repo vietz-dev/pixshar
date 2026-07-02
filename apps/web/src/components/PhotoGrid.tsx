@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import LazyImage from "./LazyImage";
 
 interface GridPhoto {
   id: string;
@@ -9,6 +10,7 @@ interface GridPhoto {
   photographerName: string | null;
   status?: string;
   onOpen?: () => void;
+  placeholderDataUrl?: string | null;
 }
 
 interface PhotoGridProps {
@@ -66,11 +68,12 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
   const imgOrPlaceholder = (p: GridPhoto, cover = true) => {
     if (p.thumbUrl) {
       return (
-        <img
+        <LazyImage
           src={p.thumbUrl}
+          placeholderDataUrl={p.placeholderDataUrl ?? null}
           alt={p.photographerName || ""}
-          loading="lazy"
-          style={{ width: "100%", height: "100%", objectFit: cover ? "cover" : "contain", display: "block" }}
+          objectFit={cover ? "cover" : "contain"}
+          style={{ width: "100%", height: "100%" }}
         />
       );
     }

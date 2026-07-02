@@ -28,6 +28,7 @@ export interface PhotoProcessedPayload {
   thumbUrl: string;
   displayUrl: string;
   photographerName: string | null;
+  placeholderDataUrl: string | null;
 }
 
 export function emitPhotoStatus(eventId: string, payload: PhotoStatusPayload): void {

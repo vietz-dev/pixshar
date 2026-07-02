@@ -42,7 +42,7 @@ export interface ProcessImageOutput {
   thumbKey: string;
 }
 
-const uploadToS3 = (key: string, buffer: Buffer, contentType: string) =>
+const uploadToS3 = (key: string, buffer: Buffer, contentType: string, cacheControl?: string) =>
   Effect.tryPromise({
     try: () =>
       s3.send(
@@ -51,6 +51,7 @@ const uploadToS3 = (key: string, buffer: Buffer, contentType: string) =>
           Key: key,
           Body: buffer,
           ContentType: contentType,
+          ...(cacheControl ? { CacheControl: cacheControl } : {}),
         })
       ),
     catch: (e) => new Error(`S3 upload failed: ${e}`),
@@ -111,9 +112,17 @@ export const processImageEffect = (input: ProcessImageInput) =>
     const displayBuf = yield* resizeImage(buffer, 1920, 1920, 85, "jpeg");
     const thumbBuf = yield* resizeImage(buffer, 400, 400, 80, "jpeg");
 
+    const placeholderDataUrl = yield* Effect.tryPromise({
+      try: async () => {
+        const placeholder = await new Bun.Image(thumbBuf).placeholder();
+        return placeholder as string;
+      },
+      catch: () => null as null,
+    }).pipe(Effect.orElseSucceed(() => null));
+
     yield* Effect.all([
-      uploadToS3(displayKey, displayBuf, "image/jpeg"),
-      uploadToS3(thumbKey, thumbBuf, "image/jpeg"),
+      uploadToS3(displayKey, displayBuf, "image/jpeg", "public, max-age=3600"),
+      uploadToS3(thumbKey, thumbBuf, "image/jpeg", "public, max-age=3600"),
     ]);
 
     const photo = yield* Effect.tryPromise({
@@ -125,6 +134,7 @@ export const processImageEffect = (input: ProcessImageInput) =>
             thumbKey,
             status: "PROCESSED",
             sizeBytes: buffer.length + displayBuf.length + thumbBuf.length,
+            placeholderDataUrl,
             lastError: null,
           },
         }),
@@ -146,6 +156,7 @@ export const processImageEffect = (input: ProcessImageInput) =>
           thumbUrl,
           displayUrl,
           photographerName: photo.photographerName,
+          placeholderDataUrl,
         });
       } catch {
         // best-effort live update

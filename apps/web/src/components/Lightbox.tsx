@@ -8,6 +8,7 @@ interface LightboxPhoto {
   url: string;
   photographerName: string | null;
   name?: string;
+  placeholderDataUrl?: string | null;
 }
 
 interface LightboxProps {
@@ -26,7 +27,12 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
   const photo = photos[index];
   const counter = `${index + 1} / ${photos.length}`;
   const [downloading, setDownloading] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const touchStartX = useRef<number | null>(null);
+
+  useEffect(() => {
+    setImgLoaded(false);
+  }, [index]);
   const swipeHandled = useRef(false);
 
   function handleTouchStart(e: React.TouchEvent) {
@@ -232,16 +238,37 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
         }}
       >
         {photo.url ? (
-          <img
-            src={photo.url}
-            alt={photo.photographerName || t("photoAlt")}
-            style={{
-              maxWidth: "min(88vw, 1180px)",
-              maxHeight: "80vh",
-              objectFit: "contain",
-              display: "block",
-            }}
-          />
+          <div style={{ position: "relative", maxWidth: "min(88vw, 1180px)", maxHeight: "80vh" }}>
+            {photo.placeholderDataUrl && !imgLoaded && (
+              <img
+                src={photo.placeholderDataUrl}
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  filter: "blur(20px)",
+                  transform: "scale(1.05)",
+                  pointerEvents: "none",
+                }}
+              />
+            )}
+            <img
+              src={photo.url}
+              alt={photo.photographerName || t("photoAlt")}
+              onLoad={() => setImgLoaded(true)}
+              style={{
+                maxWidth: "min(88vw, 1180px)",
+                maxHeight: "80vh",
+                objectFit: "contain",
+                display: "block",
+                opacity: imgLoaded ? 1 : 0,
+                transition: "opacity 0.3s ease",
+              }}
+            />
+          </div>
         ) : (
           <div style={{ maxWidth: "min(88vw, 1180px)", maxHeight: "80vh", minWidth: 400, minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="1.5">

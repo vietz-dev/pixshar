@@ -23,6 +23,7 @@ interface Photo {
   status: string;
   uploadedBy: string;
   createdAt: string;
+  placeholderDataUrl: string | null;
 }
 
 interface EventDetail {
@@ -85,7 +86,7 @@ export default function EventDetailPage() {
       setUploadStatus(JSON.parse(e.data));
     });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null };
+      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null; placeholderDataUrl: string | null };
       setEvent((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: Photo = {
@@ -99,6 +100,7 @@ export default function EventDetailPage() {
           status: "PROCESSED",
           uploadedBy: "ADMIN",
           createdAt: new Date().toISOString(),
+          placeholderDataUrl: p.placeholderDataUrl ?? null,
         };
         return { ...prev, photos: [photo, ...prev.photos] };
       });
@@ -262,6 +264,7 @@ export default function EventDetailPage() {
     displayUrl: p.displayUrl,
     photographerName: p.photographerName,
     status: p.status,
+    placeholderDataUrl: p.placeholderDataUrl,
     onOpen: () => {},
   }));
 
@@ -447,7 +450,7 @@ export default function EventDetailPage() {
           <Lightbox
             photos={event.photos
               .filter((p) => p.status === "PROCESSED")
-              .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName }))}
+              .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
             index={lbIndex}
             onClose={() => setLbOpen(false)}
             onNext={() => setLbIndex((i) => (i + 1) % event.photos.filter((p) => p.status === "PROCESSED").length)}

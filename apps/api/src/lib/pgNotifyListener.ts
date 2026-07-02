@@ -20,7 +20,7 @@ async function handleNotification(payload: NotifyPayload): Promise<void> {
       // Re-fetch photo to get the stored keys (worker already wrote them to DB).
       const photo = await prisma.photo.findUnique({
         where: { id: photoId },
-        select: { thumbKey: true, displayKey: true, photographerName: true },
+        select: { thumbKey: true, displayKey: true, photographerName: true, placeholderDataUrl: true },
       });
       if (!photo?.thumbKey || !photo?.displayKey) break;
       try {
@@ -33,6 +33,7 @@ async function handleNotification(payload: NotifyPayload): Promise<void> {
           thumbUrl,
           displayUrl,
           photographerName: photo.photographerName,
+          placeholderDataUrl: photo.placeholderDataUrl ?? null,
         });
       } catch {
         // best-effort

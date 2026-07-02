@@ -101,6 +101,7 @@ app.get("/:slug", requireGallerySession, async (c) => {
       thumbUrl: await getPresignedUrl(photo.thumbKey, "get", 3600),
       displayUrl: await getPresignedUrl(photo.displayKey, "get", 3600),
       status: photo.status,
+      placeholderDataUrl: photo.placeholderDataUrl ?? null,
     }))
   );
 

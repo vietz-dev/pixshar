@@ -103,6 +103,10 @@ export default function AdminPage() {
             <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-.025em", margin: 0 }}>{t("events.title")}</h1>
             <p style={{ fontSize: 14.5, color: "#71717a", margin: "6px 0 0" }}>{eventCountLabel}</p>
           </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link href="/admin/tools" style={{ fontSize: 13, color: "#71717a", textDecoration: "none", padding: "0 10px", height: 40, display: "inline-flex", alignItems: "center", border: "1px solid var(--border)", borderRadius: 8 }}>
+            Tools
+          </Link>
           <Link href="/admin/events/new">
             <button
               style={{
@@ -130,6 +134,7 @@ export default function AdminPage() {
               {t("events.newEvent")}
             </button>
           </Link>
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>

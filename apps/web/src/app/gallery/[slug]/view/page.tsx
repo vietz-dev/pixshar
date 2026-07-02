@@ -14,6 +14,7 @@ interface GalleryPhoto {
   thumbUrl: string;
   displayUrl: string;
   status: string;
+  placeholderDataUrl: string | null;
 }
 
 interface GalleryData {
@@ -38,21 +39,43 @@ export default function GalleryViewPage() {
   const [lbOpen, setLbOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
+  const CACHE_TTL = 30 * 60 * 1000;
+  const cacheKey = `gallery_cache_${slug}`;
+
   const fetchGallery = useCallback(() => {
+    try {
+      const raw = sessionStorage.getItem(cacheKey);
+      if (raw) {
+        const { data, ts } = JSON.parse(raw) as { data: GalleryData; ts: number };
+        if (Date.now() - ts < CACHE_TTL) {
+          setGallery(data);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // ignore sessionStorage errors
+    }
+
     fetch(`/api/gallery/${slug}`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error(t("loadFailed"));
         return res.json();
       })
-      .then((data) => {
+      .then((data: GalleryData) => {
         setGallery(data);
         setLoading(false);
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }));
+        } catch {
+          // ignore sessionStorage quota errors
+        }
       })
       .catch((err) => {
         setError(err.message);
         setLoading(false);
       });
-  }, [slug, t]);
+  }, [slug, t, cacheKey]);
 
   useEffect(() => {
     fetchGallery();
@@ -71,7 +94,7 @@ export default function GalleryViewPage() {
     if (!galleryLoaded) return;
     const es = new EventSource(`/api/gallery/${slug}/photos/stream`, { withCredentials: true });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null };
+      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null; placeholderDataUrl: string | null };
       setGallery((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: GalleryPhoto = {
@@ -80,8 +103,15 @@ export default function GalleryViewPage() {
           thumbUrl: p.thumbUrl,
           displayUrl: p.displayUrl,
           status: "PROCESSED",
+          placeholderDataUrl: p.placeholderDataUrl ?? null,
         };
-        return { ...prev, photos: [photo, ...prev.photos] };
+        const updated = { ...prev, photos: [photo, ...prev.photos] };
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ data: updated, ts: Date.now() }));
+        } catch {
+          // ignore
+        }
+        return updated;
       });
     });
     es.onerror = () => {};
@@ -257,6 +287,7 @@ export default function GalleryViewPage() {
             displayUrl: p.displayUrl,
             photographerName: p.photographerName,
             status: p.status,
+            placeholderDataUrl: p.placeholderDataUrl,
           }))}
           layout={isMobile ? "uniform" : layout}
           onPhotoClick={(p, i) => {
@@ -271,7 +302,7 @@ export default function GalleryViewPage() {
         <Lightbox
           photos={gallery.photos
             .filter((p) => p.status === "PROCESSED")
-            .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName }))}
+            .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
           index={lbIndex}
           onClose={() => setLbOpen(false)}
           onNext={() => setLbIndex((i) => (i + 1) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}

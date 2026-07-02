@@ -94,11 +94,12 @@ model Photo {
   // PENDING | PROCESSING | PROCESSED | FAILED. The row is also the durable
   // PENDING | PROCESSING | PROCESSED | FAILED.
   // attempts and lastError retained for admin UI visibility; pg-boss manages retry scheduling.
-  status           String    @default("PENDING")
-  uploadedBy       String    @default("ADMIN")
-  fileHash         String?
-  sizeBytes        Int?
-  attempts         Int       @default(0)
+  status             String    @default("PENDING")
+  uploadedBy         String    @default("ADMIN")
+  fileHash           String?
+  sizeBytes          Int?
+  placeholderDataUrl String?
+  attempts           Int       @default(0)
   lastError        String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

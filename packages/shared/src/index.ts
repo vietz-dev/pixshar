@@ -33,6 +33,7 @@ export interface GalleryPhoto {
   thumbUrl: string;
   displayUrl: string;
   status: PhotoStatus;
+  placeholderDataUrl: string | null;
 }
 
 export interface GalleryEvent {
