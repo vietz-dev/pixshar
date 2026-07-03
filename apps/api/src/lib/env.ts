@@ -4,6 +4,7 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "production"]).default("production"),
   DATABASE_URL: z.string(),
   BETTER_AUTH_SECRET: z.string().min(32),
+  GALLERY_ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-f]+$/, "Must be 64 lowercase hex chars (32 bytes)"),
   BETTER_AUTH_URL: z.string().url(),
   ADMIN_EMAIL: z.string().email(),
   ADMIN_PASSWORD: z.string().min(1),

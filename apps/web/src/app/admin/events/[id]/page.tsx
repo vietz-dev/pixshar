@@ -31,6 +31,7 @@ interface EventDetail {
   slug: string;
   name: string;
   description: string | null;
+  password: string | null;
   status: string;
   createdAt: string;
   photos: Photo[];
@@ -51,6 +52,10 @@ export default function EventDetailPage() {
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pwVisible, setPwVisible] = useState(false);
+  const [pwChangeOpen, setPwChangeOpen] = useState(false);
+  const [pwNewValue, setPwNewValue] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [queue, setQueue] = useState<UploadItem[]>([]);
@@ -245,6 +250,31 @@ export default function EventDetailPage() {
     setTimeout(() => setCopied(false), 1600);
   }
 
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pwNewValue.trim()) return;
+    setPwSaving(true);
+    try {
+      const res = await fetch(`/api/events/${id}/password`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pwNewValue }),
+      });
+      if (res.ok) {
+        toast.success(t("password.saved"));
+        setEvent((prev) => prev ? { ...prev, password: pwNewValue } : prev);
+        setPwNewValue("");
+        setPwChangeOpen(false);
+        setPwVisible(false);
+      } else {
+        toast.error(t("password.failed"));
+      }
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
   function statusMeta(st: string) {
     return st === "READY"
       ? { statusLabel: t("status.ready"), statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
@@ -349,6 +379,78 @@ export default function EventDetailPage() {
               {copied ? t("copied") : t("copyLink")}
             </button>
           </div>
+        </div>
+
+        {/* Password */}
+        <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: "15px 16px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: "#52525b", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            {t("password.label")}
+          </div>
+          <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", marginBottom: pwChangeOpen ? 12 : 0 }}>
+            <div style={{ flex: 1, minWidth: 160, height: 38, display: "flex", alignItems: "center", padding: "0 12px", background: "#f4f4f5", borderRadius: 8, fontSize: 13, fontFamily: "'Geist Mono', monospace", color: "#3f3f46", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", letterSpacing: pwVisible ? undefined : "0.12em" }}>
+              {event.password == null
+                ? <span style={{ color: "#a1a1aa", fontFamily: "inherit", letterSpacing: "normal" }}>{t("password.notAvailable")}</span>
+                : pwVisible ? event.password : "•".repeat(Math.max(event.password.length, 8))}
+            </div>
+            {event.password != null && (
+              <button
+                onClick={() => setPwVisible((v) => !v)}
+                title={pwVisible ? t("password.hide") : t("password.show")}
+                style={{ height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e4e4e7", background: "#fff", color: "#52525b", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer" }}
+              >
+                {pwVisible ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                )}
+                {pwVisible ? t("password.hide") : t("password.show")}
+              </button>
+            )}
+            <button
+              onClick={() => { setPwChangeOpen((o) => !o); setPwNewValue(""); }}
+              style={{ height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e4e4e7", background: "#fff", color: "#18181b", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer" }}
+            >
+              {t("password.change")}
+            </button>
+          </div>
+          {pwChangeOpen && (
+            <form onSubmit={handleChangePassword} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingTop: 4 }}>
+              <input
+                type="password"
+                value={pwNewValue}
+                onChange={(e) => setPwNewValue(e.target.value)}
+                placeholder={t("password.newPassword")}
+                required
+                autoFocus
+                style={{ flex: 1, minWidth: 180, height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e4e4e7", fontSize: 13, outline: "none", fontFamily: "inherit" }}
+              />
+              <button
+                type="submit"
+                disabled={pwSaving || !pwNewValue.trim()}
+                style={{ height: 38, padding: "0 16px", borderRadius: 8, border: "none", background: "#18181b", color: "#fff", fontSize: 13, fontWeight: 500, cursor: pwSaving ? "not-allowed" : "pointer", opacity: (pwSaving || !pwNewValue.trim()) ? 0.6 : 1 }}
+              >
+                {pwSaving ? t("password.saving") : t("password.save")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPwChangeOpen(false)}
+                style={{ height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e4e4e7", background: "#fff", color: "#52525b", fontSize: 13, cursor: "pointer" }}
+              >
+                {tCommon("cancel")}
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Processing */}

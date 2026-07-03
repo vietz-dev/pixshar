@@ -89,6 +89,19 @@
       "status": {
         "ready": "Ready",
         "processing": "Processing"
+      },
+      "password": {
+        "label": "Gallery password",
+        "hidden": "Hidden",
+        "show": "Show",
+        "hide": "Hide",
+        "notAvailable": "Not available for this event",
+        "change": "Change password",
+        "newPassword": "New password",
+        "save": "Save",
+        "saving": "Saving…",
+        "saved": "Password changed",
+        "failed": "Failed to change password"
       }
     }
   },

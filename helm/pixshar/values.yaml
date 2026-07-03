@@ -234,6 +234,9 @@ secrets:
   adminPassword: ""
   s3AccessKey: ""
   s3SecretKey: ""
+  # 64 lowercase hex chars (32 bytes). Encrypts gallery passwords at rest.
+  # Generate: openssl rand -hex 32
+  galleryEncryptionKey: ""
 
 # --- Config ---
 # Non-sensitive configuration values are stored in a ConfigMap.

@@ -60,6 +60,7 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://pixshar:pixshar@postgres:5432/pixshar?schema=public
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - GALLERY_ENCRYPTION_KEY=${GALLERY_ENCRYPTION_KEY:-deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef}
       - BETTER_AUTH_URL=http://localhost:3001
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
@@ -95,6 +96,7 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://pixshar:pixshar@postgres:5432/pixshar?schema=public
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - GALLERY_ENCRYPTION_KEY=${GALLERY_ENCRYPTION_KEY:-deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef}
       - BETTER_AUTH_URL=http://localhost:3001
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}

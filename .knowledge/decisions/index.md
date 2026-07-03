@@ -5,3 +5,4 @@
 * [Single S3 Bucket](single-s3-bucket.md) - Why one bucket with path prefixes instead of per-event buckets
 * [Durable Queue](durable-queue.md) - Why pg-boss for photo resize and DB-polling for archive builds
 * [Multi-Part Archive](multi-part-archive.md) - Why large galleries are split into ≤2 GB parts and streamed
+* [Gallery Password Encryption](gallery-password-encryption.md) - Why gallery passwords are stored AES-256-GCM encrypted (not plaintext) and the key-management model

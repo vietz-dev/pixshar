@@ -89,6 +89,19 @@
       "status": {
         "ready": "Bereit",
         "processing": "In Bearbeitung"
+      },
+      "password": {
+        "label": "Galerie-Passwort",
+        "hidden": "Verborgen",
+        "show": "Anzeigen",
+        "hide": "Verbergen",
+        "notAvailable": "Für dieses Event nicht verfügbar",
+        "change": "Passwort ändern",
+        "newPassword": "Neues Passwort",
+        "save": "Speichern",
+        "saving": "Wird gespeichert…",
+        "saved": "Passwort geändert",
+        "failed": "Passwort konnte nicht geändert werden"
       }
     }
   },

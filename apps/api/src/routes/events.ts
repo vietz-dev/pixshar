@@ -12,6 +12,7 @@ import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";
+import { encryptPassword, decryptPassword } from "../lib/crypto.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
 import { photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
 
@@ -64,6 +65,7 @@ app.post("/", requireAdmin, zValidator("json", createSchema), async (c) => {
       slug: body.slug,
       description: body.description || null,
       passwordHash: hashedPassword,
+      password: encryptPassword(body.password),
       createdById: user.id,
       status: "READY",
     },
@@ -103,7 +105,30 @@ app.get("/:id", requireAdmin, async (c) => {
     }))
   );
 
-  return c.json({ ...event, photos: photosWithUrls });
+  const decryptedPassword = event.password ? decryptPassword(event.password) : null;
+  return c.json({ ...event, password: decryptedPassword, photos: photosWithUrls });
+});
+
+app.patch("/:id/password", requireAdmin, zValidator("json", z.object({ password: z.string().min(1).max(128) })), async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const { password } = c.req.valid("json");
+
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const passwordHash = await hashPassword(password);
+  await prisma.event.update({
+    where: { id },
+    data: { password: encryptPassword(password), passwordHash },
+  });
+
+  return c.json({ success: true });
 });
 
 app.delete("/:id", requireAdmin, async (c) => {

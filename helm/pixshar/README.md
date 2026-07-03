@@ -48,6 +48,7 @@ kubectl create namespace pixshar
 kubectl create secret generic pixshar-secrets \
   --namespace pixshar \
   --from-literal=BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
+  --from-literal=GALLERY_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
   --from-literal=ADMIN_EMAIL="admin@example.com" \
   --from-literal=ADMIN_PASSWORD="$(openssl rand -base64 24)" \
   --from-literal=S3_ACCESS_KEY="your-s3-access-key" \
@@ -95,6 +96,7 @@ All sensitive values are stored in a Kubernetes Secret. You can either:
    ```bash
    kubectl create secret generic pixshar-secrets --namespace pixshar \
      --from-literal=BETTER_AUTH_SECRET="..." \
+     --from-literal=GALLERY_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
      --from-literal=ADMIN_EMAIL="..." \
      --from-literal=ADMIN_PASSWORD="..." \
      --from-literal=S3_ACCESS_KEY="..." \
@@ -102,10 +104,13 @@ All sensitive values are stored in a Kubernetes Secret. You can either:
    ```
    Then set `secrets.existingSecret=pixshar-secrets`.
 
+   > **Important:** `GALLERY_ENCRYPTION_KEY` is a 64-character lowercase hex string (32 bytes). It encrypts gallery passwords at rest. Treat it like a signing key — if you rotate it, existing gallery passwords in the database can no longer be decrypted until re-saved.
+
 2. **Let the chart create the secret** (convenient for testing):
    ```yaml
    secrets:
      betterAuthSecret: "your-secret"
+     galleryEncryptionKey: "your-64-hex-char-key"  # openssl rand -hex 32
      adminEmail: "admin@example.com"
      adminPassword: "your-password"
      s3AccessKey: "your-key"
@@ -207,6 +212,7 @@ web:
 |-----|---------|-------------|
 | `secrets.existingSecret` | `""` | Use an existing secret instead of creating one |
 | `secrets.betterAuthSecret` | `""` | BetterAuth secret (min 32 chars) |
+| `secrets.galleryEncryptionKey` | `""` | **Required.** 64 hex chars (32 bytes). AES-256-GCM key for gallery passwords at rest. Generate: `openssl rand -hex 32` |
 | `secrets.adminEmail` | `"admin@example.com"` | Admin email |
 | `secrets.adminPassword` | `""` | Admin password |
 | `secrets.s3AccessKey` | `""` | S3 access key |
