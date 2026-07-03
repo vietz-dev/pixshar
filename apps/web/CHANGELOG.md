@@ -1,5 +1,13 @@
 # @pixshar/web
 
+## 0.0.28
+
+### Patch Changes
+
+- e7ed55a: Admin Bulk edit, gallery filter
+- Updated dependencies [e7ed55a]
+  - @pixshar/shared@0.0.28
+
 ## 0.0.27
 
 ### Patch Changes
