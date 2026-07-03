@@ -1,5 +1,13 @@
 # @pixshar/api
 
+## 0.0.27
+
+### Patch Changes
+
+- 1715bbc: Virtual Scroll and Gallery Password updates
+- Updated dependencies [1715bbc]
+  - @pixshar/shared@0.0.27
+
 ## 0.0.26
 
 ### Patch Changes

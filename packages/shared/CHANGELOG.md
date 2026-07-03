@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.27
+
+### Patch Changes
+
+- 1715bbc: Virtual Scroll and Gallery Password updates
+
 ## 0.0.26
 
 ### Patch Changes
