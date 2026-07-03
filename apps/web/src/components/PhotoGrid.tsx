@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef, useState, useLayoutEffect, useEffect } from "react";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useTranslations } from "next-intl";
 import LazyImage from "./LazyImage";
 
@@ -20,16 +22,66 @@ interface PhotoGridProps {
   onDelete?: (photoId: string) => void;
 }
 
+const GAP = 8;
+
+function getLayoutParams(layout: string, containerWidth: number): { cols: number; itemW: number; rowH: number } {
+  if (layout === "uniform") {
+    const minW = 150;
+    const cols = Math.max(1, Math.floor((containerWidth + GAP) / (minW + GAP)));
+    const itemW = (containerWidth - (cols - 1) * GAP) / cols;
+    return { cols, itemW, rowH: itemW };
+  }
+  if (layout === "justified") {
+    const minW = 200;
+    const cols = Math.max(1, Math.floor((containerWidth + GAP) / (minW + GAP)));
+    const itemW = (containerWidth - (cols - 1) * GAP) / cols;
+    return { cols, itemW, rowH: 200 };
+  }
+  // masonry → virtual square grid
+  const minW = 200;
+  const cols = Math.max(1, Math.floor((containerWidth + GAP) / (minW + GAP)));
+  const itemW = (containerWidth - (cols - 1) * GAP) / cols;
+  return { cols, itemW, rowH: itemW };
+}
+
 export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: PhotoGridProps) {
   const t = useTranslations("photoGrid");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(800);
+  const [scrollMargin, setScrollMargin] = useState(0);
 
-  if (photos.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 20px", border: "1px solid #f4f4f5", borderRadius: 12, background: "#fff", color: "#a1a1aa", fontSize: 13.5 }}>
-        {t("noPhotos")}
-      </div>
-    );
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      setContainerWidth(el.getBoundingClientRect().width);
+      setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const { cols, itemW, rowH } = getLayoutParams(layout, containerWidth);
+
+  const rows: GridPhoto[][] = [];
+  for (let i = 0; i < photos.length; i += cols) {
+    rows.push(photos.slice(i, i + cols));
   }
+
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: () => rowH + GAP,
+    overscan: 3,
+    scrollMargin,
+  });
+
+  // Re-estimate all row sizes when the layout type or column count changes
+  useEffect(() => {
+    virtualizer.measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, cols]);
 
   const commonHover = {
     transform: "translateY(-3px)",
@@ -39,6 +91,7 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
 
   const deleteBtn = (photoId: string) => (
     <button
+      data-del
       onClick={(e) => { e.stopPropagation(); onDelete?.(photoId); }}
       style={{
         position: "absolute",
@@ -65,14 +118,14 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
     </button>
   );
 
-  const imgOrPlaceholder = (p: GridPhoto, cover = true) => {
+  const imgOrPlaceholder = (p: GridPhoto) => {
     if (p.thumbUrl) {
       return (
         <LazyImage
           src={p.thumbUrl}
           placeholderDataUrl={p.placeholderDataUrl ?? null}
           alt={p.photographerName || ""}
-          objectFit={cover ? "cover" : "contain"}
+          objectFit="cover"
           style={{ width: "100%", height: "100%" }}
         />
       );
@@ -96,143 +149,78 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
     ) : null
   );
 
-  if (layout === "justified") {
+  if (photos.length === 0) {
     return (
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {photos.map((p, i) => (
-          <div
-            key={p.id}
-            style={{
-              flex: "1 1 200px",
-              height: 200,
-              minWidth: 90,
-              borderRadius: 7,
-              cursor: "pointer",
-              overflow: "hidden",
-              transition: "transform .2s, box-shadow .2s, filter .2s",
-              position: "relative",
-            }}
-            onMouseEnter={(e) => {
-              const s = e.currentTarget.style;
-              s.transform = commonHover.transform;
-              s.boxShadow = commonHover.boxShadow;
-              s.filter = commonHover.filter;
-              const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
-              if (btn) btn.style.opacity = "1";
-            }}
-            onMouseLeave={(e) => {
-              const s = e.currentTarget.style;
-              s.transform = "";
-              s.boxShadow = "";
-              s.filter = "";
-              const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
-              if (btn) btn.style.opacity = "0";
-            }}
-          >
-            <div onClick={() => onPhotoClick(p, i)} style={{ width: "100%", height: "100%" }}>
-              {imgOrPlaceholder(p)}
-              {statusBadge(p)}
-            </div>
-            {onDelete && (
-              <div data-del style={{ opacity: 0, transition: "opacity .15s" }}>
-                {deleteBtn(p.id)}
-              </div>
-            )}
-          </div>
-        ))}
+      <div ref={containerRef} style={{ textAlign: "center", padding: "40px 20px", border: "1px solid #f4f4f5", borderRadius: 12, background: "#fff", color: "#a1a1aa", fontSize: 13.5 }}>
+        {t("noPhotos")}
       </div>
     );
   }
 
-  if (layout === "masonry") {
-    return (
-      <div style={{ columns: "3 200px", gap: 8 }}>
-        {photos.map((p, i) => (
-          <div
-            key={p.id}
-            style={{
-              breakInside: "avoid",
-              marginBottom: 8,
-              borderRadius: 7,
-              cursor: "pointer",
-              overflow: "hidden",
-              transition: "transform .2s, box-shadow .2s, filter .2s",
-              position: "relative",
-            }}
-            onMouseEnter={(e) => {
-              const s = e.currentTarget.style;
-              s.transform = commonHover.transform;
-              s.boxShadow = commonHover.boxShadow;
-              s.filter = commonHover.filter;
-              const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
-              if (btn) btn.style.opacity = "1";
-            }}
-            onMouseLeave={(e) => {
-              const s = e.currentTarget.style;
-              s.transform = "";
-              s.boxShadow = "";
-              s.filter = "";
-              const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
-              if (btn) btn.style.opacity = "0";
-            }}
-          >
-            <div onClick={() => onPhotoClick(p, i)} style={{ width: "100%" }}>
-              {imgOrPlaceholder(p, false)}
-              {statusBadge(p)}
-            </div>
-            {onDelete && (
-              <div data-del style={{ opacity: 0, transition: "opacity .15s" }}>
-                {deleteBtn(p.id)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const isJustified = layout === "justified";
 
-  // uniform grid
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
-      {photos.map((p, i) => (
-        <div
-          key={p.id}
-          style={{
-            aspectRatio: "1",
-            borderRadius: 7,
-            cursor: "pointer",
-            overflow: "hidden",
-            transition: "transform .2s, box-shadow .2s, filter .2s",
-            position: "relative",
-          }}
-          onMouseEnter={(e) => {
-            const s = e.currentTarget.style;
-            s.transform = commonHover.transform;
-            s.boxShadow = commonHover.boxShadow;
-            s.filter = commonHover.filter;
-            const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
-            if (btn) btn.style.opacity = "1";
-          }}
-          onMouseLeave={(e) => {
-            const s = e.currentTarget.style;
-            s.transform = "";
-            s.boxShadow = "";
-            s.filter = "";
-            const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
-            if (btn) btn.style.opacity = "0";
-          }}
-        >
-          <div onClick={() => onPhotoClick(p, i)} style={{ width: "100%", height: "100%" }}>
-            {imgOrPlaceholder(p)}
-            {statusBadge(p)}
-          </div>
-          {onDelete && (
-            <div data-del style={{ opacity: 0, transition: "opacity .15s" }}>
-              {deleteBtn(p.id)}
+    <div ref={containerRef}>
+      <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+        {virtualizer.getVirtualItems().map((vRow) => {
+          const rowPhotos = rows[vRow.index];
+          return (
+            <div
+              key={vRow.key}
+              style={{
+                position: "absolute",
+                top: 0,
+                transform: `translateY(${vRow.start - scrollMargin}px)`,
+                left: 0,
+                right: 0,
+                display: "flex",
+                gap: GAP,
+              }}
+            >
+              {rowPhotos.map((p, col) => {
+                const globalIndex = vRow.index * cols + col;
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      ...(isJustified
+                        ? { flex: "1 1 200px", minWidth: 90, height: rowH }
+                        : { width: itemW, height: rowH, flexShrink: 0 }),
+                      borderRadius: 7,
+                      cursor: "pointer",
+                      overflow: "hidden",
+                      transition: "transform .2s, box-shadow .2s, filter .2s",
+                      position: "relative",
+                    }}
+                    onMouseEnter={(e) => {
+                      const s = e.currentTarget.style;
+                      s.transform = commonHover.transform;
+                      s.boxShadow = commonHover.boxShadow;
+                      s.filter = commonHover.filter;
+                      const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
+                      if (btn) btn.style.opacity = "1";
+                    }}
+                    onMouseLeave={(e) => {
+                      const s = e.currentTarget.style;
+                      s.transform = "";
+                      s.boxShadow = "";
+                      s.filter = "";
+                      const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
+                      if (btn) btn.style.opacity = "0";
+                    }}
+                  >
+                    <div onClick={() => onPhotoClick(p, globalIndex)} style={{ width: "100%", height: "100%" }}>
+                      {imgOrPlaceholder(p)}
+                      {statusBadge(p)}
+                    </div>
+                    {onDelete && deleteBtn(p.id)}
+                  </div>
+                );
+              })}
             </div>
-          )}
-        </div>
-      ))}
+          );
+        })}
+      </div>
     </div>
   );
 }

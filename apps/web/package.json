@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@pixshar/shared": "workspace:*",
+    "@tanstack/react-virtual": "^3.14.5",
     "next": "16.2.9",
     "next-intl": "^4.13.1",
     "react": "^19.0.0",
