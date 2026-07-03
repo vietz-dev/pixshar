@@ -104,6 +104,10 @@
         "success": "{count, plural, one {# Foto gelöscht} other {# Fotos gelöscht}}",
         "failed": "Fotos konnten nicht gelöscht werden"
       },
+      "photoFilter": {
+        "all": "Alle",
+        "label": "Nach Fotograf filtern"
+      },
       "bulkRename": {
         "button": "Fotograf setzen",
         "title": "Fotografen-Name setzen",
@@ -150,6 +154,8 @@
       "eventLabel": "Event",
       "descriptionFallback": "Eine private Fotosammlung",
       "photoCount": "{count, plural, one {# Foto} other {# Fotos}}",
+      "photoCountFiltered": "{filtered} von {total} Fotos",
+      "filterAll": "Alle",
       "uploadButton": "Fotos hochladen",
       "layout": "Layout",
       "masonry": "Mosaik",

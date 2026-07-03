@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
@@ -70,6 +70,7 @@ export default function EventDetailPage() {
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [bulkRenameName, setBulkRenameName] = useState("");
   const [bulkRenaming, setBulkRenaming] = useState(false);
+  const [activePhotographer, setActivePhotographer] = useState<string | null>(null);
 
   const fetchEvent = useCallback(() => {
     fetch(`/api/events/${id}`, { credentials: "include" })
@@ -284,6 +285,40 @@ export default function EventDetailPage() {
     }
   }
 
+  const processedPhotos = useMemo(
+    () => (event?.photos ?? []).filter((p) => p.status === "PROCESSED"),
+    [event]
+  );
+
+  const photographers = useMemo(() => {
+    const names = new Set<string>();
+    for (const p of processedPhotos) {
+      if (p.photographerName) names.add(p.photographerName);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [processedPhotos]);
+
+  const photographerCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of processedPhotos) {
+      if (p.photographerName) m.set(p.photographerName, (m.get(p.photographerName) ?? 0) + 1);
+    }
+    return m;
+  }, [processedPhotos]);
+
+  const filteredPhotos = useMemo(
+    () => activePhotographer
+      ? processedPhotos.filter((p) => p.photographerName === activePhotographer)
+      : processedPhotos,
+    [processedPhotos, activePhotographer]
+  );
+
+  useEffect(() => {
+    if (activePhotographer && !photographers.includes(activePhotographer)) {
+      setActivePhotographer(null);
+    }
+  }, [photographers, activePhotographer]);
+
   function exitSelection() {
     setSelectionMode(false);
     setSelectedIds(new Set());
@@ -298,8 +333,7 @@ export default function EventDetailPage() {
   }
 
   function handleSelectAll() {
-    if (!event) return;
-    setSelectedIds(new Set(event.photos.filter((p) => p.status === "PROCESSED").map((p) => p.id)));
+    setSelectedIds(new Set(filteredPhotos.map((p) => p.id)));
   }
 
   async function handleBulkDelete() {
@@ -371,7 +405,7 @@ export default function EventDetailPage() {
   const hasPending = uploadStatus.pending > 0;
   const shareLink = `${typeof window !== "undefined" ? window.location.origin : ""}/gallery/${event.slug}`;
 
-  const gridPhotos = event.photos.map((p) => ({
+  const gridPhotos = filteredPhotos.map((p) => ({
     id: p.id,
     thumbUrl: p.thumbUrl,
     displayUrl: p.displayUrl,
@@ -662,10 +696,10 @@ export default function EventDetailPage() {
 
               {/* Select all / Deselect all */}
               <button
-                onClick={selectedIds.size === event.photos.filter((p) => p.status === "PROCESSED").length ? () => setSelectedIds(new Set()) : handleSelectAll}
+                onClick={selectedIds.size === filteredPhotos.length ? () => setSelectedIds(new Set()) : handleSelectAll}
                 style={{ height: 32, padding: "0 11px", borderRadius: 7, border: "1px solid #e4e4e7", background: "#fff", color: "#18181b", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}
               >
-                {selectedIds.size === event.photos.filter((p) => p.status === "PROCESSED").length
+                {selectedIds.size === filteredPhotos.length
                   ? t("bulkSelect.deselectAll")
                   : t("bulkSelect.selectAll")}
               </button>
@@ -711,10 +745,54 @@ export default function EventDetailPage() {
           )}
         </div>
 
+        {/* Photographer filter chips */}
+        {photographers.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <button
+              onClick={() => setActivePhotographer(null)}
+              style={{
+                height: 28, padding: "0 11px", borderRadius: 999,
+                border: activePhotographer === null ? "none" : "1px solid #e4e4e7",
+                background: activePhotographer === null ? "#18181b" : "#fff",
+                color: activePhotographer === null ? "#fff" : "#52525b",
+                fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                transition: "background .15s, color .15s, border .15s",
+              }}
+            >
+              {t("photoFilter.all")}
+              <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                {processedPhotos.length}
+              </span>
+            </button>
+            {photographers.map((name) => {
+              const active = activePhotographer === name;
+              return (
+                <button
+                  key={name}
+                  onClick={() => setActivePhotographer(active ? null : name)}
+                  style={{
+                    height: 28, padding: "0 11px", borderRadius: 999,
+                    border: active ? "none" : "1px solid #e4e4e7",
+                    background: active ? "#18181b" : "#fff",
+                    color: active ? "#fff" : "#52525b",
+                    fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                    transition: "background .15s, color .15s, border .15s",
+                  }}
+                >
+                  {name}
+                  <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                    {photographerCounts.get(name)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <PhotoGrid
-          photos={gridPhotos.filter((p) => p.status === "PROCESSED")}
+          photos={gridPhotos}
           layout="uniform"
-          onPhotoClick={(p, i) => {
+          onPhotoClick={(_, i) => {
             if (selectionMode) return;
             setLbIndex(i);
             setLbOpen(true);
@@ -728,13 +806,11 @@ export default function EventDetailPage() {
         {/* Lightbox */}
         {lbOpen && (
           <Lightbox
-            photos={event.photos
-              .filter((p) => p.status === "PROCESSED")
-              .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
+            photos={filteredPhotos.map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
             index={lbIndex}
             onClose={() => setLbOpen(false)}
-            onNext={() => setLbIndex((i) => (i + 1) % event.photos.filter((p) => p.status === "PROCESSED").length)}
-            onPrev={() => setLbIndex((i) => (i - 1 + event.photos.filter((p) => p.status === "PROCESSED").length) % event.photos.filter((p) => p.status === "PROCESSED").length)}
+            onNext={() => setLbIndex((i) => (i + 1) % filteredPhotos.length)}
+            onPrev={() => setLbIndex((i) => (i - 1 + filteredPhotos.length) % filteredPhotos.length)}
             onDownload={async (photoId) => {
               const res = await fetch(`/api/events/${id}/photos/${photoId}/download`, { credentials: "include" });
               const data = await res.json();

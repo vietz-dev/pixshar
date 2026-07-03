@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import PhotoGrid from "../../../../components/PhotoGrid";
@@ -38,6 +38,7 @@ export default function GalleryViewPage() {
   const [lbIndex, setLbIndex] = useState(0);
   const [lbOpen, setLbOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [activePhotographer, setActivePhotographer] = useState<string | null>(null);
 
   const CACHE_TTL = 30 * 60 * 1000;
   const cacheKey = `gallery_cache_${slug}`;
@@ -135,7 +136,38 @@ export default function GalleryViewPage() {
   if (!gallery) return null;
 
   const coverGradient = "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)";
-  const photoCountLabel = t("photoCount", { count: gallery.photos.length });
+
+  const processedPhotos = useMemo(
+    () => gallery.photos.filter((p) => p.status === "PROCESSED"),
+    [gallery.photos]
+  );
+
+  const photographers = useMemo(() => {
+    const names = new Set<string>();
+    for (const p of processedPhotos) {
+      if (p.photographerName) names.add(p.photographerName);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [processedPhotos]);
+
+  const photographerCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of processedPhotos) {
+      if (p.photographerName) m.set(p.photographerName, (m.get(p.photographerName) ?? 0) + 1);
+    }
+    return m;
+  }, [processedPhotos]);
+
+  const filteredPhotos = useMemo(
+    () => activePhotographer
+      ? processedPhotos.filter((p) => p.photographerName === activePhotographer)
+      : processedPhotos,
+    [processedPhotos, activePhotographer]
+  );
+
+  const photoCountLabel = activePhotographer
+    ? t("photoCountFiltered", { filtered: filteredPhotos.length, total: processedPhotos.length })
+    : t("photoCount", { count: processedPhotos.length });
 
   const layoutItems = [
     { key: "masonry" as const, label: t("masonry") },
@@ -232,56 +264,101 @@ export default function GalleryViewPage() {
           borderBottom: "1px solid #ececee",
           padding: "11px 28px",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 14,
-          flexWrap: "wrap",
+          flexDirection: "column",
+          gap: 0,
         }}
       >
-        <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>{photoCountLabel}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <DownloadButton slug={slug} />
-          {!isMobile && (
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>{t("layout")}</span>
-              <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
-                {layoutItems.map((l) => {
-                  const active = layout === l.key;
-                  return (
-                    <button
-                      key={l.key}
-                      onClick={() => setLayout(l.key)}
-                      style={{
-                        height: 28,
-                        padding: "0 11px",
-                        borderRadius: 7,
-                        border: "none",
-                        fontSize: 12.5,
-                        fontWeight: 500,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        background: active ? "#fff" : "transparent",
-                        color: active ? "#18181b" : "#71717a",
-                        boxShadow: active ? "0 1px 2px rgba(0,0,0,.1)" : "none",
-                        transition: "all .15s",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {l.label}
-                    </button>
-                  );
-                })}
+        {/* Row 1: count + controls */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>{photoCountLabel}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <DownloadButton slug={slug} />
+            {!isMobile && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>{t("layout")}</span>
+                <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
+                  {layoutItems.map((l) => {
+                    const active = layout === l.key;
+                    return (
+                      <button
+                        key={l.key}
+                        onClick={() => setLayout(l.key)}
+                        style={{
+                          height: 28,
+                          padding: "0 11px",
+                          borderRadius: 7,
+                          border: "none",
+                          fontSize: 12.5,
+                          fontWeight: 500,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          background: active ? "#fff" : "transparent",
+                          color: active ? "#18181b" : "#71717a",
+                          boxShadow: active ? "0 1px 2px rgba(0,0,0,.1)" : "none",
+                          transition: "all .15s",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {l.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
+
+        {/* Row 2: photographer filter chips */}
+        {photographers.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingTop: 9, marginTop: 9, borderTop: "1px solid #f0f0f2" }}>
+            <button
+              onClick={() => setActivePhotographer(null)}
+              style={{
+                height: 28, padding: "0 11px", borderRadius: 999,
+                border: activePhotographer === null ? "none" : "1px solid #e4e4e7",
+                background: activePhotographer === null ? "#18181b" : "#fff",
+                color: activePhotographer === null ? "#fff" : "#52525b",
+                fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                transition: "background .15s, color .15s, border .15s",
+              }}
+            >
+              {t("filterAll")}
+              <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                {processedPhotos.length}
+              </span>
+            </button>
+            {photographers.map((name) => {
+              const active = activePhotographer === name;
+              return (
+                <button
+                  key={name}
+                  onClick={() => setActivePhotographer(active ? null : name)}
+                  style={{
+                    height: 28, padding: "0 11px", borderRadius: 999,
+                    border: active ? "none" : "1px solid #e4e4e7",
+                    background: active ? "#18181b" : "#fff",
+                    color: active ? "#fff" : "#52525b",
+                    fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                    transition: "background .15s, color .15s, border .15s",
+                  }}
+                >
+                  {name}
+                  <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                    {photographerCounts.get(name)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Photos */}
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 24px 44px" }}>
         <PhotoGrid
-          photos={gallery.photos.map((p) => ({
+          photos={filteredPhotos.map((p) => ({
             id: p.id,
             thumbUrl: p.thumbUrl,
             displayUrl: p.displayUrl,
@@ -290,7 +367,7 @@ export default function GalleryViewPage() {
             placeholderDataUrl: p.placeholderDataUrl,
           }))}
           layout={isMobile ? "uniform" : layout}
-          onPhotoClick={(p, i) => {
+          onPhotoClick={(_, i) => {
             setLbIndex(i);
             setLbOpen(true);
           }}
@@ -300,13 +377,11 @@ export default function GalleryViewPage() {
       {/* Lightbox */}
       {lbOpen && (
         <Lightbox
-          photos={gallery.photos
-            .filter((p) => p.status === "PROCESSED")
-            .map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
+          photos={filteredPhotos.map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
           index={lbIndex}
           onClose={() => setLbOpen(false)}
-          onNext={() => setLbIndex((i) => (i + 1) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}
-          onPrev={() => setLbIndex((i) => (i - 1 + gallery.photos.filter((p) => p.status === "PROCESSED").length) % gallery.photos.filter((p) => p.status === "PROCESSED").length)}
+          onNext={() => setLbIndex((i) => (i + 1) % filteredPhotos.length)}
+          onPrev={() => setLbIndex((i) => (i - 1 + filteredPhotos.length) % filteredPhotos.length)}
           onDownload={async (photoId) => {
             const res = await fetch(`/api/gallery/${slug}/photos/${photoId}/download`, { credentials: "include" });
             const data = await res.json();

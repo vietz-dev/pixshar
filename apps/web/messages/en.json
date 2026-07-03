@@ -104,6 +104,10 @@
         "success": "{count, plural, one {# photo deleted} other {# photos deleted}}",
         "failed": "Failed to delete photos"
       },
+      "photoFilter": {
+        "all": "All",
+        "label": "Filter by photographer"
+      },
       "bulkRename": {
         "button": "Set photographer",
         "title": "Set photographer name",
@@ -150,6 +154,8 @@
       "eventLabel": "Event",
       "descriptionFallback": "A private photo collection",
       "photoCount": "{count, plural, one {# photo} other {# photos}}",
+      "photoCountFiltered": "{filtered} of {total} photos",
+      "filterAll": "All",
       "uploadButton": "Upload your photos",
       "layout": "Layout",
       "masonry": "Masonry",
