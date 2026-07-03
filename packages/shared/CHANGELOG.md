@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.26
+
+### Patch Changes
+
+- 2620ac6: i18n and better archive building
+
 ## 0.0.25
 
 ### Patch Changes
