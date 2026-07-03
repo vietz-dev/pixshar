@@ -119,27 +119,9 @@ export default function GalleryViewPage() {
     return () => es.close();
   }, [slug, galleryLoaded]);
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
-        {tCommon("loading")}
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626" }}>
-        {error}
-      </div>
-    );
-  }
-  if (!gallery) return null;
-
-  const coverGradient = "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)";
-
   const processedPhotos = useMemo(
-    () => gallery.photos.filter((p) => p.status === "PROCESSED"),
-    [gallery.photos]
+    () => (gallery?.photos ?? []).filter((p) => p.status === "PROCESSED"),
+    [gallery]
   );
 
   const photographers = useMemo(() => {
@@ -164,6 +146,24 @@ export default function GalleryViewPage() {
       : processedPhotos,
     [processedPhotos, activePhotographer]
   );
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
+        {tCommon("loading")}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626" }}>
+        {error}
+      </div>
+    );
+  }
+  if (!gallery) return null;
+
+  const coverGradient = "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)";
 
   const photoCountLabel = activePhotographer
     ? t("photoCountFiltered", { filtered: filteredPhotos.length, total: processedPhotos.length })
