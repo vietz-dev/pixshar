@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.29
+
+### Patch Changes
+
+- 9fda7f5: fix use memo errorwq
+
 ## 0.0.28
 
 ### Patch Changes
