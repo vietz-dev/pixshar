@@ -63,6 +63,13 @@ export default function EventDetailPage() {
   const [uploaderName, setUploaderName] = useState("");
   const fileMapRef = useRef<Map<string, File>>(new Map());
   const abortRef = useRef(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
+  const [bulkRenameName, setBulkRenameName] = useState("");
+  const [bulkRenaming, setBulkRenaming] = useState(false);
 
   const fetchEvent = useCallback(() => {
     fetch(`/api/events/${id}`, { credentials: "include" })
@@ -274,6 +281,80 @@ export default function EventDetailPage() {
       }
     } finally {
       setPwSaving(false);
+    }
+  }
+
+  function exitSelection() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleToggleSelect(photoId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId); else next.add(photoId);
+      return next;
+    });
+  }
+
+  function handleSelectAll() {
+    if (!event) return;
+    setSelectedIds(new Set(event.photos.filter((p) => p.status === "PROCESSED").map((p) => p.id)));
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    const ids = [...selectedIds];
+    try {
+      const res = await fetch(`/api/events/${id}/photos`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoIds: ids }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(t("bulkDelete.success", { count: ids.length }));
+      exitSelection();
+      fetchEvent();
+    } catch {
+      toast.error(t("bulkDelete.failed"));
+    } finally {
+      setBulkDeleting(false);
+      setBulkDeleteOpen(false);
+    }
+  }
+
+  async function handleBulkRename(e: React.FormEvent) {
+    e.preventDefault();
+    setBulkRenaming(true);
+    const ids = [...selectedIds];
+    const name = bulkRenameName;
+    try {
+      const res = await fetch(`/api/events/${id}/photos`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoIds: ids, photographerName: name }),
+      });
+      if (!res.ok) throw new Error();
+      setEvent((prev) =>
+        prev
+          ? {
+              ...prev,
+              photos: prev.photos.map((p) =>
+                selectedIds.has(p.id) ? { ...p, photographerName: name.trim() || null } : p
+              ),
+            }
+          : prev
+      );
+      toast.success(t("bulkRename.success", { count: ids.length }));
+      setBulkRenameOpen(false);
+      setBulkRenameName("");
+      exitSelection();
+    } catch {
+      toast.error(t("bulkRename.failed"));
+    } finally {
+      setBulkRenaming(false);
     }
   }
 
@@ -566,19 +647,82 @@ export default function EventDetailPage() {
         </div>
         <DownloadPanel eventId={event.id} slug={event.slug} />
 
-        {/* Photos */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 14px" }}>
+        {/* Photos header + bulk-select toolbar */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "6px 0 14px" }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{t("photos")}</h2>
-          <span style={{ fontSize: 13, color: "#71717a" }}>{t("totalPhotos", { count: event.photos.length })}</span>
+
+          {selectionMode ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+              {/* Selected count */}
+              <span style={{ fontSize: 13, color: "#52525b", fontWeight: 500, minWidth: 90 }}>
+                {selectedIds.size > 0
+                  ? t("bulkSelect.selected", { count: selectedIds.size })
+                  : t("bulkSelect.noneSelected")}
+              </span>
+
+              {/* Select all / Deselect all */}
+              <button
+                onClick={selectedIds.size === event.photos.filter((p) => p.status === "PROCESSED").length ? () => setSelectedIds(new Set()) : handleSelectAll}
+                style={{ height: 32, padding: "0 11px", borderRadius: 7, border: "1px solid #e4e4e7", background: "#fff", color: "#18181b", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}
+              >
+                {selectedIds.size === event.photos.filter((p) => p.status === "PROCESSED").length
+                  ? t("bulkSelect.deselectAll")
+                  : t("bulkSelect.selectAll")}
+              </button>
+
+              {/* Set photographer */}
+              <button
+                onClick={() => { setBulkRenameName(""); setBulkRenameOpen(true); }}
+                disabled={selectedIds.size === 0}
+                style={{ height: 32, padding: "0 11px", borderRadius: 7, border: "1px solid #e4e4e7", background: selectedIds.size > 0 ? "#fff" : "#f4f4f5", color: selectedIds.size > 0 ? "#18181b" : "#a1a1aa", fontSize: 12.5, fontWeight: 500, cursor: selectedIds.size > 0 ? "pointer" : "not-allowed" }}
+              >
+                {t("bulkRename.button")}
+              </button>
+
+              {/* Delete selected */}
+              <button
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={selectedIds.size === 0}
+                style={{ height: 32, padding: "0 11px", borderRadius: 7, border: selectedIds.size > 0 ? "1px solid #fecaca" : "1px solid #e4e4e7", background: "#fff", color: selectedIds.size > 0 ? "#dc2626" : "#a1a1aa", fontSize: 12.5, fontWeight: 500, cursor: selectedIds.size > 0 ? "pointer" : "not-allowed" }}
+              >
+                {t("bulkDelete.button")}{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+              </button>
+
+              {/* Cancel */}
+              <button
+                onClick={exitSelection}
+                style={{ height: 32, padding: "0 11px", borderRadius: 7, border: "1px solid #e4e4e7", background: "#f4f4f5", color: "#52525b", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}
+              >
+                {t("bulkSelect.cancel")}
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, color: "#71717a" }}>{t("totalPhotos", { count: event.photos.length })}</span>
+              {event.photos.some((p) => p.status === "PROCESSED") && (
+                <button
+                  onClick={() => setSelectionMode(true)}
+                  style={{ height: 30, padding: "0 11px", borderRadius: 7, border: "1px solid #e4e4e7", background: "#fff", color: "#52525b", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}
+                >
+                  {t("bulkSelect.select")}
+                </button>
+              )}
+            </div>
+          )}
         </div>
+
         <PhotoGrid
           photos={gridPhotos.filter((p) => p.status === "PROCESSED")}
           layout="uniform"
           onPhotoClick={(p, i) => {
+            if (selectionMode) return;
             setLbIndex(i);
             setLbOpen(true);
           }}
-          onDelete={(photoId) => setDeleteTarget(photoId)}
+          onDelete={selectionMode ? undefined : (photoId) => setDeleteTarget(photoId)}
+          selectable={selectionMode}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
         />
 
         {/* Lightbox */}
@@ -605,7 +749,7 @@ export default function EventDetailPage() {
           <div style={{ fontSize: 13, color: "#dc2626", marginTop: 12 }}>{error}</div>
         )}
 
-        {/* Delete confirmation dialog */}
+        {/* Delete single photo confirmation dialog */}
         <AlertDialog
           open={deleteTarget !== null}
           title={t("deletePhoto.title")}
@@ -621,6 +765,68 @@ export default function EventDetailPage() {
             }
           }}
         />
+
+        {/* Bulk delete confirmation dialog */}
+        <AlertDialog
+          open={bulkDeleteOpen}
+          title={t("bulkDelete.title", { count: selectedIds.size })}
+          description={t("bulkDelete.description", { count: selectedIds.size })}
+          cancelLabel={tCommon("cancel")}
+          confirmLabel={bulkDeleting ? "…" : t("bulkDelete.confirm", { count: selectedIds.size })}
+          destructive
+          onCancel={() => setBulkDeleteOpen(false)}
+          onConfirm={handleBulkDelete}
+        />
+
+        {/* Bulk rename dialog */}
+        {bulkRenameOpen && (
+          <div
+            onClick={() => setBulkRenameOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, animation: "pxFade .15s ease both" }}
+          >
+            <div style={{ position: "absolute", inset: 0, background: "rgba(9,9,11,.5)", backdropFilter: "blur(3px)" }} />
+            <form
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={handleBulkRename}
+              style={{ position: "relative", width: "100%", maxWidth: 400, background: "#fff", borderRadius: 14, border: "1px solid #e4e4e7", boxShadow: "0 20px 50px -12px rgba(0,0,0,.35)", padding: "24px 24px 20px", animation: "pxRise .22s ease both" }}
+            >
+              <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-.01em", marginBottom: 6, color: "#18181b" }}>
+                {t("bulkRename.title")}
+              </div>
+              <div style={{ fontSize: 14, color: "#71717a", lineHeight: 1.5, marginBottom: 18 }}>
+                {t("bulkRename.description", { count: selectedIds.size })}
+              </div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 7, color: "#374151" }}>
+                {t("bulkRename.label")}
+              </label>
+              <input
+                autoFocus
+                value={bulkRenameName}
+                onChange={(e) => setBulkRenameName(e.target.value)}
+                placeholder={t("bulkRename.placeholder")}
+                style={{ width: "100%", height: 40, padding: "0 12px", borderRadius: 8, border: "1px solid #e4e4e7", fontSize: 14, outline: "none", marginBottom: 20, boxSizing: "border-box", transition: "border-color .15s, box-shadow .15s" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "#2563eb"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "#e4e4e7"; e.currentTarget.style.boxShadow = "none"; }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setBulkRenameOpen(false)}
+                  style={{ height: 36, padding: "0 14px", borderRadius: 8, border: "1px solid #e4e4e7", background: "#fff", color: "#52525b", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
+                >
+                  {tCommon("cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={bulkRenaming}
+                  style={{ height: 36, padding: "0 16px", borderRadius: 8, border: "none", background: "#18181b", color: "#fff", fontSize: 14, fontWeight: 500, cursor: bulkRenaming ? "not-allowed" : "pointer", opacity: bulkRenaming ? 0.6 : 1 }}
+                >
+                  {bulkRenaming ? "…" : t("bulkRename.apply")}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   );

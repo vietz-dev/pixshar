@@ -389,6 +389,70 @@ app.post("/:id/photos/retry", requireAdmin, async (c) => {
   return c.json({ success: true, requeued: res.count });
 });
 
+app.patch(
+  "/:id/photos",
+  requireAdmin,
+  zValidator(
+    "json",
+    z.object({
+      photoIds: z.array(z.string().min(1)).min(1),
+      photographerName: z.string().max(100),
+    })
+  ),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const user = c.get("user");
+    const { photoIds, photographerName } = c.req.valid("json");
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event || event.createdById !== user.id) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const result = await prisma.photo.updateMany({
+      where: { id: { in: photoIds }, eventId },
+      data: { photographerName: photographerName.trim() || null },
+    });
+
+    return c.json({ success: true, updated: result.count });
+  }
+);
+
+app.delete(
+  "/:id/photos",
+  requireAdmin,
+  zValidator("json", z.object({ photoIds: z.array(z.string().min(1)).min(1) })),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const user = c.get("user");
+    const { photoIds } = c.req.valid("json");
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event || event.createdById !== user.id) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const photos = await prisma.photo.findMany({
+      where: { id: { in: photoIds }, eventId },
+      select: { id: true, originalKey: true, displayKey: true, thumbKey: true },
+    });
+
+    await Promise.all(
+      photos.flatMap((p) =>
+        [p.originalKey, p.displayKey, p.thumbKey]
+          .filter(Boolean)
+          .map((key) => deleteS3Object(key as string).catch(() => {}))
+      )
+    );
+
+    await prisma.photo.deleteMany({
+      where: { id: { in: photos.map((p) => p.id) }, eventId },
+    });
+
+    return c.json({ success: true, deleted: photos.length });
+  }
+);
+
 app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
   const eventId = c.req.param("id");
   const photoId = c.req.param("photoId");

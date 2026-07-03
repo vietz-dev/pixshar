@@ -88,6 +88,32 @@
         "failed": "Failed to delete photo",
         "deleteButton": "Delete photo"
       },
+      "bulkSelect": {
+        "select": "Select",
+        "cancel": "Cancel",
+        "selected": "{count, plural, one {# selected} other {# selected}}",
+        "noneSelected": "None selected",
+        "selectAll": "Select all",
+        "deselectAll": "Deselect all"
+      },
+      "bulkDelete": {
+        "button": "Delete",
+        "title": "Delete {count, plural, one {# photo} other {# photos}}?",
+        "description": "This will permanently delete {count, plural, one {# photo} other {# photos}} and cannot be undone.",
+        "confirm": "Delete {count, plural, one {# photo} other {# photos}}",
+        "success": "{count, plural, one {# photo deleted} other {# photos deleted}}",
+        "failed": "Failed to delete photos"
+      },
+      "bulkRename": {
+        "button": "Set photographer",
+        "title": "Set photographer name",
+        "description": "Update the photographer name for {count, plural, one {# selected photo} other {# selected photos}}.",
+        "label": "Photographer name",
+        "placeholder": "Name or leave blank to clear",
+        "apply": "Apply",
+        "success": "{count, plural, one {# photo updated} other {# photos updated}}",
+        "failed": "Failed to update photos"
+      },
       "status": {
         "ready": "Ready",
         "processing": "Processing"

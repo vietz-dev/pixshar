@@ -20,6 +20,9 @@ interface PhotoGridProps {
   layout: "justified" | "masonry" | "uniform";
   onPhotoClick: (photo: GridPhoto, index: number) => void;
   onDelete?: (photoId: string) => void;
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
 const GAP = 8;
@@ -44,7 +47,7 @@ function getLayoutParams(layout: string, containerWidth: number): { cols: number
   return { cols, itemW, rowH: itemW };
 }
 
-export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: PhotoGridProps) {
+export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, selectable, selectedIds, onToggleSelect }: PhotoGridProps) {
   const t = useTranslations("photoGrid");
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);
@@ -87,6 +90,36 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
     transform: "translateY(-3px)",
     boxShadow: "0 14px 28px -12px rgba(0,0,0,.32)",
     filter: "brightness(1.05)",
+  };
+
+  const selectCheckbox = (photoId: string) => {
+    const isSelected = selectedIds?.has(photoId) ?? false;
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 8,
+          width: 22,
+          height: 22,
+          borderRadius: 6,
+          border: isSelected ? "none" : "2px solid rgba(255,255,255,.9)",
+          background: isSelected ? "#2563eb" : "rgba(0,0,0,.35)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2,
+          transition: "background .12s, border .12s",
+          pointerEvents: "none",
+        }}
+      >
+        {isSelected && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        )}
+      </div>
+    );
   };
 
   const deleteBtn = (photoId: string) => (
@@ -189,14 +222,18 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
                       borderRadius: 7,
                       cursor: "pointer",
                       overflow: "hidden",
-                      transition: "transform .2s, box-shadow .2s, filter .2s",
+                      transition: "transform .2s, box-shadow .2s, filter .2s, outline .12s",
                       position: "relative",
+                      outline: selectable && selectedIds?.has(p.id) ? "2.5px solid #2563eb" : "none",
+                      outlineOffset: -2,
                     }}
                     onMouseEnter={(e) => {
-                      const s = e.currentTarget.style;
-                      s.transform = commonHover.transform;
-                      s.boxShadow = commonHover.boxShadow;
-                      s.filter = commonHover.filter;
+                      if (!selectable) {
+                        const s = e.currentTarget.style;
+                        s.transform = commonHover.transform;
+                        s.boxShadow = commonHover.boxShadow;
+                        s.filter = commonHover.filter;
+                      }
                       const btn = e.currentTarget.querySelector("[data-del]") as HTMLElement;
                       if (btn) btn.style.opacity = "1";
                     }}
@@ -209,11 +246,15 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete }: Ph
                       if (btn) btn.style.opacity = "0";
                     }}
                   >
-                    <div onClick={() => onPhotoClick(p, globalIndex)} style={{ width: "100%", height: "100%" }}>
+                    <div
+                      onClick={() => selectable && onToggleSelect ? onToggleSelect(p.id) : onPhotoClick(p, globalIndex)}
+                      style={{ width: "100%", height: "100%" }}
+                    >
                       {imgOrPlaceholder(p)}
                       {statusBadge(p)}
+                      {selectable && selectCheckbox(p.id)}
                     </div>
-                    {onDelete && deleteBtn(p.id)}
+                    {!selectable && onDelete && deleteBtn(p.id)}
                   </div>
                 );
               })}

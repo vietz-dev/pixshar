@@ -88,6 +88,32 @@
         "failed": "Foto konnte nicht gelöscht werden",
         "deleteButton": "Foto löschen"
       },
+      "bulkSelect": {
+        "select": "Auswählen",
+        "cancel": "Abbrechen",
+        "selected": "{count} ausgewählt",
+        "noneSelected": "Keine ausgewählt",
+        "selectAll": "Alle auswählen",
+        "deselectAll": "Alle abwählen"
+      },
+      "bulkDelete": {
+        "button": "Löschen",
+        "title": "{count, plural, one {# Foto löschen?} other {# Fotos löschen?}}",
+        "description": "{count, plural, one {# Foto wird} other {# Fotos werden}} unwiderruflich gelöscht.",
+        "confirm": "{count, plural, one {# Foto löschen} other {# Fotos löschen}}",
+        "success": "{count, plural, one {# Foto gelöscht} other {# Fotos gelöscht}}",
+        "failed": "Fotos konnten nicht gelöscht werden"
+      },
+      "bulkRename": {
+        "button": "Fotograf setzen",
+        "title": "Fotografen-Name setzen",
+        "description": "Fotografen-Name für {count, plural, one {# ausgewähltes Foto} other {# ausgewählte Fotos}} aktualisieren.",
+        "label": "Fotografen-Name",
+        "placeholder": "Name eingeben oder leer lassen zum Entfernen",
+        "apply": "Anwenden",
+        "success": "{count, plural, one {# Foto aktualisiert} other {# Fotos aktualisiert}}",
+        "failed": "Fotos konnten nicht aktualisiert werden"
+      },
       "status": {
         "ready": "Bereit",
         "processing": "In Bearbeitung"
