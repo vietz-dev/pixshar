@@ -69,7 +69,9 @@
       "upload": {
         "dropzoneMain": "Fotos hierher ziehen oder",
         "browse": "durchsuchen",
-        "hint": "JPEG, PNG oder HEIC · bis zu 4 gleichzeitig"
+        "hint": "JPEG, PNG oder HEIC · bis zu 4 gleichzeitig",
+        "photographerNameLabel": "Fotograf (optional)",
+        "photographerNamePlaceholder": "Dein Name oder leer lassen"
       },
       "downloadArchive": "Download-Archiv",
       "photos": "Fotos",

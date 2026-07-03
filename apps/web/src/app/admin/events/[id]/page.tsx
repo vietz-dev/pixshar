@@ -60,6 +60,7 @@ export default function EventDetailPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [queue, setQueue] = useState<UploadItem[]>([]);
   const [showUpDetails, setShowUpDetails] = useState(false);
+  const [uploaderName, setUploaderName] = useState("");
   const fileMapRef = useRef<Map<string, File>>(new Map());
   const abortRef = useRef(false);
 
@@ -161,6 +162,7 @@ export default function EventDetailPage() {
         items: uploadItems,
         initUrl: `/api/upload/events/${id}/photos/init`,
         completeUrl: `/api/upload/events/${id}/photos/complete`,
+        photographerName: uploaderName.trim() || undefined,
         shouldAbort: () => abortRef.current,
         onStatus: (uid, status, progress) => {
           setQueue((prev) =>
@@ -485,6 +487,38 @@ export default function EventDetailPage() {
             </button>
           </div>
         )}
+
+        {/* Photographer name (optional) */}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#52525b", marginBottom: 6 }}>
+            {t("upload.photographerNameLabel")}
+          </label>
+          <input
+            value={uploaderName}
+            onChange={(e) => setUploaderName(e.target.value)}
+            placeholder={t("upload.photographerNamePlaceholder")}
+            style={{
+              height: 38,
+              width: "100%",
+              padding: "0 12px",
+              border: "1px solid #e4e4e7",
+              borderRadius: 8,
+              fontSize: 14,
+              background: "#fff",
+              outline: "none",
+              boxSizing: "border-box",
+              transition: "border-color .15s, box-shadow .15s",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#2563eb";
+              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "#e4e4e7";
+              e.currentTarget.style.boxShadow = "none";
+            }}
+          />
+        </div>
 
         {/* Upload zone */}
         <div

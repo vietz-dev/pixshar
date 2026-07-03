@@ -34,11 +34,11 @@ app.post("/events/:id/photos/init", requireAdmin, zValidator("json", uploadInitS
     return c.json({ error: "Too many uploads. Please try again later." }, 429);
   }
 
-  const { files } = c.req.valid("json");
+  const { files, photographerName } = c.req.valid("json");
   const photos = await initUpload({
     eventId: event.id,
     uploadedBy: "ADMIN",
-    photographerName: null,
+    photographerName: photographerName ?? null,
     files,
   });
   return c.json({ photos }, 200);
