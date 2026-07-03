@@ -1,10 +1,11 @@
 import { Effect, Schedule, Console } from "effect";
 import { prisma } from "../lib/prisma.js";
-import { s3, s3Keys, deleteS3Object } from "../lib/s3.js";
+import { s3, s3Keys, deleteS3Prefix, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import type { Photo } from "@prisma/client";
-import { emitDownloadStatus } from "../lib/eventBus.js";
+import { emitDownloadStatus, PG_NOTIFY_CHANNEL } from "../lib/eventBus.js";
+import { planArchiveParts, zipEntryBytes } from "./archivePlanner.js";
 
 export function statusMessage(status: string): string {
   switch (status) {
@@ -32,11 +33,37 @@ export async function pushDownloadStatus(eventId: string): Promise<void> {
     processedPhotos: job.processedPhotos,
     uploadProgress: job.uploadProgress,
     totalPhotos,
-    zipSizeBytes: job.zipSizeBytes,
+    totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
+    partCount: job.partCount,
     debounceUntil: job.debounceUntil?.toISOString() ?? null,
     failureReason: job.failureReason,
     updatedAt: job.updatedAt.toISOString(),
   });
+}
+
+// Emit locally (covers listeners in this process) AND via pg_notify so the API
+// process's SSE streams fire when this code runs inside the worker container.
+// The pg_notify listener re-reads the row and emits locally — it must call
+// pushDownloadStatus, never this function, or the two processes would ping-pong.
+export async function notifyDownloadStatus(eventId: string): Promise<void> {
+  pushDownloadStatus(eventId).catch(() => {});
+  await prisma
+    .$executeRawUnsafe(
+      `SELECT pg_notify($1, $2)`,
+      PG_NOTIFY_CHANNEL,
+      JSON.stringify({ type: "download.status", eventId })
+    )
+    .catch(() => {});
+}
+
+// Best-effort removal of all archive artifacts (part rows + S3 objects).
+async function deleteArchiveArtifacts(eventId: string, jobId: string): Promise<void> {
+  await prisma.downloadArchivePart.deleteMany({ where: { jobId } }).catch(() => {});
+  await deleteS3Prefix(s3Keys.archivePrefix(eventId))
+    .then((n) => {
+      if (n > 0) console.log(`[Archive] event=${eventId} deleted ${n} stale archive object(s)`);
+    })
+    .catch((e) => console.error(`[Archive] event=${eventId} failed to delete archive prefix: ${e}`));
 }
 
 // ---------------------------------------------------------------------------
@@ -49,9 +76,9 @@ export async function triggerDebounce(eventId: string): Promise<void> {
   const debounceStartedAt = new Date(now);
   console.log(`[Debounce] event=${eventId} debounceUntil=${debounceUntil.toISOString()}`);
 
-  // A stale READY zip must be deleted from S3 once it's superseded — capture the
-  // key inside the tx and delete after commit (no S3 calls inside a tx).
-  let staleZipKey: string | null = null;
+  // A stale READY archive must be deleted from S3 once it's superseded — flag it
+  // inside the tx and delete after commit (no S3 calls inside a tx).
+  let staleArchiveJobId: string | null = null;
 
   await prisma.$transaction(async (tx) => {
     // Increment processed photo count
@@ -88,7 +115,7 @@ export async function triggerDebounce(eventId: string): Promise<void> {
       case "QUEUED": {
         await tx.downloadJob.update({
           where: { id: existing.id },
-          data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, processedPhotos: 0 },
+          data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, queuedAt: null, processedPhotos: 0 },
         });
         console.log(`[Debounce] event=${eventId} QUEUED -> DEBOUNCING`);
         break;
@@ -99,15 +126,15 @@ export async function triggerDebounce(eventId: string): Promise<void> {
         break;
       }
       case "READY": {
-        staleZipKey = existing.zipKey;
+        staleArchiveJobId = existing.id;
         await tx.downloadJob.update({
           where: { id: existing.id },
           data: {
             status: "DEBOUNCING",
             debounceUntil,
             debounceStartedAt,
-            zipKey: null,
-            zipSizeBytes: null,
+            totalSizeBytes: null,
+            partCount: 0,
             processedPhotos: 0,
           },
         });
@@ -126,12 +153,10 @@ export async function triggerDebounce(eventId: string): Promise<void> {
     }
   });
 
-  if (staleZipKey) {
-    deleteS3Object(staleZipKey)
-      .then(() => console.log(`[Debounce] event=${eventId} deleted stale READY zip`))
-      .catch((e) => console.error(`[Debounce] event=${eventId} failed to delete stale zip: ${e}`));
+  if (staleArchiveJobId) {
+    deleteArchiveArtifacts(eventId, staleArchiveJobId).catch(() => {});
   }
-  pushDownloadStatus(eventId).catch(() => {});
+  notifyDownloadStatus(eventId).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +178,7 @@ async function checkDebounceTimers(): Promise<void> {
   const now = new Date();
   const maxWaitCutoff = new Date(now.getTime() - env.DOWNLOAD_MAX_WAIT_SECONDS * 1000);
 
-  // Build when the quiet period elapsed OR the max-wait ceiling is hit (so a
+  // Build when quiet period elapsed OR max-wait ceiling hit (so a
   // continuous stream of uploads can't starve the archive indefinitely).
   const ready = await prisma.downloadJob.findMany({
     where: {
@@ -163,27 +188,28 @@ async function checkDebounceTimers(): Promise<void> {
         { debounceStartedAt: { lte: maxWaitCutoff } },
       ],
     },
+    orderBy: { debounceStartedAt: "asc" },
   });
 
   for (const job of ready) {
-    // Count-checked transition so two replicas can't both launch a build.
+    // Count-checked transition so two replicas can't both launch the build.
     const res = await prisma.downloadJob.updateMany({
       where: { id: job.id, status: "DEBOUNCING" },
-      data: { status: "QUEUED", processedPhotos: 0 },
+      data: { status: "QUEUED", queuedAt: new Date(), processedPhotos: 0 },
     });
     if (res.count !== 1) continue;
     console.log(`[Poller] queuing build for event=${job.eventId}`);
-    pushDownloadStatus(job.eventId).catch(() => {});
-    runBuildZip(job.eventId);
+    notifyDownloadStatus(job.eventId).catch(() => {});
   }
 
-  // Also pick up any QUEUED jobs created by forceBuild (which bypasses DEBOUNCING).
-  // runBuildZip atomically claims QUEUED→BUILDING so concurrent workers are safe.
+  // Enqueue all QUEUED jobs (incl. forceBuild ones, which bypass DEBOUNCING)
+  // into the per-process serial build queue, oldest first. runBuildZip
+  // atomically claims QUEUED→BUILDING so concurrent worker replicas stay safe.
   const queued = await prisma.downloadJob.findMany({
     where: { status: "QUEUED" },
+    orderBy: [{ queuedAt: "asc" }, { createdAt: "asc" }],
   });
   for (const job of queued) {
-    console.log(`[Poller] building queued job for event=${job.eventId}`);
     runBuildZip(job.eventId);
   }
 }
@@ -194,6 +220,8 @@ async function checkDebounceTimers(): Promise<void> {
 
 export async function reapStaleBuilding(): Promise<number> {
   const cutoff = new Date(Date.now() - env.DOWNLOAD_BUILD_LEASE_SECONDS * 1000);
+  // queuedAt is intentionally left untouched: a crashed build keeps its place
+  // at the front of the FIFO queue.
   const res = await prisma.downloadJob.updateMany({
     where: {
       status: "BUILDING",
@@ -229,20 +257,16 @@ export async function forceBuild(eventId: string): Promise<void> {
 
   if (!job) {
     await prisma.downloadJob.create({
-      data: { eventId, status: "QUEUED", processedPhotos: 0, uploadProgress: 0 },
+      data: { eventId, status: "QUEUED", queuedAt: new Date(), processedPhotos: 0, uploadProgress: 0 },
     });
     console.log(`[ForceBuild] event=${eventId} created new QUEUED job`);
-    pushDownloadStatus(eventId).catch(() => {});
+    notifyDownloadStatus(eventId).catch(() => {});
     // Worker's debounce poller picks up QUEUED within its next cycle (~15s).
     return;
   }
 
-  // Delete any existing S3 ZIP so the old build can't overwrite with stale data
-  if (job.zipKey) {
-    await deleteS3Object(job.zipKey)
-      .then(() => console.log(`[ForceBuild] event=${eventId} deleted old S3 zip`))
-      .catch((e) => console.error(`[ForceBuild] event=${eventId} failed to delete old zip: ${e}`));
-  }
+  // Delete any existing archive parts so the old build can't serve stale data
+  await deleteArchiveArtifacts(eventId, job.id);
 
   // Reset job to QUEUED regardless of current state — this cancels debounce,
   // aborts an in-flight build (old fiber sees status change), and starts fresh.
@@ -250,15 +274,16 @@ export async function forceBuild(eventId: string): Promise<void> {
     where: { id: job.id },
     data: {
       status: "QUEUED",
+      queuedAt: new Date(),
       processedPhotos: 0,
       uploadProgress: 0,
       failureReason: null,
-      zipKey: null,
-      zipSizeBytes: null,
+      totalSizeBytes: null,
+      partCount: 0,
     },
   });
   console.log(`[ForceBuild] event=${eventId} reset job to QUEUED (was ${job.status})`);
-  pushDownloadStatus(eventId).catch(() => {});
+  notifyDownloadStatus(eventId).catch(() => {});
   // Worker's debounce poller picks up QUEUED within its next cycle (~15s).
 }
 
@@ -274,17 +299,62 @@ export async function cancelJob(eventId: string): Promise<void> {
     where: { id: job.id },
     data: { status: "CANCELLED", processedPhotos: 0, failureReason: "Cancelled by admin" },
   });
-  pushDownloadStatus(eventId).catch(() => {});
+  notifyDownloadStatus(eventId).catch(() => {});
 
-  // If a partial zip exists on S3, delete it
-  if (job.zipKey) {
-    await deleteS3Object(job.zipKey).catch(() => {});
-  }
+  // If partial archive parts exist on S3, delete them. An in-flight build also
+  // cleans up after itself when it observes the CANCELLED status.
+  await deleteArchiveArtifacts(eventId, job.id);
+}
+
+export interface ReadyDownloadPayload {
+  status: "READY";
+  parts: { index: number; url: string; sizeBytes: number }[];
+  partCount: number;
+  totalSizeBytes: number;
+  photoCount: number;
+}
+
+// Presigned download links for every archive part of a READY job. The
+// Content-Disposition filename carries part numbering so a guest saving
+// three parts ends up with `<slug>-part-1-of-3.zip` etc.
+export async function buildReadyDownloadPayload(
+  jobId: string,
+  slug: string,
+  photoCount: number,
+  expiresIn = 60 * 60
+): Promise<ReadyDownloadPayload> {
+  const rows = await prisma.downloadArchivePart.findMany({
+    where: { jobId },
+    orderBy: { partIndex: "asc" },
+  });
+  const n = rows.length;
+  const parts = await Promise.all(
+    rows.map(async (p) => ({
+      index: p.partIndex,
+      sizeBytes: Number(p.sizeBytes),
+      url: await getPresignedUrl(
+        p.key,
+        "get",
+        expiresIn,
+        n === 1
+          ? `attachment; filename="${slug}.zip"`
+          : `attachment; filename="${slug}-part-${p.partIndex}-of-${n}.zip"`
+      ),
+    }))
+  );
+  return {
+    status: "READY",
+    parts,
+    partCount: n,
+    totalSizeBytes: parts.reduce((sum, p) => sum + p.sizeBytes, 0),
+    photoCount,
+  };
 }
 
 export async function getDownloadJobStatus(eventId: string) {
   const job = await prisma.downloadJob.findUnique({
     where: { eventId },
+    include: { parts: { orderBy: { partIndex: "asc" } } },
   });
   if (!job) return null;
 
@@ -294,7 +364,13 @@ export async function getDownloadJobStatus(eventId: string) {
     photoCount: job.photoCount,
     processedPhotos: job.processedPhotos,
     uploadProgress: job.uploadProgress,
-    zipSizeBytes: job.zipSizeBytes,
+    totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
+    partCount: job.partCount,
+    parts: job.parts.map((p) => ({
+      partIndex: p.partIndex,
+      key: p.key,
+      sizeBytes: Number(p.sizeBytes),
+    })),
     debounceUntil: job.debounceUntil,
     failureReason: job.failureReason,
     updatedAt: job.updatedAt,
@@ -302,12 +378,30 @@ export async function getDownloadJobStatus(eventId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. ZIP build pipeline
+// 4. ZIP build pipeline — serialized per process
 // ---------------------------------------------------------------------------
 
+// Exactly one archive build runs at a time in this process, FIFO. A single
+// image-processor container must keep resizing photos while it builds one
+// archive; concurrent builds would multiply peak memory and I/O. Multiple
+// worker replicas can still build *different* events in parallel because
+// claimJob's QUEUED→BUILDING CAS hands each event to exactly one replica.
+const enqueuedBuilds = new Set<string>();
+let buildChain: Promise<void> = Promise.resolve();
+
 export function runBuildZip(eventId: string): void {
-  console.log(`[BuildZip] starting for event=${eventId}`);
-  Effect.runFork(buildZip(eventId));
+  if (enqueuedBuilds.has(eventId)) return;
+  enqueuedBuilds.add(eventId);
+  console.log(`[BuildZip] enqueued event=${eventId} (queue depth=${enqueuedBuilds.size})`);
+  buildChain = buildChain.then(async () => {
+    try {
+      await Effect.runPromise(buildZip(eventId));
+    } catch (e) {
+      console.error(`[BuildZip] event=${eventId} unexpected failure: ${e}`);
+    } finally {
+      enqueuedBuilds.delete(eventId);
+    }
+  });
 }
 
 const buildZip = (eventId: string) =>
@@ -318,26 +412,32 @@ const buildZip = (eventId: string) =>
       return;
     }
     console.log(`[BuildZip] event=${eventId} claimed job ${job.id}`);
-    yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
+    yield* Effect.promise(() => notifyDownloadStatus(eventId).catch(() => {}));
 
     const photos = yield* loadPhotos(eventId);
     console.log(`[BuildZip] event=${eventId} loaded ${photos.length} photos`);
     yield* markBuilding(job.id, photos.length);
-    yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
+    yield* Effect.promise(() => notifyDownloadStatus(eventId).catch(() => {}));
 
     // Retry only the S3 streaming part — claimJob must NOT be retried
     // because it atomically transitions QUEUED→BUILDING and a second
     // attempt would see BUILDING and return null (broken retry).
-    const result = yield* streamZipToS3(eventId, photos, job.id).pipe(
-      // Catch CANCELLED before retry — do NOT retry on user cancel
+    // Each attempt restarts from scratch: streamZipPartsToS3 deletes any
+    // parts left by the previous attempt before writing.
+    const result = yield* streamZipPartsToS3(eventId, photos, job.id).pipe(
+      // Catch CANCELLED/SUPERSEDED before retry — do NOT retry those.
       Effect.catchAll((e) => {
         if (e.message === "CANCELLED") {
-          return Effect.promise(() =>
-            prisma.downloadJob.update({
-              where: { eventId },
-              data: { failureReason: "Cancelled by admin" },
-            }).then(() => undefined)
-          ).pipe(Effect.orElseSucceed(() => undefined));
+          return Effect.promise(async () => {
+            await deleteArchiveArtifacts(eventId, job.id);
+            return undefined;
+          }).pipe(Effect.orElseSucceed(() => undefined));
+        }
+        if (e.message === "SUPERSEDED") {
+          // A forceBuild reset the row while we were building — the next build
+          // owns the archive prefix now, so just walk away.
+          console.log(`[BuildZip] event=${eventId} superseded mid-build, aborting`);
+          return Effect.succeed(undefined);
         }
         return Effect.fail(e);
       }),
@@ -348,18 +448,20 @@ const buildZip = (eventId: string) =>
     );
 
     if (!result) {
-      console.log(`[BuildZip] event=${eventId} cancelled, skipping markReady`);
+      console.log(`[BuildZip] event=${eventId} cancelled/superseded, skipping markReady`);
       return;
     }
 
-    const readyCount = yield* markReady(job.id, result.zipKey, result.zipSizeBytes);
+    const readyCount = yield* markReady(job.id, result.partCount, result.totalSizeBytes);
     if (readyCount === 0) {
       // Superseded by a forceBuild (row no longer BUILDING) — drop this result.
       console.log(`[BuildZip] event=${eventId} markReady no-op (superseded), skipping push`);
       return;
     }
-    console.log(`[BuildZip] event=${eventId} marked READY (zipSize=${result.zipSizeBytes})`);
-    yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
+    console.log(
+      `[BuildZip] event=${eventId} marked READY (parts=${result.partCount}, totalSize=${result.totalSizeBytes})`
+    );
+    yield* Effect.promise(() => notifyDownloadStatus(eventId).catch(() => {}));
   }).pipe(
     Effect.catchAll((e) =>
       Effect.gen(function* () {
@@ -370,7 +472,7 @@ const buildZip = (eventId: string) =>
         });
         if (job && job.status !== "CANCELLED") {
           yield* markFailed(job.id, String(e));
-          yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
+          yield* Effect.promise(() => notifyDownloadStatus(eventId).catch(() => {}));
         }
       })
     )
@@ -421,24 +523,21 @@ const markBuilding = (jobId: string, photoCount: number) =>
 
 // Returns the update count so the caller can skip the READY push on a no-op
 // (the build was superseded by a forceBuild).
-const markReady = (jobId: string, zipKey: string, zipSizeBytes: number) =>
+const markReady = (jobId: string, partCount: number, totalSizeBytes: number) =>
   Effect.tryPromise({
     try: () =>
       prisma.downloadJob.updateMany({
         where: { id: jobId, status: "BUILDING" },
-        data: { status: "READY", zipKey, zipSizeBytes, processedPhotos: 0, uploadProgress: 100, heartbeatAt: new Date() },
+        data: {
+          status: "READY",
+          partCount,
+          totalSizeBytes: BigInt(totalSizeBytes),
+          processedPhotos: 0,
+          uploadProgress: 100,
+          heartbeatAt: new Date(),
+        },
       }).then((r) => r.count),
     catch: (e) => new Error(`Mark ready failed: ${e}`),
-  });
-
-const markUploading = (jobId: string) =>
-  Effect.tryPromise({
-    try: () =>
-      prisma.downloadJob.updateMany({
-        where: { id: jobId, status: "BUILDING" },
-        data: { processedPhotos: -1, uploadProgress: 0, heartbeatAt: new Date() },
-      }),
-    catch: (e) => new Error(`Mark uploading failed: ${e}`),
   });
 
 const markFailed = (jobId: string, reason: string) =>
@@ -452,10 +551,15 @@ const markFailed = (jobId: string, reason: string) =>
   });
 
 // ---------------------------------------------------------------------------
-// 5. Stream ZIP to S3 with progress tracking + cancellation checks
+// 5. Stream multi-part ZIPs to S3 with progress tracking + cancellation
 // ---------------------------------------------------------------------------
 
-const streamZipToS3 = (eventId: string, photos: Photo[], jobId: string) =>
+interface PlannedPart {
+  photos: Photo[];
+  estimatedBytes: number;
+}
+
+const streamZipPartsToS3 = (eventId: string, photos: Photo[], jobId: string) =>
   Effect.gen(function* () {
     const { ZipArchive } = yield* Effect.tryPromise({
       try: () => import("archiver"),
@@ -470,41 +574,9 @@ const streamZipToS3 = (eventId: string, photos: Photo[], jobId: string) =>
       catch: (e) => new Error(`Lib-storage import failed: ${e}`),
     });
 
-    const zipKey = s3Keys.zip(eventId);
-    const passThrough = new PassThrough();
-
-    const upload = new Upload({
-      client: s3,
-      params: {
-        Bucket: env.S3_BUCKET,
-        Key: zipKey,
-        Body: passThrough,
-        ContentType: "application/zip",
-      },
-    });
-
-    // Track upload progress via S3 events
-    let lastUploadPct = 0;
-    upload.on("httpUploadProgress", (progress) => {
-      const total = progress.total ?? 0;
-      const loaded = progress.loaded ?? 0;
-      const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-      // Throttle DB writes: only update every 10%
-      if (pct !== lastUploadPct && pct % 10 === 0) {
-        lastUploadPct = pct;
-        prisma.downloadJob.updateMany({
-          where: { id: jobId, status: "BUILDING" },
-          data: { uploadProgress: pct, heartbeatAt: new Date() },
-        }).then(() => pushDownloadStatus(eventId)).catch(() => {});
-      }
-    });
-
-    // Start the upload in the background immediately — it will read from the
-    // PassThrough as data becomes available.
-    const uploadPromise = upload.done();
-
-    const archive = new ZipArchive({ store: true });
-    archive.pipe(passThrough);
+    // Restart-clean: drop anything a previous attempt (retry or reaped crash)
+    // left behind, in DB and on S3.
+    yield* Effect.promise(() => deleteArchiveArtifacts(eventId, jobId));
 
     const event = yield* Effect.tryPromise({
       try: () =>
@@ -516,95 +588,188 @@ const streamZipToS3 = (eventId: string, photos: Photo[], jobId: string) =>
     });
     const folderName = event?.slug || eventId;
 
-    for (let i = 0; i < photos.length; i++) {
-      const photo = photos[i];
-
-      // Check for cancellation before each photo
-      yield* checkNotCancelled(jobId);
-
-      const getCmd = new GetObjectCommand({
-        Bucket: env.S3_BUCKET,
-        Key: photo.originalKey,
-      });
-      const { Body } = yield* Effect.tryPromise({
-        try: () => s3.send(getCmd),
-        catch: (e) => new Error(`S3 get failed: ${e}`),
-      });
-      if (!Body) continue;
-
+    const entryName = (photo: Photo) => {
       const name = (photo.photographerName || "unknown")
         .replace(/[^a-zA-Z0-9_-]/g, "_")
         .toLowerCase();
-      const filename = `${folderName}/${name}/${photo.id}.jpg`;
-      // AWS SDK v3 Body is a Node.js Readable in Bun/Node environments via SdkStreamMixin
-      const nodeStream = Body as unknown as InstanceType<typeof Readable>;
+      return `${folderName}/${name}/${photo.id}.jpg`;
+    };
+
+    // ---- Plan parts: greedy fill up to the byte limit --------------------
+    const entries: { item: Photo; entryBytes: number }[] = [];
+    for (const photo of photos) {
+      let size = photo.sizeBytes;
+      if (size === null || size === undefined) {
+        // Legacy rows without sizeBytes: one HEAD per unknown photo.
+        const head = yield* Effect.tryPromise({
+          try: () =>
+            s3.send(new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: photo.originalKey })),
+          catch: (e) => new Error(`Head object failed for ${photo.originalKey}: ${e}`),
+        });
+        size = head.ContentLength ?? 0;
+      }
+      entries.push({ item: photo, entryBytes: zipEntryBytes(size, entryName(photo).length) });
+    }
+    const parts: PlannedPart[] = planArchiveParts(entries, env.DOWNLOAD_MAX_PART_BYTES).map(
+      (p) => ({ photos: p.items, estimatedBytes: p.estimatedBytes })
+    );
+
+    const totalEstimatedBytes = parts.reduce((sum, p) => sum + p.estimatedBytes, 0);
+    yield* Console.log(
+      `[ZIP ${eventId}] planned ${parts.length} part(s) for ${photos.length} photos (~${totalEstimatedBytes} bytes, limit=${env.DOWNLOAD_MAX_PART_BYTES})`
+    );
+
+    // Expose the planned part count to the UI while building.
+    yield* Effect.tryPromise({
+      try: () =>
+        prisma.downloadJob.updateMany({
+          where: { id: jobId, status: "BUILDING" },
+          data: { partCount: parts.length, heartbeatAt: new Date() },
+        }),
+      catch: (e) => new Error(`Part count update failed: ${e}`),
+    });
+
+    // ---- Stream each part -------------------------------------------------
+    // Throws Error("CANCELLED") on admin cancel, Error("SUPERSEDED") when a
+    // forceBuild reset the row mid-build. Both abort the in-flight multipart
+    // upload so Minio/S3 doesn't accumulate orphaned upload parts.
+    const streamOnePart = async (
+      part: PlannedPart,
+      partIndex: number,
+      processedOffset: number,
+      completedBytes: number
+    ): Promise<{ key: string; sizeBytes: number }> => {
+      const key = s3Keys.zipPart(eventId, partIndex);
+      const passThrough = new PassThrough();
+
+      // Bounded buffering: at most queueSize×partSize (~32 MB) of the archive
+      // stream is held in memory, regardless of gallery size. 16 MB parts keep
+      // us far below the S3 limit of 10 000 multipart chunks per object.
+      const upload = new Upload({
+        client: s3,
+        params: {
+          Bucket: env.S3_BUCKET,
+          Key: key,
+          Body: passThrough,
+          ContentType: "application/zip",
+        },
+        partSize: 16 * 1024 * 1024,
+        queueSize: 2,
+      });
+
+      // Overall byte-based progress across all parts, throttled to 10% steps.
+      let lastUploadPct = -1;
+      upload.on("httpUploadProgress", (progress) => {
+        const loaded = progress.loaded ?? 0;
+        const pct =
+          totalEstimatedBytes > 0
+            ? Math.min(100, Math.round(((completedBytes + loaded) / totalEstimatedBytes) * 100))
+            : 0;
+        if (pct !== lastUploadPct && pct % 10 === 0) {
+          lastUploadPct = pct;
+          prisma.downloadJob
+            .updateMany({
+              where: { id: jobId, status: "BUILDING" },
+              data: { uploadProgress: pct, heartbeatAt: new Date() },
+            })
+            .then(() => notifyDownloadStatus(eventId))
+            .catch(() => {});
+        }
+      });
+
+      const uploadPromise = upload.done();
+      const archive = new ZipArchive({ store: true });
+      const archiveFailure = new Promise<never>((_, reject) => {
+        archive.on("error", (e: unknown) => reject(new Error(`Archive error: ${e}`)));
+      });
+      archive.pipe(passThrough);
+
+      try {
+        for (let i = 0; i < part.photos.length; i++) {
+          const photo = part.photos[i];
+
+          await checkStillBuilding(jobId);
+
+          const { Body } = await s3.send(
+            new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: photo.originalKey })
+          );
+          if (!Body) continue;
+
+          // AWS SDK v3 Body is a Node.js Readable in Bun/Node environments via
+          // SdkStreamMixin. archiver reads it with backpressure from the
+          // PassThrough, so only small stream buffers sit in memory.
+          const nodeStream = Body as unknown as InstanceType<typeof Readable>;
+          await Promise.race([
+            new Promise<void>((resolve, reject) => {
+              nodeStream.once("end", resolve);
+              nodeStream.once("error", reject);
+              archive.append(nodeStream, { name: entryName(photo) });
+            }),
+            archiveFailure,
+          ]);
+
+          // Update progress every 3 photos (throttle DB writes)
+          const processed = processedOffset + i + 1;
+          if (processed % 3 === 0 || processed === photos.length) {
+            await prisma.downloadJob.updateMany({
+              where: { id: jobId, status: "BUILDING" },
+              data: { processedPhotos: processed, heartbeatAt: new Date() },
+            });
+            notifyDownloadStatus(eventId).catch(() => {});
+          }
+        }
+
+        await checkStillBuilding(jobId);
+        console.log(`[ZIP ${eventId}] finalizing part ${partIndex} (${part.photos.length} photos)`);
+        await Promise.race([archive.finalize(), archiveFailure]);
+        await uploadPromise;
+        console.log(`[ZIP ${eventId}] part ${partIndex} uploaded`);
+      } catch (e) {
+        await upload.abort().catch(() => {});
+        throw e;
+      }
+
+      const head = await s3.send(new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
+      return { key, sizeBytes: head.ContentLength ?? 0 };
+    };
+
+    let processedOffset = 0;
+    let completedBytes = 0;
+    let totalSizeBytes = 0;
+    for (let p = 0; p < parts.length; p++) {
+      const partIndex = p + 1;
+      const { key, sizeBytes } = yield* Effect.tryPromise({
+        try: () => streamOnePart(parts[p], partIndex, processedOffset, completedBytes),
+        catch: (e) =>
+          e instanceof Error && (e.message === "CANCELLED" || e.message === "SUPERSEDED")
+            ? e
+            : new Error(`Part ${partIndex} failed: ${e}`),
+      });
+
       yield* Effect.tryPromise({
         try: () =>
-          new Promise<void>((resolve, reject) => {
-            nodeStream.once("end", resolve);
-            nodeStream.once("error", reject);
-            archive.append(nodeStream, { name: filename });
+          prisma.downloadArchivePart.create({
+            data: { jobId, partIndex, key, sizeBytes: BigInt(sizeBytes) },
           }),
-        catch: (e) => new Error(`Stream append failed: ${e}`),
+        catch: (e) => new Error(`Part row insert failed: ${e}`),
       });
 
-      // Update progress every 3 photos (throttle DB writes)
-      if ((i + 1) % 3 === 0 || i === photos.length - 1) {
-        yield* updateProgress(jobId, i + 1);
-        yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
-      }
+      processedOffset += parts[p].photos.length;
+      completedBytes += parts[p].estimatedBytes;
+      totalSizeBytes += sizeBytes;
     }
 
-    yield* checkNotCancelled(jobId);
-    yield* markUploading(jobId);
-    yield* Effect.promise(() => pushDownloadStatus(eventId).catch(() => {}));
-    yield* Console.log(`[ZIP ${eventId}] finalizing archive (${photos.length} photos)`);
-    yield* Effect.tryPromise({
-      try: () => archive.finalize(),
-      catch: (e) => new Error(`Archive finalize failed: ${e}`),
-    });
-    yield* Console.log(`[ZIP ${eventId}] archive finalized, waiting for S3 upload…`);
-    yield* Effect.tryPromise({
-      try: () => uploadPromise,
-      catch: (e) => new Error(`S3 upload failed: ${e}`),
-    });
-    yield* Console.log(`[ZIP ${eventId}] S3 upload complete`);
-
-    const head = yield* Effect.tryPromise({
-      try: () =>
-        s3.send(
-          new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: zipKey })
-        ),
-      catch: (e) => new Error(`Head object failed: ${e}`),
-    });
-    const zipSizeBytes = head.ContentLength ?? 0;
-
-    return { zipKey, zipSizeBytes };
+    return { partCount: parts.length, totalSizeBytes };
   });
 
-const checkNotCancelled = (jobId: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const job = await prisma.downloadJob.findUnique({
-        where: { id: jobId },
-        select: { status: true },
-      });
-      if (job?.status === "CANCELLED") {
-        throw new Error("CANCELLED");
-      }
-    },
-    catch: (e) =>
-      e instanceof Error && e.message === "CANCELLED"
-        ? e
-        : new Error(`Cancel check failed: ${e}`),
+// Abort signal for an in-flight build: CANCELLED when the admin cancelled,
+// SUPERSEDED when a forceBuild reset the row (it's QUEUED/DEBOUNCING again and
+// a fresh build owns the archive prefix).
+async function checkStillBuilding(jobId: string): Promise<void> {
+  const job = await prisma.downloadJob.findUnique({
+    where: { id: jobId },
+    select: { status: true },
   });
-
-const updateProgress = (jobId: string, processed: number) =>
-  Effect.tryPromise({
-    try: () =>
-      prisma.downloadJob.updateMany({
-        where: { id: jobId, status: "BUILDING" },
-        data: { processedPhotos: processed, heartbeatAt: new Date() },
-      }),
-    catch: (e) => new Error(`Progress update failed: ${e}`),
-  });
+  if (job?.status === "CANCELLED") throw new Error("CANCELLED");
+  if (job?.status !== "BUILDING") throw new Error("SUPERSEDED");
+}

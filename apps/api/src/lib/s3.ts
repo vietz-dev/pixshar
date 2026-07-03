@@ -1,6 +1,6 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { env } from "./env.js";
 
 export const s3 = new S3Client({
@@ -79,6 +79,35 @@ export async function deleteS3Object(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
 }
 
+// Delete every object under a prefix (paginated; DeleteObjects caps at 1000 keys).
+export async function deleteS3Prefix(prefix: string): Promise<number> {
+  let deleted = 0;
+  let continuationToken: string | undefined;
+  do {
+    const list = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: env.S3_BUCKET,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+    const objects = (list.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
+    if (objects.length > 0) {
+      await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: env.S3_BUCKET,
+          Delete: { Objects: objects },
+        })
+      );
+      deleted += objects.length;
+    }
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return deleted;
+}
+
 export const s3Keys = {
-  zip: (eventId: string) => `${eventId}/archive/gallery.zip`,
+  archivePrefix: (eventId: string) => `${eventId}/archive/`,
+  zipPart: (eventId: string, partIndex: number) =>
+    `${eventId}/archive/gallery-part-${partIndex}.zip`,
 };

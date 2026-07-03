@@ -170,18 +170,25 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
   }
 
   const job = event.downloadJob;
+  const totalPhotos = await prisma.photo.count({
+    where: { eventId: id, status: "PROCESSED" },
+  });
+
   if (!job) {
     return c.json({
       status: "NONE",
       message: "No archive created yet.",
       processedPhotos: 0,
       photoCount: 0,
+      uploadProgress: 0,
+      totalPhotos,
+      totalSizeBytes: null,
+      partCount: 0,
+      debounceUntil: null,
+      failureReason: null,
+      updatedAt: new Date().toISOString(),
     });
   }
-
-  const totalPhotos = await prisma.photo.count({
-    where: { eventId: id, status: "PROCESSED" },
-  });
 
   return c.json({
     status: job.status,
@@ -190,7 +197,8 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
     processedPhotos: job.processedPhotos,
     uploadProgress: job.uploadProgress,
     totalPhotos,
-    zipSizeBytes: job.zipSizeBytes,
+    totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
+    partCount: job.partCount,
     debounceUntil: job.debounceUntil,
     failureReason: job.failureReason,
     updatedAt: job.updatedAt,
@@ -220,12 +228,13 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
           processedPhotos: job.processedPhotos,
           uploadProgress: job.uploadProgress,
           totalPhotos,
-          zipSizeBytes: job.zipSizeBytes,
+          totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
+          partCount: job.partCount,
           debounceUntil: job.debounceUntil?.toISOString() ?? null,
           failureReason: job.failureReason,
           updatedAt: job.updatedAt.toISOString(),
         }
-      : { status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, zipSizeBytes: null, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
+      : { status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, totalSizeBytes: null, partCount: 0, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
 
     await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 

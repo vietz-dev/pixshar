@@ -6,7 +6,8 @@ import { pushDownloadStatus } from "../services/downloadJob.js";
 import { prisma } from "./prisma.js";
 import { getPresignedUrl } from "./s3.js";
 
-export const PG_NOTIFY_CHANNEL = "pixshar_events";
+export { PG_NOTIFY_CHANNEL } from "./eventBus.js";
+import { PG_NOTIFY_CHANNEL } from "./eventBus.js";
 
 type NotifyPayload =
   | { type: "photo.processed"; eventId: string; photoId: string }

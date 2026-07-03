@@ -254,6 +254,9 @@ config:
   # browser uploads to succeed.
   s3PublicEndpoint: ""
   downloadDebounceSeconds: 600
+  # Max size of a single gallery-archive part; larger galleries are split into
+  # multiple ZIPs so guests never have to restart a >2GB download. 2 GiB.
+  downloadMaxPartBytes: "2147483648"
 
 # --- Ingress ---
 # The ingress routes all traffic to the web service.

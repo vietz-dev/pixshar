@@ -113,7 +113,22 @@
       "layout": "Layout",
       "masonry": "Mosaik",
       "grid": "Raster",
-      "loadFailed": "Galerie konnte nicht geladen werden"
+      "loadFailed": "Galerie konnte nicht geladen werden",
+      "downloadButton": "Alle Fotos herunterladen"
+    },
+    "downloadPage": {
+      "title": "Galerie herunterladen",
+      "subtitle": "{count, plural, one {1 Teil} other {# Teile}} · {size} gesamt",
+      "subtitleSingle": "{size}",
+      "instruction": "Klicke jeden Teil zum Herunterladen. Alle Teile zusammen ergeben die vollständige Galerie.",
+      "partLabel": "Teil {index} von {total}",
+      "partSize": "{size}",
+      "downloaded": "Heruntergeladen",
+      "notDownloaded": "Noch nicht heruntergeladen",
+      "loadFailed": "Download-Links konnten nicht geladen werden — deine Sitzung ist möglicherweise abgelaufen.",
+      "backToGallery": "Zurück zur Galerie",
+      "building": "Archiv wird vorbereitet, bitte später nochmal prüfen.",
+      "noArchive": "Noch kein Archiv verfügbar."
     }
   },
   "upload": {
@@ -153,6 +168,8 @@
     "button": {
       "downloadAll": "Alle herunterladen",
       "downloadAllSize": "Alle herunterladen ({size})",
+      "multiPartTitle": "Download in {count} Teilen ({size})",
+      "downloadPart": "Teil {index} von {count} ({size})",
       "uploadingS3": "Wird auf S3 hochgeladen… {pct}%",
       "buildingPct": "Archiv wird erstellt… {pct}%",
       "preparing": "Download wird vorbereitet…",
@@ -168,6 +185,7 @@
       "startingButton": "Wird gestartet…",
       "processedPhotos": "Verarbeitete Fotos",
       "archiveSize": "Archivgröße",
+      "archiveParts": "{count, plural, =1 {1 Teil} other {# Teile}}",
       "lastUpdated": "Zuletzt aktualisiert",
       "settlesAt": "Bereit um",
       "zipping": "Fotos werden gezippt",

@@ -10,7 +10,8 @@ interface AdminDownloadState {
   processedPhotos: number;
   uploadProgress: number;
   totalPhotos: number;
-  zipSizeBytes: number | null;
+  totalSizeBytes: number | null;
+  partCount: number;
   debounceUntil: string | null;
   failureReason: string | null;
   updatedAt: string;
@@ -186,7 +187,12 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
         <div>
           <div style={{ fontSize: 11.5, color: "#a1a1aa", marginBottom: 3 }}>{t("archiveSize")}</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#18181b" }}>
-            {state.zipSizeBytes ? formatBytes(state.zipSizeBytes) : "—"}
+            {state.totalSizeBytes ? formatBytes(state.totalSizeBytes) : "—"}
+            {state.partCount > 1 && (
+              <span style={{ fontSize: 11.5, fontWeight: 400, color: "#a1a1aa", marginLeft: 6 }}>
+                {t("archiveParts", { count: state.partCount })}
+              </span>
+            )}
           </div>
         </div>
         <div>

@@ -115,6 +115,7 @@ services:
       - DOWNLOAD_DEBOUNCE_SECONDS=60
       - DOWNLOAD_MAX_WAIT_SECONDS=120
       - DOWNLOAD_BUILD_LEASE_SECONDS=300
+      - DOWNLOAD_MAX_PART_BYTES=2147483648
     depends_on:
       postgres:
         condition: service_healthy

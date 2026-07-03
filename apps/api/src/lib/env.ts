@@ -34,6 +34,9 @@ const schema = z.object({
   DOWNLOAD_DEBOUNCE_SECONDS: z.string().transform(Number).default("60"),
   DOWNLOAD_MAX_WAIT_SECONDS: z.string().transform(Number).default("120"),
   DOWNLOAD_BUILD_LEASE_SECONDS: z.string().transform(Number).default("300"),
+  // Max size of a single archive part. Guests download parts individually, so
+  // an interrupted download only loses one part, not the whole gallery. 2 GiB.
+  DOWNLOAD_MAX_PART_BYTES: z.string().transform(Number).default("2147483648"),
 });
 
 export const env = schema.parse(process.env);

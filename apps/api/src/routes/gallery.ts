@@ -18,6 +18,7 @@ import {
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
+import { buildReadyDownloadPayload } from "../services/downloadJob.js";
 import {
   galleryUnlocksTotal,
   photoDownloadsTotal,
@@ -204,17 +205,11 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
     });
   }
 
-  // READY — generate presigned URL
-  const url = await getPresignedUrl(job.zipKey!, "get", 60 * 60); // 1 hour
+  // READY — presigned URL per archive part (1 hour)
+  const payload = await buildReadyDownloadPayload(job.id, event.slug, job.photoCount);
   archiveDownloadsTotal.inc();
-  const sizeBytes = job.zipSizeBytes ?? 0;
 
-  return c.json({
-    status: "READY",
-    url,
-    sizeBytes,
-    photoCount: job.photoCount,
-  });
+  return c.json(payload);
 });
 
 app.get("/:slug/download/stream", requireGallerySession, async (c) => {
@@ -251,9 +246,9 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
         return { status: "FAILED", message: "Archive generation failed. Please try again later." };
       }
       // READY
-      const url = await getPresignedUrl(job.zipKey!, "get", 60 * 60);
+      const payload = await buildReadyDownloadPayload(job.id, event.slug, job.photoCount);
       archiveDownloadsTotal.inc();
-      return { status: "READY", url, sizeBytes: job.zipSizeBytes ?? 0, photoCount: job.photoCount };
+      return payload;
     }
 
     await stream.writeSSE({ data: JSON.stringify(await buildInitialPayload()), event: "download-status" });
@@ -261,13 +256,13 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
     const unsubscribe = onDownloadStatus(event.id, async (payload) => {
       // Guest view needs a slightly different shape: remap to gallery format
       if (payload.status === "READY") {
-        // Presigned URL must be generated fresh here
+        // Presigned URLs must be generated fresh here
         const fullJob = await prisma.downloadJob.findUnique({ where: { eventId: event.id } });
-        if (fullJob?.zipKey) {
-          const url = await getPresignedUrl(fullJob.zipKey, "get", 60 * 60);
+        if (fullJob && fullJob.partCount > 0) {
+          const ready = await buildReadyDownloadPayload(fullJob.id, event.slug, fullJob.photoCount);
           archiveDownloadsTotal.inc();
           await stream.writeSSE({
-            data: JSON.stringify({ status: "READY", url, sizeBytes: fullJob.zipSizeBytes ?? 0, photoCount: fullJob.photoCount }),
+            data: JSON.stringify(ready),
             event: "download-status",
           });
           return;

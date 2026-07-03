@@ -125,8 +125,11 @@ model DownloadJob {
   photoCount      Int               @default(0)
   processedPhotos Int               @default(0)
   uploadProgress  Int               @default(0)
-  zipKey            String?
-  zipSizeBytes      Int?
+  // Aggregates over parts; BigInt because a gallery archive can exceed 2^31 bytes.
+  totalSizeBytes    BigInt?
+  partCount         Int               @default(0)
+  // FIFO ordering for the per-worker serial build queue.
+  queuedAt          DateTime?
   debounceUntil     DateTime?
   debounceStartedAt DateTime?
   heartbeatAt       DateTime?
@@ -134,7 +137,22 @@ model DownloadJob {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  parts DownloadArchivePart[]
 
   @@map("download_job")
+}
+
+model DownloadArchivePart {
+  id        String   @id @default(cuid())
+  jobId     String
+  partIndex Int // 1-based
+  key       String
+  sizeBytes BigInt
+  createdAt DateTime @default(now())
+
+  job DownloadJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, partIndex])
+  @@map("download_archive_part")
 }

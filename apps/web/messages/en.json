@@ -113,7 +113,22 @@
       "layout": "Layout",
       "masonry": "Masonry",
       "grid": "Grid",
-      "loadFailed": "Failed to load gallery"
+      "loadFailed": "Failed to load gallery",
+      "downloadButton": "Download all photos"
+    },
+    "downloadPage": {
+      "title": "Download Gallery",
+      "subtitle": "{count, plural, one {1 part} other {# parts}} · {size} total",
+      "subtitleSingle": "{size}",
+      "instruction": "Click each part to download. All parts together make up the complete gallery.",
+      "partLabel": "Part {index} of {total}",
+      "partSize": "{size}",
+      "downloaded": "Downloaded",
+      "notDownloaded": "Not yet downloaded",
+      "loadFailed": "Could not load download links — your session may have expired.",
+      "backToGallery": "Back to gallery",
+      "building": "Archive is being prepared, please check back soon.",
+      "noArchive": "No archive available yet."
     }
   },
   "upload": {
@@ -153,6 +168,8 @@
     "button": {
       "downloadAll": "Download all",
       "downloadAllSize": "Download all ({size})",
+      "multiPartTitle": "Download in {count} parts ({size})",
+      "downloadPart": "Part {index} of {count} ({size})",
       "uploadingS3": "Uploading to S3… {pct}%",
       "buildingPct": "Building archive… {pct}%",
       "preparing": "Preparing download…",
@@ -168,6 +185,7 @@
       "startingButton": "Starting…",
       "processedPhotos": "Processed photos",
       "archiveSize": "Archive size",
+      "archiveParts": "{count, plural, =1 {1 part} other {# parts}}",
       "lastUpdated": "Last updated",
       "settlesAt": "Settles at",
       "zipping": "Zipping photos",

@@ -3,6 +3,10 @@ import { EventEmitter } from "node:events";
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
 
+// Lives here (dependency-free module) so both the pg_notify listener and the
+// worker-side senders can import it without a circular import.
+export const PG_NOTIFY_CHANNEL = "pixshar_events";
+
 export interface PhotoStatusPayload {
   pending: number;
   processed: number;
@@ -17,7 +21,8 @@ export interface DownloadStatusPayload {
   processedPhotos: number;
   uploadProgress: number;
   totalPhotos: number;
-  zipSizeBytes: number | null;
+  totalSizeBytes: number | null;
+  partCount: number;
   debounceUntil: string | null;
   failureReason: string | null;
   updatedAt: string;

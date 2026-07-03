@@ -1,14 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 type DownloadStatus = "NONE" | "DEBOUNCING" | "BUILDING" | "READY" | "FAILED";
 
+interface ArchivePart {
+  index: number;
+  url: string;
+  sizeBytes: number;
+}
+
 interface DownloadState {
   status: DownloadStatus;
-  url?: string;
-  sizeBytes?: number;
+  parts?: ArchivePart[];
+  partCount?: number;
+  totalSizeBytes?: number;
   photoCount?: number;
   processedPhotos?: number;
   uploadProgress?: number;
@@ -18,6 +26,8 @@ interface DownloadState {
 
 export default function DownloadButton({ slug }: { slug: string }) {
   const t = useTranslations("download.button");
+  const tView = useTranslations("gallery.view");
+  const router = useRouter();
   const [state, setState] = useState<DownloadState | null>(null);
 
   useEffect(() => {
@@ -64,11 +74,43 @@ export default function DownloadButton({ slug }: { slug: string }) {
     );
   }
 
-  if (state.status === "READY" && state.url) {
-    const sizeLabel = state.sizeBytes ? formatBytes(state.sizeBytes) : null;
+  if (state.status === "READY" && state.parts && state.parts.length > 1) {
+    const total = state.totalSizeBytes ?? state.parts.reduce((s, p) => s + p.sizeBytes, 0);
+    return (
+      <button
+        onClick={() => router.push(`/gallery/${slug}/download`)}
+        style={{
+          height: 38,
+          padding: "0 14px",
+          borderRadius: 8,
+          border: "1px solid #e4e4e7",
+          background: "#fff",
+          color: "#18181b",
+          fontSize: 13.5,
+          fontWeight: 500,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          cursor: "pointer",
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        {t("multiPartTitle", { count: state.parts.length, size: formatBytes(total) })}
+      </button>
+    );
+  }
+
+  const singleUrl = state.parts?.[0]?.url;
+  if (state.status === "READY" && singleUrl) {
+    const singleSize = state.parts?.[0]?.sizeBytes ?? state.totalSizeBytes;
+    const sizeLabel = singleSize ? formatBytes(singleSize) : null;
     return (
       <a
-        href={state.url}
+        href={singleUrl}
         download
         style={{
           height: 38,
