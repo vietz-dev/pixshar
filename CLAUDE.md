@@ -1,5 +1,13 @@
 # Pixshar — Claude Code Session Prompt
 
+## Knowledge bundle
+
+A structured knowledge base for this project lives at `.knowledge/` in OKF format (one markdown file per concept, YAML frontmatter). Read it to understand architecture, data model, API design, and the rationale behind key decisions — especially before proposing changes that touch multiple subsystems.
+
+Start with `.knowledge/index.md` for an overview of what is available. Cross-links between leaf concept files use bundle-relative paths (`/architecture/storage.md` etc.).
+
+To update the knowledge bundle after significant changes, run `/knowledge-housekeeping`.
+
 ## What we're building
 Pixshar is a self-hostable, private event photo sharing app. The photographer (admin) creates
 password-protected galleries, uploads photos, and shares a link. Guests unlock the gallery with

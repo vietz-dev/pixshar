@@ -1,0 +1,7 @@
+# Architectural Decisions
+
+* [Presigned URLs](presigned-urls.md) - Why photos are served directly from S3, never proxied through the API
+* [Gallery Sessions](gallery-sessions.md) - Why guests use per-event JWT cookies instead of user accounts
+* [Single S3 Bucket](single-s3-bucket.md) - Why one bucket with path prefixes instead of per-event buckets
+* [Durable Queue](durable-queue.md) - Why pg-boss for photo resize and DB-polling for archive builds
+* [Multi-Part Archive](multi-part-archive.md) - Why large galleries are split into ≤2 GB parts and streamed
