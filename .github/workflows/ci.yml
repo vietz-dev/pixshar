@@ -69,7 +69,7 @@ jobs:
             --set secrets.s3SecretKey=ci-test
       - name: Template Helm chart
         run: |
-          SECRETS="--set secrets.betterAuthSecret=ci-test --set secrets.adminPassword=ci-test --set secrets.s3AccessKey=ci-test --set secrets.s3SecretKey=ci-test"
+          SECRETS="--set secrets.betterAuthSecret=ci-test --set secrets.adminPassword=ci-test --set secrets.s3AccessKey=ci-test --set secrets.s3SecretKey=ci-test --set secrets.galleryEncryptionKey=ci-test"
           echo "::group::defaults (no DB configured)"
           helm template test-release helm/pixshar $SECRETS
           echo "::endgroup::"
