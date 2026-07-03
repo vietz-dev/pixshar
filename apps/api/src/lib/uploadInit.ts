@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "./prisma.js";
 import { getPresignedPutUrl, deleteS3Object } from "./s3.js";
-import { MAX_FILE_SIZE, MAX_FILES_PER_UPLOAD, ALLOWED_MIME_TYPES } from "./validate.js";
+import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from "./validate.js";
 import { getBoss } from "./pgboss.js";
 import { env } from "./env.js";
 import type { UploadInitResult } from "@pixshar/shared";
@@ -28,13 +28,12 @@ export const uploadInitSchema = z.object({
         fileHash: z.string().regex(/^[a-f0-9]{64}$/, "fileHash must be 64-char lowercase hex"),
       })
     )
-    .min(1)
-    .max(MAX_FILES_PER_UPLOAD),
+    .min(1),
   photographerName: z.string().max(100).optional(),
 });
 
 export const uploadCompleteSchema = z.object({
-  photoIds: z.array(z.string().min(1)).min(1).max(MAX_FILES_PER_UPLOAD),
+  photoIds: z.array(z.string().min(1)).min(1),
 });
 
 export type UploadInitInput = z.infer<typeof uploadInitSchema>;
