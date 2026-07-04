@@ -82,3 +82,6 @@ jobs:
           echo "::group::external DB from parts"
           helm template test-release helm/pixshar $SECRETS --set externalDatabase.existingSecret=mydb --set externalDatabase.existingSecretUrlKey= --set externalDatabase.host=db.example.com
           echo "::endgroup::"
+          echo "::group::HA enabled"
+          helm template test-release helm/pixshar $SECRETS --set api.highAvailability.enabled=true
+          echo "::endgroup::"

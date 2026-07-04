@@ -74,14 +74,22 @@ app.route("/metrics", metricsRoute);
 if (import.meta.main) {
   console.log(`API server running on http://localhost:${env.API_PORT}`);
   await initDatabase();
-  await startBoss();
+  const boss = await startBoss();
   await startPgNotifyListener();
-  Bun.serve({
+  const server = Bun.serve({
     port: env.API_PORT,
     // SSE streams are mostly idle between events; Bun's default idleTimeout
     // (~10s) would close them before the keepalive ping. Raise it well past the
     // keepalive interval so long-lived event streams stay open.
     idleTimeout: 120,
     fetch: app.fetch,
+  });
+
+  process.on("SIGTERM", async () => {
+    console.log("[API] SIGTERM — graceful shutdown");
+    // Stop accepting new connections; wait for in-flight requests to complete.
+    server.stop(true);
+    await boss.stop({ graceful: true });
+    process.exit(0);
   });
 }

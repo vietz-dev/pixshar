@@ -206,6 +206,29 @@ web:
     targetCPUUtilizationPercentage: 80
 ```
 
+### High Availability & Zero-Downtime Deployments
+
+By default, Pixshar uses standard rolling update behavior, which may cause a brief interruption (< 1s) when a pod is replaced. Enable `api.highAvailability` on clusters where you need zero-downtime rolling updates.
+
+```yaml
+api:
+  highAvailability:
+    enabled: true        # Activates all options below
+    minAvailable: 1      # Min. API pods during node drains / disruptions (PDB)
+    terminationGracePeriodSeconds: 60   # Grace period for in-flight requests
+    preStopSleepSeconds: 5              # Buffer for kube-proxy endpoint drain
+```
+
+**What this enables:**
+- `maxUnavailable: 0` — new pod must be Ready before the old one is terminated
+- `preStop sleep` — 5-second buffer so kube-proxy and ingress controllers remove the pod from rotation before SIGTERM is sent (prevents 502s during rollouts)
+- `terminationGracePeriodSeconds: 60` — grace period for in-flight requests and SSE streams to complete
+- `PodDisruptionBudget` — ensures at least `minAvailable` pods remain during voluntary disruptions (node drains, cluster upgrades)
+
+> **Single-node setups:** Leave `highAvailability.enabled: false`. PDB is only effective when at least 2 schedulable nodes exist. With a single replica, `maxUnavailable: 0` causes deployments to require temporarily running 2 pods — ensure your node has headroom.
+
+> **Why uploads are safe even without HA:** File uploads go directly from the browser to S3 via presigned PUT URLs — the API is only involved in the brief URL-signing and completion requests (~50ms each). A pod restart only risks those narrow windows, not the actual data transfer.
+
 ## Values
 
 | Key | Default | Description |
@@ -240,6 +263,10 @@ web:
 | `api.replicaCount` | `1` | API replicas |
 | `api.resources` | see `values.yaml` | API resource requests/limits |
 | `api.autoscaling.enabled` | `false` | Enable API HPA |
+| `api.highAvailability.enabled` | `false` | Enable zero-downtime rolling updates + PodDisruptionBudget |
+| `api.highAvailability.minAvailable` | `1` | Min. API pods available during disruptions (PDB) |
+| `api.highAvailability.terminationGracePeriodSeconds` | `60` | Grace period (seconds) for in-flight requests to complete |
+| `api.highAvailability.preStopSleepSeconds` | `5` | Sleep before SIGTERM to allow kube-proxy endpoint drain |
 | `web.image.repository` | `"pixshar/web"` | Web image repository |
 | `web.image.tag` | `""` | Web image tag (defaults to appVersion) |
 | `web.replicaCount` | `1` | Web replicas |

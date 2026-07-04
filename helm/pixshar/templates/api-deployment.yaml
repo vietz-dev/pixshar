@@ -10,6 +10,13 @@ spec:
   {{- if not .Values.api.autoscaling.enabled }}
   replicas: {{ .Values.api.replicaCount }}
   {{- end }}
+  {{- if .Values.api.highAvailability.enabled }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  {{- end }}
   selector:
     matchLabels:
       {{- include "pixshar.api.selectorLabels" . | nindent 6 }}
@@ -34,6 +41,9 @@ spec:
       {{- with .Values.api.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.api.highAvailability.enabled }}
+      terminationGracePeriodSeconds: {{ .Values.api.highAvailability.terminationGracePeriodSeconds }}
       {{- end }}
       initContainers:
         # Runs prisma migrate deploy + seed against Postgres before the API starts.
@@ -91,6 +101,12 @@ spec:
           {{- with .Values.api.readinessProbe }}
           readinessProbe:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.api.highAvailability.enabled }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ .Values.api.highAvailability.preStopSleepSeconds }}"]
           {{- end }}
           {{- with .Values.api.resources }}
           resources:

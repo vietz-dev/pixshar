@@ -6,3 +6,4 @@
 * [Durable Queue](durable-queue.md) - Why pg-boss for photo resize and DB-polling for archive builds
 * [Multi-Part Archive](multi-part-archive.md) - Why large galleries are split into ≤2 GB parts and streamed
 * [Gallery Password Encryption](gallery-password-encryption.md) - Why gallery passwords are stored AES-256-GCM encrypted (not plaintext) and the key-management model
+* [Graceful Shutdown & HA](graceful-shutdown.md) - Why uploads survive API restarts by design, and how the opt-in Helm HA flag enables zero-downtime Kubernetes rolling updates

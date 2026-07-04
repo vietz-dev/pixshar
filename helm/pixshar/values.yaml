@@ -114,6 +114,20 @@ api:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
 
+  # Zero-downtime rolling updates + PodDisruptionBudget. Disable for single-node
+  # setups where multiple replicas are not possible (PDB requires ≥2 schedulable nodes).
+  highAvailability:
+    enabled: false
+    # PodDisruptionBudget: minimum API pods that must remain available during
+    # node drains and voluntary disruptions.
+    minAvailable: 1
+    # Seconds given to the pod to finish in-flight requests (incl. open SSE streams)
+    # before the process is killed. Must be greater than preStopSleepSeconds.
+    terminationGracePeriodSeconds: 60
+    # Sleep injected before SIGTERM to let kube-proxy and the ingress controller
+    # remove the pod from their endpoint lists. Prevents 502s during rollouts.
+    preStopSleepSeconds: 5
+
 # --- Image Processor ---
 # Separate worker pool for image resizing and ZIP archive building.
 # Uses the same Docker image as the API but starts worker.ts as entry point.

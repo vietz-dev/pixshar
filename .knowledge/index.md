@@ -22,4 +22,4 @@ Self-contained knowledge base for the Pixshar project. One concept per file. Lea
 
 # Decisions
 
-* [Decisions](decisions/) - Architectural choices recorded with their rationale
+* [Decisions](decisions/) - Architectural choices recorded with their rationale — includes graceful shutdown & HA deployment strategy

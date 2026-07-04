@@ -71,6 +71,7 @@ export default function EventDetailPage() {
   const [bulkRenameName, setBulkRenameName] = useState("");
   const [bulkRenaming, setBulkRenaming] = useState(false);
   const [activePhotographer, setActivePhotographer] = useState<string | null>(null);
+  const [showAnonymous, setShowAnonymous] = useState(false);
 
   const fetchEvent = useCallback(() => {
     fetch(`/api/events/${id}`, { credentials: "include" })
@@ -306,12 +307,16 @@ export default function EventDetailPage() {
     return m;
   }, [processedPhotos]);
 
-  const filteredPhotos = useMemo(
-    () => activePhotographer
-      ? processedPhotos.filter((p) => p.photographerName === activePhotographer)
-      : processedPhotos,
-    [processedPhotos, activePhotographer]
+  const anonymousCount = useMemo(
+    () => processedPhotos.filter((p) => !p.photographerName).length,
+    [processedPhotos]
   );
+
+  const filteredPhotos = useMemo(() => {
+    if (showAnonymous) return processedPhotos.filter((p) => !p.photographerName);
+    if (activePhotographer) return processedPhotos.filter((p) => p.photographerName === activePhotographer);
+    return processedPhotos;
+  }, [processedPhotos, activePhotographer, showAnonymous]);
 
   useEffect(() => {
     if (activePhotographer && !photographers.includes(activePhotographer)) {
@@ -746,15 +751,16 @@ export default function EventDetailPage() {
         </div>
 
         {/* Photographer filter chips */}
-        {photographers.length > 0 && (
+        {(photographers.length > 0 || anonymousCount > 0) && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            {/* All */}
             <button
-              onClick={() => setActivePhotographer(null)}
+              onClick={() => { setActivePhotographer(null); setShowAnonymous(false); }}
               style={{
                 height: 28, padding: "0 11px", borderRadius: 999,
-                border: activePhotographer === null ? "none" : "1px solid #e4e4e7",
-                background: activePhotographer === null ? "#18181b" : "#fff",
-                color: activePhotographer === null ? "#fff" : "#52525b",
+                border: !activePhotographer && !showAnonymous ? "none" : "1px solid #e4e4e7",
+                background: !activePhotographer && !showAnonymous ? "#18181b" : "#fff",
+                color: !activePhotographer && !showAnonymous ? "#fff" : "#52525b",
                 fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
                 transition: "background .15s, color .15s, border .15s",
               }}
@@ -764,12 +770,14 @@ export default function EventDetailPage() {
                 {processedPhotos.length}
               </span>
             </button>
+
+            {/* Named photographers */}
             {photographers.map((name) => {
-              const active = activePhotographer === name;
+              const active = activePhotographer === name && !showAnonymous;
               return (
                 <button
                   key={name}
-                  onClick={() => setActivePhotographer(active ? null : name)}
+                  onClick={() => { setShowAnonymous(false); setActivePhotographer(active ? null : name); }}
                   style={{
                     height: 28, padding: "0 11px", borderRadius: 999,
                     border: active ? "none" : "1px solid #e4e4e7",
@@ -786,6 +794,26 @@ export default function EventDetailPage() {
                 </button>
               );
             })}
+
+            {/* Anonymous (no name set) — admin only */}
+            {anonymousCount > 0 && (
+              <button
+                onClick={() => { setActivePhotographer(null); setShowAnonymous(!showAnonymous); }}
+                style={{
+                  height: 28, padding: "0 11px", borderRadius: 999,
+                  border: showAnonymous ? "none" : "1px solid #e4e4e7",
+                  background: showAnonymous ? "#71717a" : "#fff",
+                  color: showAnonymous ? "#fff" : "#71717a",
+                  fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                  transition: "background .15s, color .15s, border .15s",
+                }}
+              >
+                {tCommon("anonymous")}
+                <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                  {anonymousCount}
+                </span>
+              </button>
+            )}
           </div>
         )}
 
