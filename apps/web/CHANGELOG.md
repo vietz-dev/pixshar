@@ -1,5 +1,13 @@
 # @pixshar/web
 
+## 0.0.30
+
+### Patch Changes
+
+- f789fae: Stable Archieve Parts
+- Updated dependencies [f789fae]
+  - @pixshar/shared@0.0.30
+
 ## 0.0.29
 
 ### Patch Changes
