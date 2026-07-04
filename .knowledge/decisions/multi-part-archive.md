@@ -44,6 +44,16 @@ Multiple worker replicas can build different events in parallel — the per-even
 
 ZIP64 supports files and archives larger than 4 GB and is widely supported. However, it does not address the download-resumability problem — a guest's connection drop at 90% of a 15 GB download is still a full re-download. Multi-part archives solve this at the application layer with no special tooling on the guest's side.
 
+# Incremental & Immutable Parts
+
+The archive is built **incrementally**: a build appends newly-uploaded photos as new sealed parts and never re-plans existing parts. This avoids re-zipping and re-uploading the whole (10 GB+) gallery every time a guest adds a few photos — the dominant cost of the old full-rebuild model — and gives a stable "what's new" download experience.
+
+**Sealing policy:** each build seals even a partial last part; new photos always start a new part (chosen over a mutable "open tail" for maximum immutability). Debounce batching keeps fragmentation modest; `rebuild-all` is the consolidation escape hatch.
+
+**Deletion:** when a photo inside a sealed part is deleted, only that part is marked `STALE` and rebuilt in place from its stored membership minus the deleted photo — a gap under the cap is accepted (no re-packing / cascading into later parts).
+
+**Tracking identity:** the guest's per-part "downloaded" tick is keyed on a `membershipSig` (content hash), not a build counter, so a membership-preserving `rebuild-all` does not force re-downloads; only a genuine content change (a deletion) resets a part's tick. A separate `generation` counter versions the S3 key so the old part stays downloadable during a rebuild.
+
 # Download UX Consequence
 
 The split-archive model changes the guest download UX: instead of one button triggering one file download, a dedicated page lists each part with a checkbox that turns green after clicking. This was judged acceptable: guests who need to download large galleries (thousands of photos) are by definition downloading many files and expect some management overhead.

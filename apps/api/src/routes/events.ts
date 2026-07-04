@@ -7,7 +7,7 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { getDownloadJobStatus, forceBuild, cancelJob, statusMessage } from "../services/downloadJob.js";
+import { getDownloadJobStatus, buildNow, rebuildAll, cancelJob, triggerReconcile, statusMessage } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
@@ -281,7 +281,9 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
   });
 });
 
-app.post("/:id/download/build", requireAdmin, async (c) => {
+// Skip the debounce wait and queue the pending reconcile now. Still routes
+// through the FIFO build queue (respects worker/image-processor load).
+app.post("/:id/download/build-now", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
@@ -291,7 +293,22 @@ app.post("/:id/download/build", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await forceBuild(id);
+  await buildNow(id);
+  return c.json({ success: true });
+});
+
+// Rebuild every existing part's ZIP bytes, preserving each part's membership.
+app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  await rebuildAll(id);
   return c.json({ success: true });
 });
 
@@ -449,6 +466,8 @@ app.delete(
       where: { id: { in: photos.map((p) => p.id) }, eventId },
     });
 
+    await staleArchivePartsForPhotos(eventId, photos.map((p) => p.id));
+
     return c.json({ success: true, deleted: photos.length });
   }
 );
@@ -479,7 +498,28 @@ app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
   }
 
   await prisma.photo.delete({ where: { id: photoId } });
+
+  await staleArchivePartsForPhotos(eventId, [photoId]);
+
   return c.json({ success: true });
 });
+
+// When photos inside already-built (immutable) archive parts are deleted, those
+// parts must be rebuilt to drop the deleted images. Mark exactly the affected
+// parts STALE and schedule a reconcile (debounced so bursts of deletions batch).
+async function staleArchivePartsForPhotos(eventId: string, photoIds: string[]): Promise<void> {
+  if (photoIds.length === 0) return;
+  const affected = await prisma.downloadArchivePart.updateMany({
+    where: {
+      job: { eventId },
+      status: "READY",
+      entries: { some: { photoId: { in: photoIds } } },
+    },
+    data: { status: "STALE" },
+  });
+  if (affected.count > 0) {
+    await triggerReconcile(eventId);
+  }
+}
 
 export default app;

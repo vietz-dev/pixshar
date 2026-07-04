@@ -175,7 +175,9 @@
       "loadFailed": "Download-Links konnten nicht geladen werden — deine Sitzung ist möglicherweise abgelaufen.",
       "backToGallery": "Zurück zur Galerie",
       "building": "Archiv wird vorbereitet, bitte später nochmal prüfen.",
-      "noArchive": "Noch kein Archiv verfügbar."
+      "noArchive": "Noch kein Archiv verfügbar.",
+      "rebuilding": "Wird aktualisiert — eine neuere Version wird gerade erstellt",
+      "buildingBanner": "Weitere Fotos werden noch verpackt. Neue Teile erscheinen hier in ein paar Minuten."
     }
   },
   "upload": {
@@ -230,6 +232,10 @@
       "cancellingButton": "Wird abgebrochen…",
       "rebuildButton": "Archiv neu erstellen",
       "startingButton": "Wird gestartet…",
+      "buildNowButton": "Jetzt bauen",
+      "buildingNowButton": "Wird eingereiht…",
+      "rebuildAllButton": "Alle Teile neu bauen",
+      "rebuildingAllButton": "Wird neu gebaut…",
       "processedPhotos": "Verarbeitete Fotos",
       "archiveSize": "Archivgröße",
       "archiveParts": "{count, plural, =1 {1 Teil} other {# Teile}}",

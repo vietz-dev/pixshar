@@ -79,6 +79,26 @@ export async function deleteS3Object(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
 }
 
+// List every object key under a prefix (paginated).
+export async function listS3Prefix(prefix: string): Promise<string[]> {
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const list = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: env.S3_BUCKET,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+    for (const o of list.Contents ?? []) {
+      if (o.Key) keys.push(o.Key);
+    }
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return keys;
+}
+
 // Delete every object under a prefix (paginated; DeleteObjects caps at 1000 keys).
 export async function deleteS3Prefix(prefix: string): Promise<number> {
   let deleted = 0;
@@ -108,6 +128,8 @@ export async function deleteS3Prefix(prefix: string): Promise<number> {
 
 export const s3Keys = {
   archivePrefix: (eventId: string) => `${eventId}/archive/`,
-  zipPart: (eventId: string, partIndex: number) =>
-    `${eventId}/archive/gallery-part-${partIndex}.zip`,
+  // The generation suffix lets a rebuilt part (same partIndex) be written under a
+  // fresh key so the previous object stays downloadable until the new one lands.
+  zipPart: (eventId: string, partIndex: number, generation: number) =>
+    `${eventId}/archive/gallery-part-${partIndex}-g${generation}.zip`,
 };

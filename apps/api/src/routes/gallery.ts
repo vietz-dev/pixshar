@@ -18,7 +18,7 @@ import {
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
-import { buildReadyDownloadPayload } from "../services/downloadJob.js";
+import { buildDownloadPayload } from "../services/downloadJob.js";
 import {
   galleryUnlocksTotal,
   photoDownloadsTotal,
@@ -164,50 +164,16 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
 
   const event = await prisma.event.findUnique({
     where: { slug: c.req.param("slug") },
-    include: { downloadJob: true },
   });
 
   if (!event) {
     return c.json({ error: "Gallery not found" }, 404);
   }
 
-  const job = event.downloadJob;
-
-  if (!job) {
-    return c.json({
-      status: "NONE",
-      message: "No archive available yet.",
-    });
-  }
-
-  if (job.status === "DEBOUNCING") {
-    return c.json({
-      status: "DEBOUNCING",
-      message: "New photos are still being uploaded. Your archive will be ready shortly.",
-      debounceUntil: job.debounceUntil,
-    });
-  }
-
-  if (job.status === "QUEUED" || job.status === "BUILDING") {
-    return c.json({
-      status: "BUILDING",
-      message: "Your archive is being prepared. This may take a few minutes.",
-      photoCount: job.photoCount,
-      processedPhotos: job.processedPhotos,
-      uploadProgress: job.uploadProgress,
-    });
-  }
-
-  if (job.status === "FAILED" || job.status === "CANCELLED") {
-    return c.json({
-      status: "FAILED",
-      message: "Archive generation failed. Please try again later.",
-    });
-  }
-
-  // READY — presigned URL per archive part (1 hour)
-  const payload = await buildReadyDownloadPayload(job.id, event.slug, job.photoCount);
-  archiveDownloadsTotal.inc();
+  // Part-aware payload: serves whatever parts are already built (partial
+  // availability) even while newer photos are appended or a part is rebuilt.
+  const payload = await buildDownloadPayload(event.id, event.slug);
+  if (payload.status === "READY") archiveDownloadsTotal.inc();
 
   return c.json(payload);
 });
@@ -216,58 +182,15 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
   const event = c.get("galleryEvent");
 
   return streamSSE(c, async (stream) => {
-    const fullEvent = await prisma.event.findUnique({
-      where: { id: event.id },
-      include: { downloadJob: true },
-    });
-    const job = fullEvent?.downloadJob ?? null;
+    // Always emit the full part-aware payload (fresh presigned URLs) so the
+    // guest page can render already-built parts + a "still building" banner.
+    const initial = await buildDownloadPayload(event.id, event.slug);
+    if (initial.status === "READY") archiveDownloadsTotal.inc();
+    await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 
-    async function buildInitialPayload() {
-      if (!job) {
-        return { status: "NONE", message: "No archive available yet." };
-      }
-      if (job.status === "DEBOUNCING") {
-        return {
-          status: "DEBOUNCING",
-          message: "New photos are still being uploaded. Your archive will be ready shortly.",
-          debounceUntil: job.debounceUntil?.toISOString() ?? null,
-        };
-      }
-      if (job.status === "QUEUED" || job.status === "BUILDING") {
-        return {
-          status: "BUILDING",
-          message: "Your archive is being prepared. This may take a few minutes.",
-          photoCount: job.photoCount,
-          processedPhotos: job.processedPhotos,
-          uploadProgress: job.uploadProgress,
-        };
-      }
-      if (job.status === "FAILED" || job.status === "CANCELLED") {
-        return { status: "FAILED", message: "Archive generation failed. Please try again later." };
-      }
-      // READY
-      const payload = await buildReadyDownloadPayload(job.id, event.slug, job.photoCount);
-      archiveDownloadsTotal.inc();
-      return payload;
-    }
-
-    await stream.writeSSE({ data: JSON.stringify(await buildInitialPayload()), event: "download-status" });
-
-    const unsubscribe = onDownloadStatus(event.id, async (payload) => {
-      // Guest view needs a slightly different shape: remap to gallery format
-      if (payload.status === "READY") {
-        // Presigned URLs must be generated fresh here
-        const fullJob = await prisma.downloadJob.findUnique({ where: { eventId: event.id } });
-        if (fullJob && fullJob.partCount > 0) {
-          const ready = await buildReadyDownloadPayload(fullJob.id, event.slug, fullJob.photoCount);
-          archiveDownloadsTotal.inc();
-          await stream.writeSSE({
-            data: JSON.stringify(ready),
-            event: "download-status",
-          });
-          return;
-        }
-      }
+    const unsubscribe = onDownloadStatus(event.id, async () => {
+      const payload = await buildDownloadPayload(event.id, event.slug);
+      if (payload.status === "READY") archiveDownloadsTotal.inc();
       await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
     });
 

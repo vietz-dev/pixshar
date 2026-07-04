@@ -11,10 +11,19 @@ timestamp: 2026-07-03T00:00:00Z
 When guests download a gallery they receive a ZIP archive containing all PROCESSED photos. Because galleries can be large (10 GB+), the archive is:
 1. **Streamed** — never fully buffered in memory; built incrementally and uploaded to S3 in multipart chunks.
 2. **Split into parts** — each part is at most `DOWNLOAD_MAX_PART_BYTES` (default 2 GB), so an interrupted download loses only one part.
+3. **Incremental & immutable** — parts are built once and sealed. A build appends only the newly-uploaded photos as **new** parts; existing parts are never re-planned. This makes "part N always contains the same photos" true by construction, so a returning guest only downloads the new parts.
 
-# Trigger: Debounce
+# The immutability invariant
 
-After every successful photo processing step, a debounce timer is reset. Once uploads have been quiet for `DOWNLOAD_DEBOUNCE_SECONDS` (default 60 s), the archive build is queued. A hard ceiling (`DOWNLOAD_MAX_WAIT_SECONDS`, default 120 s) prevents continuous uploads from starving the build indefinitely.
+A photo, once assigned to part N, stays in part N until it is deleted. Every build path (append reconcile, deletion reconcile, admin rebuild-all) obeys this:
+- No build adds a photo to an existing part or moves a photo between parts.
+- Existing parts are rebuilt only from their **stored membership** (the `DownloadArchivePartEntry` rows), never from a fresh global plan.
+- The only allowed change to an existing part is dropping deleted photos (it shrinks, never grows or reorders).
+- The greedy planner (`planArchiveParts`) runs only over photos not yet assigned to any part, forming new parts.
+
+# Trigger: Debounce / Reconcile
+
+After every successful photo processing step, a debounce timer is reset. Once uploads have been quiet for `DOWNLOAD_DEBOUNCE_SECONDS` (default 60 s), the reconcile build is queued. A hard ceiling (`DOWNLOAD_MAX_WAIT_SECONDS`, default 120 s) prevents continuous uploads from starving the build. Re-entering DEBOUNCING never wipes existing parts — they stay downloadable while the new photos are appended. Photo deletion and the admin actions route through the same queue via `triggerReconcile`.
 
 # State Machine: DownloadJob
 
@@ -26,9 +35,17 @@ DEBOUNCING → QUEUED → BUILDING → READY
 
 All transitions use atomic `updateMany` with a `WHERE status = <expected>` guard, so concurrent worker replicas can never double-build the same event's archive.
 
-# Part Planning
+# Reconcile: Part Planning
 
-Before streaming, the worker performs a **greedy fill** pass over all PROCESSED photos (ordered by `createdAt`). It estimates each entry's size using the photo's stored `sizeBytes` plus a per-entry overhead constant for ZIP bookkeeping (headers, central directory). When adding the next photo would push the current part over the effective limit, a new part is started. A single photo larger than the limit gets its own oversized part — files cannot be split across archives.
+Each build reconciles rather than rebuilds. It:
+1. Loads existing parts + their membership; separates immutable `READY` parts (skipped) from `STALE` parts (to rebuild).
+2. Rebuilds each `STALE` part from its stored membership minus any deleted photos (same `partIndex`, `generation + 1`). An emptied part is deleted; `partIndex` values are **not** renumbered (gaps are allowed to keep identities stable).
+3. Appends photos not yet assigned to any part via a **greedy fill** (`planArchiveParts`, ordered by `createdAt`) into new parts with `partIndex` continuing past the current max. A single photo larger than the limit gets its own oversized part.
+
+# Part identity: membershipSig & generation
+
+- `membershipSig` = sha1 of the part's sorted photoId list. It is the content identity used by the guest's localStorage download-tracking, so a green "downloaded" tick persists across a pure byte-rebuild and resets only when the part's photo set actually changes (a deletion).
+- `generation` is bumped on every physical (re)build and feeds the versioned S3 key (`{eventId}/archive/gallery-part-{index}-g{gen}.zip`), so the old object stays downloadable until the new one is committed; the old object is deleted afterward. A per-build orphan sweep removes any archive object no longer referenced by a live part.
 
 # Streaming Pipeline
 
@@ -49,13 +66,23 @@ Multiple worker replicas can build different events concurrently — each replic
 
 # Crash Recovery
 
-A heartbeat (`heartbeatAt`) is updated every few photos. A reaper (runs every `DOWNLOAD_BUILD_LEASE_SECONDS / 2`) detects BUILDING rows whose heartbeat is stale and resets them to QUEUED. On retry, stale S3 parts are deleted and the build restarts from scratch.
+A heartbeat (`heartbeatAt`) is updated every few photos. A reaper (runs every `DOWNLOAD_BUILD_LEASE_SECONDS / 2`) detects BUILDING rows whose heartbeat is stale and resets them to QUEUED. Recovery is now cheap and safe: immutable `READY` parts are kept; only the in-flight new/rebuilt part is redone. A crashed rebuild leaves its part `STALE` (its old object still serving), so the next reconcile simply retries it.
+
+# Admin controls
+
+- `POST /api/events/:id/download/build-now` — skip the debounce wait and queue the pending reconcile immediately. Only the timer is skipped; it still routes through QUEUED → the FIFO claim, so worker/image-processor load stays bounded. No-op if nothing is pending.
+- `POST /api/events/:id/download/rebuild-all` — mark every part `STALE` and reconcile, regenerating each part's bytes from its stored membership. Membership is preserved, so guests are not forced to re-download parts whose contents did not change.
+- `POST /api/events/:id/download/cancel` — stops the current build; already-committed (immutable) parts stay downloadable.
+
+# Deletion
+
+Deleting a photo (`DELETE /events/:id/photos[...]`) marks exactly the parts containing it `STALE` (looked up via the indexed `DownloadArchivePartEntry.photoId`) and schedules a debounced reconcile. Only those parts rebuild; all others are untouched.
 
 # Download UX
 
-When a guest clicks the download button:
-- **Single part**: a direct `<a download>` link.
-- **Multiple parts**: the button navigates to `/gallery/[slug]/download`, a dedicated page that lists each part with a checkbox. Clicking a part link marks it downloaded in `localStorage`; the checkbox turns green. State persists across page reloads.
+The guest download payload lists whatever parts are already built regardless of job state (partial availability), with a `building` flag when more parts are pending and a per-part `rebuilding` flag when a part is being updated (its old version stays downloadable meanwhile).
+- **Single part** (settled): a direct `<a download>` link.
+- **Multiple parts / still building**: the button navigates to `/gallery/[slug]/download`, which lists each part, shows a "more parts coming" banner while building, and greys a part being rebuilt. Clicking a part marks it downloaded in `localStorage`, keyed on `partIndex` + `membershipSig` so a rebuilt (changed) part resets while appended parts stay green. The page live-updates via the SSE stream.
 
 # Citations
 

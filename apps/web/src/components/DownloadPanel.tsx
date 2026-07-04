@@ -47,10 +47,22 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
     return () => es.close();
   }, [eventId]);
 
-  async function handleBuild() {
-    setActionLoading("build");
+  async function handleBuildNow() {
+    setActionLoading("buildNow");
     try {
-      await fetch(`/api/events/${eventId}/download/build`, {
+      await fetch(`/api/events/${eventId}/download/build-now`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleRebuildAll() {
+    setActionLoading("rebuildAll");
+    try {
+      await fetch(`/api/events/${eventId}/download/rebuild-all`, {
         method: "POST",
         credentials: "include",
       });
@@ -84,7 +96,10 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
 
   const meta = STATUS_META[state.status] || STATUS_META.NONE;
   const isBuilding = state.status === "BUILDING" || state.status === "QUEUED";
-  const isTerminal = state.status === "READY" || state.status === "FAILED" || state.status === "CANCELLED" || state.status === "NONE";
+  const canCancel = isBuilding || state.status === "DEBOUNCING";
+  const canBuildNow = state.status === "DEBOUNCING";
+  // "Rebuild all" regenerates every existing part from its stored membership.
+  const canRebuildAll = state.status === "READY" || state.status === "FAILED" || state.status === "CANCELLED";
   const isUploading = state.status === "BUILDING" && state.processedPhotos === -1;
   const isZipping = state.status === "BUILDING" && state.processedPhotos >= 0;
   const zipPct = state.photoCount > 0 ? Math.round((state.processedPhotos / state.photoCount) * 100) : 0;
@@ -112,7 +127,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
           <span style={{ fontSize: 13, color: "#71717a" }}>{state.message}</span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {isBuilding && (
+          {canCancel && (
             <button
               onClick={handleCancel}
               disabled={actionLoading === "cancel"}
@@ -142,10 +157,39 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
               {actionLoading === "cancel" ? t("cancellingButton") : t("cancelButton")}
             </button>
           )}
-          {isTerminal && (
+          {canBuildNow && (
             <button
-              onClick={handleBuild}
-              disabled={actionLoading === "build"}
+              onClick={handleBuildNow}
+              disabled={actionLoading === "buildNow"}
+              style={{
+                height: 32,
+                padding: "0 12px",
+                borderRadius: 7,
+                border: "1px solid #bfdbfe",
+                background: "#fff",
+                color: "#2563eb",
+                fontSize: 12.5,
+                fontWeight: 500,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                cursor: "pointer",
+                transition: "background .15s",
+                opacity: actionLoading === "buildNow" ? 0.6 : 1,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#eff6ff"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              {actionLoading === "buildNow" ? t("buildingNowButton") : t("buildNowButton")}
+            </button>
+          )}
+          {canRebuildAll && (
+            <button
+              onClick={handleRebuildAll}
+              disabled={actionLoading === "rebuildAll"}
               style={{
                 height: 32,
                 padding: "0 12px",
@@ -160,17 +204,16 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
                 gap: 5,
                 cursor: "pointer",
                 transition: "background .15s",
-                opacity: actionLoading === "build" ? 0.6 : 1,
+                opacity: actionLoading === "rebuildAll" ? 0.6 : 1,
               }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 4v6h-6M1 20v-6h6" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
               </svg>
-              {actionLoading === "build" ? t("startingButton") : t("rebuildButton")}
+              {actionLoading === "rebuildAll" ? t("rebuildingAllButton") : t("rebuildAllButton")}
             </button>
           )}
         </div>

@@ -147,13 +147,43 @@ model DownloadJob {
 model DownloadArchivePart {
   id        String   @id @default(cuid())
   jobId     String
-  partIndex Int // 1-based
+  partIndex Int // 1-based, stable identity — never renumbered, gaps allowed
   key       String
-  sizeBytes BigInt
-  createdAt DateTime @default(now())
+  sizeBytes BigInt   @default(0)
+  // READY | BUILDING | STALE. A part is immutable once READY; it is only ever
+  // rebuilt in place (same partIndex) when a photo inside it is deleted (STALE)
+  // or when the admin forces a full rebuild.
+  status    String   @default("READY")
+  // Hash of the sorted photoId list in this part. Drives client-side download
+  // tracking (localStorage): it changes only when the part's photo set changes
+  // (i.e. a deletion), so a pure byte-rebuild keeps the guest's "downloaded" tick.
+  membershipSig String @default("")
+  // Bumped on every physical (re)build; feeds the versioned S3 key so the old
+  // object stays downloadable until the new one is committed.
+  generation Int      @default(1)
+  photoCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
 
-  job DownloadJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job     DownloadJob                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  entries DownloadArchivePartEntry[]
 
   @@unique([jobId, partIndex])
   @@map("download_archive_part")
+}
+
+// Records which photos belong to which archive part (the durable membership).
+// photoId intentionally has NO foreign key to Photo: deleting a photo must NOT
+// cascade-remove this row, so a reconcile build can still see which sealed part
+// the now-deleted photo belonged to and rebuild exactly that part.
+model DownloadArchivePartEntry {
+  id      String @id @default(cuid())
+  partId  String
+  photoId String
+
+  part DownloadArchivePart @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@unique([partId, photoId])
+  @@index([photoId])
+  @@map("download_archive_part_entry")
 }

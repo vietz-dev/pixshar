@@ -37,18 +37,34 @@ One row per event (at most). Tracks the overall state of the archive build.
 
 ## DownloadArchivePart
 
-One row per archive part within a completed (or in-progress) build.
+One **long-lived, immutable** row per archive part. Parts are no longer wiped on each build — they persist across builds and are only appended to (new parts) or rebuilt in place (on deletion).
 
 | Field | Type | Description |
 |---|---|---|
 | `id` | String (cuid) | Unique part ID |
 | `jobId` | String | FK to DownloadJob (CASCADE on delete) |
-| `partIndex` | Int | 1-based part number |
-| `key` | String | S3 key for the part ZIP file |
+| `partIndex` | Int | 1-based part number; stable identity, never renumbered (gaps allowed) |
+| `key` | String | Versioned S3 key (`…/gallery-part-{index}-g{generation}.zip`) |
 | `sizeBytes` | BigInt | Size of the part in bytes |
-| `createdAt` | DateTime | When the part was committed to S3 |
+| `status` | String | `READY` (immutable) or `STALE` (queued for in-place rebuild after a deletion / rebuild-all) |
+| `membershipSig` | String | sha1 of sorted photoId list — content identity for guest download-tracking |
+| `generation` | Int | Bumped on each physical rebuild; feeds the versioned S3 key |
+| `photoCount` | Int | Number of photos in the part |
+| `createdAt` / `updatedAt` | DateTime | Timestamps |
 
 The `(jobId, partIndex)` pair has a unique constraint.
+
+## DownloadArchivePartEntry
+
+Durable membership: which photos belong to which part. One row per (part, photo).
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | String (cuid) | Unique row ID |
+| `partId` | String | FK to DownloadArchivePart (CASCADE on delete) |
+| `photoId` | String | Photo id — **no FK to Photo** (a deleted photo's membership row must survive until the reconcile reads it) |
+
+`@@unique([partId, photoId])` + `@@index([photoId])` (the index powers the "which parts contain this deleted photo?" lookup).
 
 # DownloadJob State Machine
 
@@ -69,7 +85,7 @@ DEBOUNCING → QUEUED → BUILDING → READY
 
 # Part Lifecycle
 
-Parts are inserted into `DownloadArchivePart` **one at a time** as each part upload to S3 completes. This means partial progress is recoverable if the worker crashes partway through: the reaper detects the stale build, deletes all existing part rows and S3 objects under `{eventId}/archive/`, and restarts from scratch.
+Parts are committed to `DownloadArchivePart` **one at a time** as each part upload to S3 completes. Recovery is incremental: immutable `READY` parts are kept, so a crash only redoes the in-flight new/rebuilt part. A crashed rebuild leaves the part `STALE` (its previous-generation object still serving) for the next reconcile to retry. A per-build orphan sweep removes archive objects not referenced by a live part.
 
 # Citations
 

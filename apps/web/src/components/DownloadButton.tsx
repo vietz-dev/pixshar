@@ -8,7 +8,7 @@ type DownloadStatus = "NONE" | "DEBOUNCING" | "BUILDING" | "READY" | "FAILED";
 
 interface ArchivePart {
   index: number;
-  url: string;
+  url: string | null;
   sizeBytes: number;
 }
 
@@ -22,6 +22,7 @@ interface DownloadState {
   uploadProgress?: number;
   message?: string;
   debounceUntil?: string;
+  building?: boolean;
 }
 
 export default function DownloadButton({ slug }: { slug: string }) {
@@ -35,7 +36,9 @@ export default function DownloadButton({ slug }: { slug: string }) {
     es.addEventListener("download-status", (e) => {
       const data = JSON.parse(e.data);
       setState(data);
-      if (data.status === "READY" || data.status === "FAILED") {
+      // Keep the stream open while more parts are still being built so newly
+      // appended parts appear; only close once fully settled or failed.
+      if ((data.status === "READY" && !data.building) || data.status === "FAILED") {
         es.close();
       }
     });
@@ -74,7 +77,7 @@ export default function DownloadButton({ slug }: { slug: string }) {
     );
   }
 
-  if (state.status === "READY" && state.parts && state.parts.length > 1) {
+  if (state.status === "READY" && state.parts && (state.parts.length > 1 || state.building)) {
     const total = state.totalSizeBytes ?? state.parts.reduce((s, p) => s + p.sizeBytes, 0);
     return (
       <button
@@ -105,7 +108,7 @@ export default function DownloadButton({ slug }: { slug: string }) {
   }
 
   const singleUrl = state.parts?.[0]?.url;
-  if (state.status === "READY" && singleUrl) {
+  if (state.status === "READY" && singleUrl && !state.building) {
     const singleSize = state.parts?.[0]?.sizeBytes ?? state.totalSizeBytes;
     const sizeLabel = singleSize ? formatBytes(singleSize) : null;
     return (

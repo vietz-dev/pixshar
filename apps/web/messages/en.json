@@ -175,7 +175,9 @@
       "loadFailed": "Could not load download links — your session may have expired.",
       "backToGallery": "Back to gallery",
       "building": "Archive is being prepared, please check back soon.",
-      "noArchive": "No archive available yet."
+      "noArchive": "No archive available yet.",
+      "rebuilding": "Updating — a newer version is being prepared",
+      "buildingBanner": "More photos are still being packaged. New parts will appear here in a few minutes."
     }
   },
   "upload": {
@@ -230,6 +232,10 @@
       "cancellingButton": "Cancelling…",
       "rebuildButton": "Rebuild archive",
       "startingButton": "Starting…",
+      "buildNowButton": "Build now",
+      "buildingNowButton": "Queuing…",
+      "rebuildAllButton": "Rebuild all parts",
+      "rebuildingAllButton": "Rebuilding…",
       "processedPhotos": "Processed photos",
       "archiveSize": "Archive size",
       "archiveParts": "{count, plural, =1 {1 part} other {# parts}}",

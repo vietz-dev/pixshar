@@ -6,7 +6,8 @@
  *  - Auth guards: gallery cookie required, cross-gallery cookie rejected
  *  - GET /api/gallery/:slug/download — payload shape for all non-READY states
  *  - GET /api/gallery/:slug/download — payload shape when READY (parts array)
- *  - POST /api/events/:id/download/build — admin force-build trigger
+ *  - POST /api/events/:id/download/build-now — skip debounce, queue reconcile
+ *  - POST /api/events/:id/download/rebuild-all — rebuild all parts (membership-preserving)
  *  - POST /api/events/:id/download/cancel — cancels a queued/building job
  *  - GET /api/events/:id/download/status — admin status endpoint shape
  *  - Admin auth guard on all admin download endpoints
@@ -110,31 +111,49 @@ describe("Gallery archive download", () => {
 
   // ── Force-build (admin) ───────────────────────────────────────────────────
 
-  describe("Admin force-build", () => {
+  describe("Admin build-now / rebuild-all", () => {
     describe("Given an authenticated admin", () => {
-      describe("When posting POST /api/events/:id/download/build", () => {
-        it("Then it returns 200 and transitions job to QUEUED or BUILDING", async () => {
-          const res = await authedFetch(`/api/events/${event.id}/download/build`, adminCookie, {
+      describe("When posting POST /api/events/:id/download/build-now", () => {
+        it("Then it returns 200 (no-op when there is no pending job to skip)", async () => {
+          const res = await authedFetch(`/api/events/${event.id}/download/build-now`, adminCookie, {
             method: "POST",
           });
           expect(res.status).toBe(200);
           const body = await res.json() as { success: boolean };
           expect(body.success).toBe(true);
 
-          // Verify the job status moved out of NONE
+          // With no processed photos there is no job — build-now leaves it NONE.
+          // Once a debounce/reconcile is pending it promotes it to QUEUED.
           const statusRes = await authedFetch(
             `/api/events/${event.id}/download/status`,
             adminCookie
           );
           const statusBody = await statusRes.json() as { status: string };
-          expect(["QUEUED", "BUILDING", "READY"]).toContain(statusBody.status);
+          expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING", "READY"]).toContain(statusBody.status);
+        });
+      });
+
+      describe("When posting POST /api/events/:id/download/rebuild-all", () => {
+        it("Then it returns 200", async () => {
+          const res = await authedFetch(`/api/events/${event.id}/download/rebuild-all`, adminCookie, {
+            method: "POST",
+          });
+          expect(res.status).toBe(200);
+          const body = await res.json() as { success: boolean };
+          expect(body.success).toBe(true);
         });
       });
     });
 
     describe("Given no admin session", () => {
-      it("Then it returns 401", async () => {
-        const res = await fetch(`${API}/api/events/${event.id}/download/build`, {
+      it("Then build-now returns 401", async () => {
+        const res = await fetch(`${API}/api/events/${event.id}/download/build-now`, {
+          method: "POST",
+        });
+        expect(res.status).toBe(401);
+      });
+      it("Then rebuild-all returns 401", async () => {
+        const res = await fetch(`${API}/api/events/${event.id}/download/rebuild-all`, {
           method: "POST",
         });
         expect(res.status).toBe(401);
@@ -148,7 +167,7 @@ describe("Gallery archive download", () => {
     describe("Given an authenticated admin and a QUEUED job", () => {
       it("Then POST /api/events/:id/download/cancel returns 200 and job moves to CANCELLED", async () => {
         // Ensure there is a queued job
-        await authedFetch(`/api/events/${event.id}/download/build`, adminCookie, {
+        await authedFetch(`/api/events/${event.id}/download/build-now`, adminCookie, {
           method: "POST",
         });
 
@@ -164,8 +183,9 @@ describe("Gallery archive download", () => {
           adminCookie
         );
         const statusBody = await statusRes.json() as { status: string };
-        // Job was QUEUED/BUILDING — should now be CANCELLED (or READY if worker was very fast)
-        expect(["CANCELLED", "READY"]).toContain(statusBody.status);
+        // With no pending job both build-now and cancel are no-ops (NONE). With a
+        // real job it moves to CANCELLED (or READY if the worker was very fast).
+        expect(["NONE", "CANCELLED", "READY"]).toContain(statusBody.status);
       });
     });
 
@@ -190,7 +210,7 @@ describe("Gallery archive download", () => {
       const emptyGalleryCookie = await unlockGallery(emptyEvent.slug, "ready-test");
 
       try {
-        await authedFetch(`/api/events/${emptyEvent.id}/download/build`, adminCookie, {
+        await authedFetch(`/api/events/${emptyEvent.id}/download/build-now`, adminCookie, {
           method: "POST",
         });
 

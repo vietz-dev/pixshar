@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 interface ArchivePart {
   index: number;
-  url: string;
+  url: string | null;
   sizeBytes: number;
+  photoCount?: number;
+  membershipSig?: string;
+  rebuilding?: boolean;
 }
 
 interface DownloadPayload {
@@ -16,6 +19,7 @@ interface DownloadPayload {
   partCount?: number;
   totalSizeBytes?: number;
   photoCount?: number;
+  building?: boolean;
 }
 
 function formatBytes(n: number): string {
@@ -25,8 +29,11 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function localStorageKey(slug: string, partIndex: number): string {
-  return `pixshar_dl_${slug}_part_${partIndex}`;
+// Keyed on the part's membership signature so a part that was rebuilt with a
+// different photo set (e.g. after a deletion) correctly resets to "not
+// downloaded", while a pure byte-rebuild keeps the guest's green tick.
+function localStorageKey(slug: string, partIndex: number, sig: string): string {
+  return `pixshar_dl_${slug}_part_${partIndex}_${sig}`;
 }
 
 function CheckIcon({ done }: { done: boolean }) {
@@ -63,6 +70,7 @@ export default function GalleryDownloadPage() {
   const [payload, setPayload] = useState<DownloadPayload | null>(null);
   const [error, setError] = useState("");
   const [downloaded, setDownloaded] = useState<Record<number, boolean>>({});
+  const initialLoaded = useRef(false);
 
   // Load per-part download state from localStorage (persists across tab close)
   const loadDownloadedState = useCallback(
@@ -70,7 +78,7 @@ export default function GalleryDownloadPage() {
       const state: Record<number, boolean> = {};
       for (const p of parts) {
         try {
-          state[p.index] = localStorage.getItem(localStorageKey(slug, p.index)) === "1";
+          state[p.index] = localStorage.getItem(localStorageKey(slug, p.index, p.membershipSig ?? "")) === "1";
         } catch {
           state[p.index] = false;
         }
@@ -80,27 +88,49 @@ export default function GalleryDownloadPage() {
     [slug]
   );
 
+  const apply = useCallback(
+    (data: DownloadPayload) => {
+      setPayload(data);
+      if (data.parts) loadDownloadedState(data.parts);
+    },
+    [loadDownloadedState]
+  );
+
+  // Initial fetch (handles auth redirect + first paint).
   useEffect(() => {
     fetch(`/api/gallery/${slug}/download`, { credentials: "include" })
       .then(async (res) => {
         if (res.status === 401 || res.status === 403) {
-          // No valid gallery session — send back to password gate
           router.replace(`/gallery/${slug}`);
           return;
         }
         if (!res.ok) throw new Error(await res.text());
         const data: DownloadPayload = await res.json();
-        setPayload(data);
-        if (data.parts) loadDownloadedState(data.parts);
+        initialLoaded.current = true;
+        apply(data);
       })
       .catch(() => setError(t("loadFailed")));
-  }, [slug, router, t, loadDownloadedState]);
+  }, [slug, router, t, apply]);
 
-  const markDownloaded = (partIndex: number) => {
+  // Live updates: new parts appear + rebuilt parts flip status without a reload.
+  useEffect(() => {
+    const es = new EventSource(`/api/gallery/${slug}/download/stream`, { withCredentials: true });
+    es.addEventListener("download-status", (e) => {
+      try {
+        apply(JSON.parse((e as MessageEvent).data));
+      } catch {
+        // ignore malformed frame
+      }
+    });
+    es.onerror = () => {};
+    return () => es.close();
+  }, [slug, apply]);
+
+  const markDownloaded = (partIndex: number, sig: string) => {
     try {
-      localStorage.setItem(localStorageKey(slug, partIndex), "1");
+      localStorage.setItem(localStorageKey(slug, partIndex, sig), "1");
     } catch {
-      // localStorage blocked (private mode etc.) — ignore, checkbox just won't persist
+      // localStorage blocked (private mode etc.) — ignore, tick just won't persist
     }
     setDownloaded((prev) => ({ ...prev, [partIndex]: true }));
   };
@@ -126,7 +156,8 @@ export default function GalleryDownloadPage() {
     );
   }
 
-  if (payload.status !== "READY" || !payload.parts || payload.parts.length === 0) {
+  const parts = payload.parts ?? [];
+  if (parts.length === 0) {
     const msg = payload.status === "BUILDING" || payload.status === "QUEUED" || payload.status === "DEBOUNCING"
       ? t("building")
       : t("noArchive");
@@ -140,8 +171,7 @@ export default function GalleryDownloadPage() {
     );
   }
 
-  const { parts, totalSizeBytes } = payload;
-  const total = totalSizeBytes ?? parts.reduce((s, p) => s + p.sizeBytes, 0);
+  const total = payload.totalSizeBytes ?? parts.reduce((s, p) => s + p.sizeBytes, 0);
   const n = parts.length;
 
   return (
@@ -168,22 +198,33 @@ export default function GalleryDownloadPage() {
             : t("subtitle", { count: n, size: formatBytes(total) })}
         </p>
         {n > 1 && (
-          <p style={{ fontSize: 13, color: "var(--text-muted, #71717a)", margin: "0 0 28px", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 13, color: "var(--text-muted, #71717a)", margin: "0 0 20px", lineHeight: 1.5 }}>
             {t("instruction")}
           </p>
         )}
-        {n === 1 && <div style={{ marginBottom: 28 }} />}
+        {n === 1 && <div style={{ marginBottom: 20 }} />}
+
+        {/* "More parts coming" banner */}
+        {payload.building && (
+          <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 12px", marginBottom: 20 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0 }}>
+              <path d="M21 12a9 9 0 1 1-6.2-8.5" />
+            </svg>
+            {t("buildingBanner")}
+          </div>
+        )}
 
         {/* Part list */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {parts.map((part) => {
             const done = !!downloaded[part.index];
+            const sig = part.membershipSig ?? "";
             return (
               <a
                 key={part.index}
-                href={part.url}
-                download
-                onClick={() => markDownloaded(part.index)}
+                href={part.url ?? undefined}
+                download={part.url ? true : undefined}
+                onClick={() => part.url && markDownloaded(part.index, sig)}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -194,10 +235,10 @@ export default function GalleryDownloadPage() {
                   background: done ? "#f0fdf4" : "var(--surface, #fff)",
                   textDecoration: "none",
                   transition: "background .15s, border-color .15s",
-                  cursor: "pointer",
+                  cursor: part.url ? "pointer" : "default",
                 }}
                 onMouseEnter={(e) => {
-                  if (!done) e.currentTarget.style.background = "#f9f9f8";
+                  if (!done && part.url) e.currentTarget.style.background = "#f9f9f8";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = done ? "#f0fdf4" : "var(--surface, #fff)";
@@ -213,6 +254,11 @@ export default function GalleryDownloadPage() {
                     {done && (
                       <span style={{ marginLeft: 8, color: "#16a34a", fontWeight: 500 }}>
                         · {t("downloaded")}
+                      </span>
+                    )}
+                    {part.rebuilding && (
+                      <span style={{ marginLeft: 8, color: "#d97706", fontWeight: 500 }}>
+                        · {t("rebuilding")}
                       </span>
                     )}
                   </div>
