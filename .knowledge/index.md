@@ -23,3 +23,7 @@ Self-contained knowledge base for the Pixshar project. One concept per file. Lea
 # Decisions
 
 * [Decisions](decisions/) - Architectural choices recorded with their rationale — includes graceful shutdown & HA deployment strategy
+
+# Concepts
+
+* [Concepts](concepts/) - Ideas thought through but not yet implemented; a concept moves to Decisions once built and shipped
