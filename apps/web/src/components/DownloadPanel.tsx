@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 
+type Quality = "DISPLAY" | "ORIGINAL";
+
 interface AdminDownloadState {
+  quality: Quality;
   status: string;
   message: string;
   photoCount: number;
@@ -17,7 +20,40 @@ interface AdminDownloadState {
   updatedAt: string;
 }
 
-export default function DownloadPanel({ eventId, slug }: { eventId: string; slug: string }) {
+export default function DownloadPanel({ eventId, slug: _slug }: { eventId: string; slug: string }) {
+  const t = useTranslations("download.panel");
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: "#18181b", margin: "0 0 12px" }}>
+        {t("heading")}
+      </h3>
+      <VariantPanel
+        eventId={eventId}
+        quality="DISPLAY"
+        label={t("variantKompakt")}
+        hint={t("variantKompaktHint")}
+      />
+      <VariantPanel
+        eventId={eventId}
+        quality="ORIGINAL"
+        label={t("variantOriginal")}
+        hint={t("variantOriginalHint")}
+      />
+    </div>
+  );
+}
+
+function VariantPanel({
+  eventId,
+  quality,
+  label,
+  hint,
+}: {
+  eventId: string;
+  quality: Quality;
+  label: string;
+  hint: string;
+}) {
   const t = useTranslations("download.panel");
   const [state, setState] = useState<AdminDownloadState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +70,10 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
   };
 
   useEffect(() => {
-    const es = new EventSource(`/api/events/${eventId}/download/status/stream`, { withCredentials: true });
+    const es = new EventSource(
+      `/api/events/${eventId}/download/status/stream?quality=${quality}`,
+      { withCredentials: true },
+    );
     es.addEventListener("download-status", (e) => {
       setState(JSON.parse(e.data));
       setLoading(false);
@@ -45,12 +84,12 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
       setLoading(false);
     };
     return () => es.close();
-  }, [eventId]);
+  }, [eventId, quality]);
 
   async function handleBuildNow() {
     setActionLoading("buildNow");
     try {
-      await fetch(`/api/events/${eventId}/download/build-now`, {
+      await fetch(`/api/events/${eventId}/download/build-now?quality=${quality}`, {
         method: "POST",
         credentials: "include",
       });
@@ -62,7 +101,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
   async function handleRebuildAll() {
     setActionLoading("rebuildAll");
     try {
-      await fetch(`/api/events/${eventId}/download/rebuild-all`, {
+      await fetch(`/api/events/${eventId}/download/rebuild-all?quality=${quality}`, {
         method: "POST",
         credentials: "include",
       });
@@ -75,7 +114,7 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
     if (!confirm(t("cancelConfirm"))) return;
     setActionLoading("cancel");
     try {
-      await fetch(`/api/events/${eventId}/download/cancel`, {
+      await fetch(`/api/events/${eventId}/download/cancel?quality=${quality}`, {
         method: "POST",
         credentials: "include",
       });
@@ -84,15 +123,35 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
     }
   }
 
+  const titleBlock = (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#18181b" }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#a1a1aa", marginTop: 2 }}>{hint}</div>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div
+        data-testid={`download-panel-${quality}`}
+        style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: 16, marginBottom: 12 }}
+      >
+        {titleBlock}
         <div style={{ fontSize: 13, color: "#a1a1aa" }}>{t("loadingStatus")}</div>
       </div>
     );
   }
 
-  if (!state) return null;
+  if (!state) {
+    return (
+      <div
+        data-testid={`download-panel-${quality}`}
+        style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: 16, marginBottom: 12 }}
+      >
+        {titleBlock}
+      </div>
+    );
+  }
 
   const meta = STATUS_META[state.status] || STATUS_META.NONE;
   const isBuilding = state.status === "BUILDING" || state.status === "QUEUED";
@@ -106,7 +165,11 @@ export default function DownloadPanel({ eventId, slug }: { eventId: string; slug
   const uploadPct = state.uploadProgress;
 
   return (
-    <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+    <div
+      data-testid={`download-panel-${quality}`}
+      style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 12, padding: "16px 18px", marginBottom: 12 }}
+    >
+      {titleBlock}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{

@@ -12,7 +12,7 @@ import { PG_NOTIFY_CHANNEL } from "./eventBus.js";
 type NotifyPayload =
   | { type: "photo.processed"; eventId: string; photoId: string }
   | { type: "photo.status"; eventId: string }
-  | { type: "download.status"; eventId: string };
+  | { type: "download.status"; eventId: string; quality?: "DISPLAY" | "ORIGINAL" };
 
 async function handleNotification(payload: NotifyPayload): Promise<void> {
   switch (payload.type) {
@@ -46,7 +46,7 @@ async function handleNotification(payload: NotifyPayload): Promise<void> {
       await pushPhotoStatus(payload.eventId).catch(() => {});
       break;
     case "download.status":
-      await pushDownloadStatus(payload.eventId).catch(() => {});
+      await pushDownloadStatus(payload.eventId, payload.quality ?? "ORIGINAL").catch(() => {});
       break;
   }
 }

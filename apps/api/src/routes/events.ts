@@ -7,7 +7,7 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { getDownloadJobStatus, buildNow, rebuildAll, cancelJob, triggerReconcile, statusMessage } from "../services/downloadJob.js";
+import { buildNow, rebuildAll, cancelJob, triggerReconcileAllVariants, statusMessage } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
@@ -17,6 +17,14 @@ import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
 import { photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
+
+// Admin download endpoints act on one variant, selected by ?quality=. Defaults
+// to ORIGINAL (the historical single archive) so pre-variant callers are
+// unchanged; the guest-facing default variant is DISPLAY (Kompakt).
+type Quality = "DISPLAY" | "ORIGINAL";
+function parseQuality(c: { req: { query: (k: string) => string | undefined } }): Quality {
+  return c.req.query("quality") === "DISPLAY" ? "DISPLAY" : "ORIGINAL";
+}
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -183,10 +191,7 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
     return c.json({ error: "Too many requests. Please try again later." }, 429);
   }
 
-  const event = await prisma.event.findUnique({
-    where: { id },
-    include: { downloadJob: true },
-  });
+  const event = await prisma.event.findUnique({ where: { id } });
   if (!event) {
     return c.json({ error: "Event not found" }, 404);
   }
@@ -194,13 +199,17 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
 
-  const job = event.downloadJob;
+  const quality = parseQuality(c);
+  const job = await prisma.downloadJob.findUnique({
+    where: { eventId_quality: { eventId: id, quality } },
+  });
   const totalPhotos = await prisma.photo.count({
     where: { eventId: id, status: "PROCESSED" },
   });
 
   if (!job) {
     return c.json({
+      quality,
       status: "NONE",
       message: "No archive created yet.",
       processedPhotos: 0,
@@ -216,6 +225,7 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
   }
 
   return c.json({
+    quality: job.quality,
     status: job.status,
     message: statusMessage(job.status),
     photoCount: job.photoCount,
@@ -234,19 +244,21 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
 
-  const event = await prisma.event.findUnique({
-    where: { id },
-    include: { downloadJob: true },
-  });
+  const event = await prisma.event.findUnique({ where: { id } });
   if (!event) return c.json({ error: "Event not found" }, 404);
   if (event.createdById !== user.id) return c.json({ error: "Forbidden" }, 403);
 
+  const quality = parseQuality(c);
+
   return streamSSE(c, async (stream) => {
-    const job = event.downloadJob;
+    const job = await prisma.downloadJob.findUnique({
+      where: { eventId_quality: { eventId: id, quality } },
+    });
     const totalPhotos = await prisma.photo.count({ where: { eventId: id, status: "PROCESSED" } });
 
     const initial = job
       ? {
+          quality: job.quality,
           status: job.status,
           message: statusMessage(job.status),
           photoCount: job.photoCount,
@@ -259,11 +271,14 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
           failureReason: job.failureReason,
           updatedAt: job.updatedAt.toISOString(),
         }
-      : { status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, totalSizeBytes: null, partCount: 0, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
+      : { quality, status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, totalSizeBytes: null, partCount: 0, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
 
     await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 
+    // Both variants emit on the same per-event bus key; forward only this
+    // stream's variant so each admin panel gets an independent feed.
     const unsubscribe = onDownloadStatus(id, async (payload) => {
+      if (payload.quality !== quality) return;
       await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
     });
 
@@ -293,7 +308,7 @@ app.post("/:id/download/build-now", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await buildNow(id);
+  await buildNow(id, parseQuality(c));
   return c.json({ success: true });
 });
 
@@ -308,7 +323,7 @@ app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await rebuildAll(id);
+  await rebuildAll(id, parseQuality(c));
   return c.json({ success: true });
 });
 
@@ -322,7 +337,7 @@ app.post("/:id/download/cancel", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await cancelJob(id);
+  await cancelJob(id, parseQuality(c));
   return c.json({ success: true });
 });
 
@@ -509,6 +524,10 @@ app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
 // parts STALE and schedule a reconcile (debounced so bursts of deletions batch).
 async function staleArchivePartsForPhotos(eventId: string, photoIds: string[]): Promise<void> {
   if (photoIds.length === 0) return;
+  // Marks affected parts across BOTH variants' jobs STALE (the `job: { eventId }`
+  // filter spans DISPLAY and ORIGINAL), then reconciles each variant so only the
+  // affected parts are rebuilt — a guest who already downloaded an unaffected
+  // part isn't forced to re-fetch it.
   const affected = await prisma.downloadArchivePart.updateMany({
     where: {
       job: { eventId },
@@ -518,7 +537,7 @@ async function staleArchivePartsForPhotos(eventId: string, photoIds: string[]): 
     data: { status: "STALE" },
   });
   if (affected.count > 0) {
-    await triggerReconcile(eventId);
+    await triggerReconcileAllVariants(eventId);
   }
 }
 

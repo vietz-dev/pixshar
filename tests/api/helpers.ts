@@ -3,6 +3,8 @@
  * Tests run against the Docker Compose stack (localhost:3001).
  */
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 export const API = "http://localhost:3001";
 export const ADMIN_EMAIL = "admin@example.com";
@@ -131,4 +133,91 @@ export async function unlockGallery(slug: string, password: string): Promise<str
     .map((c) => c.split(";")[0])
     .join("; ");
   return galleryCookie;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Photo upload + processing (drives the real image-processor + download jobs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Minio, host-reachable (path-style). Presigned URLs sign the minio:9000
+// hostname only reachable inside the Docker network, so tests PUT directly.
+const testS3 = new S3Client({
+  endpoint: "http://localhost:9000",
+  region: "us-east-1",
+  credentials: { accessKeyId: "minioadmin", secretAccessKey: "minioadmin" },
+  forcePathStyle: true,
+});
+const S3_BUCKET = "pixshar";
+
+/** Valid 1×1 blue-pixel PNG — decodable by Bun.Image (so processing succeeds). */
+function bluePng(): Buffer {
+  return Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADklEQVQI12P4z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==",
+    "base64"
+  );
+}
+
+/**
+ * Polls GET /api/upload/events/:id/photos/status until all pending work drains.
+ * Throws on failure or timeout.
+ */
+export async function waitUntilProcessed(
+  cookie: string,
+  eventId: string,
+  timeoutMs = 90_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await authedFetch(`/api/upload/events/${eventId}/photos/status`, cookie);
+    const body = (await res.json()) as { pending: number; failed: number; total: number };
+    if (body.total > 0 && body.pending === 0) {
+      if (body.failed > 0) throw new Error(`${body.failed} photo(s) failed processing`);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for image processing`);
+}
+
+/**
+ * Uploads one admin photo to an event and waits until it is PROCESSED (so both
+ * its display and original S3 objects exist). Returns the created photo id.
+ * Each call uses distinct bytes so the fileHash is unique per event.
+ */
+let photoSeed = 0;
+export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): Promise<string> {
+  // Make the bytes unique so the dedup constraint (eventId, fileHash) never trips.
+  const base = bluePng();
+  const bytes = Buffer.concat([base, Buffer.from(`pixshar-${Date.now()}-${photoSeed++}`)]);
+  const fileHash = createHash("sha256").update(bytes).digest("hex");
+
+  const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, cookie, {
+    method: "POST",
+    body: JSON.stringify({
+      files: [{ fileName: "dl-variant.png", ext: "png", contentType: "image/png", size: bytes.length, fileHash }],
+    }),
+  });
+  if (!initRes.ok) throw new Error(`upload init failed ${initRes.status}: ${await initRes.text()}`);
+  const { photos } = (await initRes.json()) as { photos: Array<{ id: string }> };
+  const photoId = photos[0].id;
+
+  await testS3.send(
+    new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: `${event.id}/${photoId}/original.png`,
+      Body: bytes,
+      ContentType: "image/png",
+    })
+  );
+
+  const completeRes = await authedFetch(`/api/upload/events/${event.id}/photos/complete`, cookie, {
+    method: "POST",
+    body: JSON.stringify({ photoIds: [photoId] }),
+  });
+  if (completeRes.status !== 202) {
+    throw new Error(`upload complete failed ${completeRes.status}: ${await completeRes.text()}`);
+  }
+
+  await waitUntilProcessed(cookie, event.id);
+  return photoId;
 }

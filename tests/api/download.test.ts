@@ -20,8 +20,42 @@ import {
   createEvent,
   deleteEvent,
   unlockGallery,
+  uploadAndProcessPhoto,
   type TestEvent,
 } from "./helpers.js";
+
+// Shape of the both-variants guest download payload.
+interface VariantPayload {
+  status: string;
+  parts: Array<{ index: number; url: string | null; sizeBytes: number; membershipSig: string; rebuilding: boolean }>;
+  partCount: number;
+  totalSizeBytes: number;
+  photoCount: number;
+  building: boolean;
+}
+interface BothVariantsBody {
+  defaultQuality: string;
+  status: string; // back-compat: default variant spread at top level
+  variants: { DISPLAY: VariantPayload; ORIGINAL: VariantPayload };
+}
+
+async function pollAdminStatus(
+  cookie: string,
+  eventId: string,
+  quality: "DISPLAY" | "ORIGINAL",
+  until: (s: string) => boolean,
+  timeoutMs = 30_000
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let status = "";
+  while (Date.now() < deadline) {
+    const res = await authedFetch(`/api/events/${eventId}/download/status?quality=${quality}`, cookie);
+    status = ((await res.json()) as { status: string }).status;
+    if (until(status)) return status;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return status;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -235,19 +269,23 @@ describe("Gallery archive download", () => {
         });
         expect(res.status).toBe(200);
         const body = await res.json() as {
-          status: string;
-          parts?: { index: number; url: string; sizeBytes: number }[];
-          partCount?: number;
-          totalSizeBytes?: number;
-          photoCount?: number;
+          defaultQuality: string;
+          variants: Record<string, {
+            status: string;
+            parts?: { index: number; url: string; sizeBytes: number }[];
+            partCount?: number;
+          }>;
         };
 
-        expect(body.status).toBe("READY");
-        expect(Array.isArray(body.parts)).toBe(true);
-        expect(typeof body.partCount).toBe("number");
+        // We built the ORIGINAL variant (build-now defaults to ORIGINAL), so its
+        // variant payload is the READY one to assert against.
+        const original = body.variants.ORIGINAL;
+        expect(original.status).toBe("READY");
+        expect(Array.isArray(original.parts)).toBe(true);
+        expect(typeof original.partCount).toBe("number");
 
-        if (body.parts && body.parts.length > 0) {
-          const part = body.parts[0];
+        if (original.parts && original.parts.length > 0) {
+          const part = original.parts[0];
           expect(typeof part.index).toBe("number");
           expect(typeof part.url).toBe("string");
           expect(part.url).toMatch(/^https?:\/\//);
@@ -272,6 +310,158 @@ describe("Gallery archive download", () => {
       // partCount is 0 when no archive exists; any non-negative integer is valid
       expect(typeof body.partCount).toBe("number");
       expect(body.partCount).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Download variants — Kompakt (DISPLAY) + Original (ORIGINAL)  (#18/#20/#22)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Guest download payload — both variants", () => {
+    describe("Given a valid gallery session", () => {
+      it("Then GET /api/gallery/:slug/download returns both variants with DISPLAY as the default", async () => {
+        const res = await fetch(`${API}/api/gallery/${event.slug}/download`, {
+          headers: { Cookie: galleryCookie },
+        });
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as BothVariantsBody;
+
+        // Kompakt is the default variant.
+        expect(body.defaultQuality).toBe("DISPLAY");
+
+        // Both variants are present and well-formed.
+        expect(body.variants).toBeTruthy();
+        for (const q of ["DISPLAY", "ORIGINAL"] as const) {
+          const v = body.variants[q];
+          expect(v).toBeTruthy();
+          expect(typeof v.status).toBe("string");
+          expect(Array.isArray(v.parts)).toBe(true);
+          expect(typeof v.partCount).toBe("number");
+          expect(typeof v.totalSizeBytes).toBe("number");
+        }
+
+        // Back-compat: the default (DISPLAY) variant's status is spread at top level.
+        expect(body.status).toBe(body.variants.DISPLAY.status);
+      });
+
+      it("Then opening the download page lazily creates the DISPLAY (Kompakt) job", async () => {
+        // Fresh event, no ORIGINAL build triggered → DISPLAY job only exists once
+        // a guest opens the download page (ensureJob on first demand).
+        const lazyEvent = await createEvent(adminCookie, { password: "lazy-pass" });
+        const lazyCookie = await unlockGallery(lazyEvent.slug, "lazy-pass");
+        try {
+          // Before any guest request the admin DISPLAY status is NONE.
+          const before = await authedFetch(
+            `/api/events/${lazyEvent.id}/download/status?quality=DISPLAY`,
+            adminCookie
+          );
+          expect(((await before.json()) as { status: string }).status).toBe("NONE");
+
+          // Guest opens the download page → lazily materializes the DISPLAY job.
+          const gres = await fetch(`${API}/api/gallery/${lazyEvent.slug}/download`, {
+            headers: { Cookie: lazyCookie },
+          });
+          expect(gres.status).toBe(200);
+
+          const after = await pollAdminStatus(
+            adminCookie,
+            lazyEvent.id,
+            "DISPLAY",
+            (s) => s !== "NONE"
+          );
+          expect(after).not.toBe("NONE");
+        } finally {
+          await deleteEvent(adminCookie, lazyEvent.id);
+        }
+      });
+    });
+  });
+
+  describe("Upload trigger fan-out — both jobs created + Kompakt is fetchable", () => {
+    it("Then uploading a photo creates BOTH jobs, and the DISPLAY archive builds and is downloadable", async () => {
+      const fanEvent = await createEvent(adminCookie, { password: "fan-pass" });
+      const fanCookie = await unlockGallery(fanEvent.slug, "fan-pass");
+      try {
+        await uploadAndProcessPhoto(adminCookie, fanEvent);
+
+        // Fan-out proof: the processing trigger created BOTH variants' jobs, so
+        // neither admin status is NONE (they start DEBOUNCING right after upload).
+        const displayExists = await pollAdminStatus(adminCookie, fanEvent.id, "DISPLAY", (s) => s !== "NONE");
+        const originalExists = await pollAdminStatus(adminCookie, fanEvent.id, "ORIGINAL", (s) => s !== "NONE");
+        expect(displayExists).not.toBe("NONE");
+        expect(originalExists).not.toBe("NONE");
+
+        // Force both builds (skip the 60s debounce) so we can verify fetchability.
+        await authedFetch(`/api/events/${fanEvent.id}/download/build-now?quality=DISPLAY`, adminCookie, { method: "POST" });
+        await authedFetch(`/api/events/${fanEvent.id}/download/build-now?quality=ORIGINAL`, adminCookie, { method: "POST" });
+
+        const displayStatus = await pollAdminStatus(adminCookie, fanEvent.id, "DISPLAY", (s) => s === "READY" || s === "FAILED", 60_000);
+        const originalStatus = await pollAdminStatus(adminCookie, fanEvent.id, "ORIGINAL", (s) => s === "READY" || s === "FAILED", 60_000);
+        expect(displayStatus).toBe("READY");
+        expect(originalStatus).toBe("READY");
+
+        // The Kompakt (DISPLAY) archive is downloadable: a valid presigned part URL.
+        const res = await fetch(`${API}/api/gallery/${fanEvent.slug}/download`, { headers: { Cookie: fanCookie } });
+        const body = (await res.json()) as BothVariantsBody;
+        expect(body.variants.DISPLAY.status).toBe("READY");
+        expect(body.variants.DISPLAY.parts.length).toBeGreaterThan(0);
+        expect(body.variants.DISPLAY.parts[0].url).toMatch(/^https?:\/\//);
+        // Kompakt download filename carries the "-kompakt" segment.
+        expect(body.variants.DISPLAY.parts[0].url).toMatch(/kompakt/i);
+      } finally {
+        await deleteEvent(adminCookie, fanEvent.id);
+      }
+    }, 180_000);
+  });
+
+  describe("Admin per-variant controls — independence", () => {
+    it("Then build-now on DISPLAY does not create or touch the ORIGINAL job", async () => {
+      // Fresh event, no ORIGINAL trigger. A guest visit creates only the DISPLAY
+      // job; building DISPLAY must leave ORIGINAL untouched (still NONE).
+      const indyEvent = await createEvent(adminCookie, { password: "indy-pass" });
+      const indyCookie = await unlockGallery(indyEvent.slug, "indy-pass");
+      try {
+        // Lazily create the DISPLAY job.
+        await fetch(`${API}/api/gallery/${indyEvent.slug}/download`, {
+          headers: { Cookie: indyCookie },
+        });
+
+        // Force-build only the DISPLAY variant.
+        const buildRes = await authedFetch(
+          `/api/events/${indyEvent.id}/download/build-now?quality=DISPLAY`,
+          adminCookie,
+          { method: "POST" }
+        );
+        expect(buildRes.status).toBe(200);
+
+        // ORIGINAL was never triggered → still NONE (independence).
+        const originalRes = await authedFetch(
+          `/api/events/${indyEvent.id}/download/status?quality=ORIGINAL`,
+          adminCookie
+        );
+        expect(((await originalRes.json()) as { status: string }).status).toBe("NONE");
+
+        // DISPLAY progressed off NONE.
+        const displayStatus = await pollAdminStatus(
+          adminCookie,
+          indyEvent.id,
+          "DISPLAY",
+          (s) => s !== "NONE" && s !== "DEBOUNCING"
+        );
+        expect(["QUEUED", "BUILDING", "READY"]).toContain(displayStatus);
+      } finally {
+        await deleteEvent(adminCookie, indyEvent.id);
+      }
+    }, 60_000);
+
+    it("Then admin status reports the variant it was asked for", async () => {
+      const res = await authedFetch(
+        `/api/events/${event.id}/download/status?quality=DISPLAY`,
+        adminCookie
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { quality: string };
+      expect(body.quality).toBe("DISPLAY");
     });
   });
 });

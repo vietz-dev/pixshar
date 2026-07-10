@@ -13,13 +13,28 @@ interface ArchivePart {
   rebuilding?: boolean;
 }
 
+interface VariantPayload {
+  status: string;
+  parts: ArchivePart[];
+  partCount: number;
+  totalSizeBytes: number;
+  photoCount: number;
+  building: boolean;
+  message?: string;
+}
+
+type Quality = "DISPLAY" | "ORIGINAL";
+
 interface DownloadPayload {
+  defaultQuality: "DISPLAY";
+  // back-compat: DISPLAY variant fields spread at top level
   status: string;
   parts?: ArchivePart[];
   partCount?: number;
   totalSizeBytes?: number;
   photoCount?: number;
   building?: boolean;
+  variants: { DISPLAY: VariantPayload; ORIGINAL: VariantPayload };
 }
 
 function formatBytes(n: number): string {
@@ -29,11 +44,12 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-// Keyed on the part's membership signature so a part that was rebuilt with a
-// different photo set (e.g. after a deletion) correctly resets to "not
-// downloaded", while a pure byte-rebuild keeps the guest's green tick.
-function localStorageKey(slug: string, partIndex: number, sig: string): string {
-  return `pixshar_dl_${slug}_part_${partIndex}_${sig}`;
+// Keyed on quality + the part's membership signature so:
+//  - DISPLAY part-1 and ORIGINAL part-1 never collide, and
+//  - a part rebuilt with a different photo set (e.g. after a deletion) correctly
+//    resets to "not downloaded", while a pure byte-rebuild keeps the green tick.
+function localStorageKey(slug: string, quality: Quality, partIndex: number, sig: string): string {
+  return `pixshar_dl_${slug}_${quality}_part_${partIndex}_${sig}`;
 }
 
 function CheckIcon({ done }: { done: boolean }) {
@@ -69,21 +85,31 @@ export default function GalleryDownloadPage() {
 
   const [payload, setPayload] = useState<DownloadPayload | null>(null);
   const [error, setError] = useState("");
-  const [downloaded, setDownloaded] = useState<Record<number, boolean>>({});
+  // Which variant tab is active. Always lands on DISPLAY (Kompakt); only an
+  // explicit user click ever changes this — SSE re-applies never touch it.
+  const [quality, setQuality] = useState<Quality>("DISPLAY");
+  // Per-variant per-part downloaded ticks: downloaded[quality][partIndex].
+  const [downloaded, setDownloaded] = useState<Record<Quality, Record<number, boolean>>>({
+    DISPLAY: {},
+    ORIGINAL: {},
+  });
   const initialLoaded = useRef(false);
 
-  // Load per-part download state from localStorage (persists across tab close)
+  // Load per-part download state from localStorage for both variants.
   const loadDownloadedState = useCallback(
-    (parts: ArchivePart[]) => {
-      const state: Record<number, boolean> = {};
-      for (const p of parts) {
-        try {
-          state[p.index] = localStorage.getItem(localStorageKey(slug, p.index, p.membershipSig ?? "")) === "1";
-        } catch {
-          state[p.index] = false;
+    (data: DownloadPayload) => {
+      const next: Record<Quality, Record<number, boolean>> = { DISPLAY: {}, ORIGINAL: {} };
+      for (const q of ["DISPLAY", "ORIGINAL"] as Quality[]) {
+        for (const p of data.variants[q]?.parts ?? []) {
+          try {
+            next[q][p.index] =
+              localStorage.getItem(localStorageKey(slug, q, p.index, p.membershipSig ?? "")) === "1";
+          } catch {
+            next[q][p.index] = false;
+          }
         }
       }
-      setDownloaded(state);
+      setDownloaded(next);
     },
     [slug]
   );
@@ -91,7 +117,7 @@ export default function GalleryDownloadPage() {
   const apply = useCallback(
     (data: DownloadPayload) => {
       setPayload(data);
-      if (data.parts) loadDownloadedState(data.parts);
+      loadDownloadedState(data);
     },
     [loadDownloadedState]
   );
@@ -113,6 +139,8 @@ export default function GalleryDownloadPage() {
   }, [slug, router, t, apply]);
 
   // Live updates: new parts appear + rebuilt parts flip status without a reload.
+  // The stream emits the full both-variants payload; we re-apply it and the
+  // selected tab is preserved because `quality` is independent state.
   useEffect(() => {
     const es = new EventSource(`/api/gallery/${slug}/download/stream`, { withCredentials: true });
     es.addEventListener("download-status", (e) => {
@@ -126,13 +154,13 @@ export default function GalleryDownloadPage() {
     return () => es.close();
   }, [slug, apply]);
 
-  const markDownloaded = (partIndex: number, sig: string) => {
+  const markDownloaded = (q: Quality, partIndex: number, sig: string) => {
     try {
-      localStorage.setItem(localStorageKey(slug, partIndex, sig), "1");
+      localStorage.setItem(localStorageKey(slug, q, partIndex, sig), "1");
     } catch {
       // localStorage blocked (private mode etc.) — ignore, tick just won't persist
     }
-    setDownloaded((prev) => ({ ...prev, [partIndex]: true }));
+    setDownloaded((prev) => ({ ...prev, [q]: { ...prev[q], [partIndex]: true } }));
   };
 
   // ---- Render states -------------------------------------------------------
@@ -156,22 +184,12 @@ export default function GalleryDownloadPage() {
     );
   }
 
-  const parts = payload.parts ?? [];
-  if (parts.length === 0) {
-    const msg = payload.status === "BUILDING" || payload.status === "QUEUED" || payload.status === "DEBOUNCING"
-      ? t("building")
-      : t("noArchive");
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "var(--bg, #fafaf9)" }}>
-        <p style={{ color: "var(--text-muted, #71717a)", marginBottom: 16 }}>{msg}</p>
-        <button onClick={() => router.push(`/gallery/${slug}/view`)} style={backBtnStyle}>
-          {t("backToGallery")}
-        </button>
-      </div>
-    );
-  }
+  const displayVariant = payload.variants.DISPLAY;
+  const originalVariant = payload.variants.ORIGINAL;
+  const active = payload.variants[quality];
 
-  const total = payload.totalSizeBytes ?? parts.reduce((s, p) => s + p.sizeBytes, 0);
+  const parts = active.parts ?? [];
+  const total = active.totalSizeBytes ?? parts.reduce((s, p) => s + p.sizeBytes, 0);
   const n = parts.length;
 
   return (
@@ -189,24 +207,60 @@ export default function GalleryDownloadPage() {
         </button>
 
         {/* Header */}
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text, #18181b)", margin: "0 0 6px" }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text, #18181b)", margin: "0 0 16px" }}>
           {t("title")}
         </h1>
+
+        {/* Variant toggle */}
+        <div
+          role="tablist"
+          style={{
+            display: "flex",
+            gap: 6,
+            padding: 4,
+            borderRadius: 12,
+            background: "var(--surface, #fff)",
+            border: "1px solid var(--border, #e4e4e7)",
+            marginBottom: 18,
+          }}
+        >
+          <VariantTab
+            testId="variant-toggle-kompakt"
+            active={quality === "DISPLAY"}
+            onClick={() => setQuality("DISPLAY")}
+            label={t("tabKompakt")}
+            hint={t("tabKompaktHint")}
+            building={displayVariant.building}
+          />
+          <VariantTab
+            testId="variant-toggle-original"
+            active={quality === "ORIGINAL"}
+            onClick={() => setQuality("ORIGINAL")}
+            label={t("tabOriginal")}
+            hint={t("tabOriginalHint")}
+            building={originalVariant.building}
+          />
+        </div>
+
+        {/* Active-variant summary */}
         <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 8px" }}>
-          {n === 1
-            ? t("subtitleSingle", { size: formatBytes(total) })
-            : t("subtitle", { count: n, size: formatBytes(total) })}
+          {active.partCount === 1
+            ? t("variantSummarySingle", { size: formatBytes(active.totalSizeBytes) })
+            : t("variantSummary", { count: active.partCount, size: formatBytes(active.totalSizeBytes) })}
         </p>
         {n > 1 && (
           <p style={{ fontSize: 13, color: "var(--text-muted, #71717a)", margin: "0 0 20px", lineHeight: 1.5 }}>
             {t("instruction")}
           </p>
         )}
-        {n === 1 && <div style={{ marginBottom: 20 }} />}
+        {n <= 1 && <div style={{ marginBottom: 20 }} />}
 
-        {/* "More parts coming" banner */}
-        {payload.building && (
-          <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 12px", marginBottom: 20 }}>
+        {/* Build-in-progress banner for the ACTIVE variant */}
+        {active.building && (
+          <div
+            data-testid="building-banner"
+            style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 12px", marginBottom: 20 }}
+          >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0 }}>
               <path d="M21 12a9 9 0 1 1-6.2-8.5" />
             </svg>
@@ -214,66 +268,138 @@ export default function GalleryDownloadPage() {
           </div>
         )}
 
-        {/* Part list */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {parts.map((part) => {
-            const done = !!downloaded[part.index];
-            const sig = part.membershipSig ?? "";
-            return (
-              <a
-                key={part.index}
-                href={part.url ?? undefined}
-                download={part.url ? true : undefined}
-                onClick={() => part.url && markDownloaded(part.index, sig)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: "16px 18px",
-                  borderRadius: 12,
-                  border: `1px solid ${done ? "#bbf7d0" : "var(--border, #e4e4e7)"}`,
-                  background: done ? "#f0fdf4" : "var(--surface, #fff)",
-                  textDecoration: "none",
-                  transition: "background .15s, border-color .15s",
-                  cursor: part.url ? "pointer" : "default",
-                }}
-                onMouseEnter={(e) => {
-                  if (!done && part.url) e.currentTarget.style.background = "#f9f9f8";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = done ? "#f0fdf4" : "var(--surface, #fff)";
-                }}
-              >
-                <CheckIcon done={done} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text, #18181b)", marginBottom: 2 }}>
-                    {n === 1 ? t("title") : t("partLabel", { index: part.index, total: n })}
+        {/* Empty state for the active variant (no parts yet) */}
+        {n === 0 && (
+          <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 20px" }}>
+            {active.building ||
+            active.status === "BUILDING" ||
+            active.status === "QUEUED" ||
+            active.status === "DEBOUNCING"
+              ? t("variantBuildingEmpty")
+              : t("variantNoArchive")}
+          </p>
+        )}
+
+        {/* Part list (active variant only — galleries can have 20+ parts) */}
+        {n > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {parts.map((part) => {
+              const done = !!downloaded[quality]?.[part.index];
+              const sig = part.membershipSig ?? "";
+              return (
+                <a
+                  key={part.index}
+                  href={part.url ?? undefined}
+                  download={part.url ? true : undefined}
+                  onClick={() => part.url && markDownloaded(quality, part.index, sig)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    padding: "16px 18px",
+                    borderRadius: 12,
+                    border: `1px solid ${done ? "#bbf7d0" : "var(--border, #e4e4e7)"}`,
+                    background: done ? "#f0fdf4" : "var(--surface, #fff)",
+                    textDecoration: "none",
+                    transition: "background .15s, border-color .15s",
+                    cursor: part.url ? "pointer" : "default",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!done && part.url) e.currentTarget.style.background = "#f9f9f8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = done ? "#f0fdf4" : "var(--surface, #fff)";
+                  }}
+                >
+                  <CheckIcon done={done} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text, #18181b)", marginBottom: 2 }}>
+                      {n === 1 ? t("title") : t("partLabel", { index: part.index, total: n })}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--text-muted, #71717a)" }}>
+                      {t("partSize", { size: formatBytes(part.sizeBytes) })}
+                      {done && (
+                        <span style={{ marginLeft: 8, color: "#16a34a", fontWeight: 500 }}>
+                          · {t("downloaded")}
+                        </span>
+                      )}
+                      {part.rebuilding && (
+                        <span style={{ marginLeft: 8, color: "#d97706", fontWeight: 500 }}>
+                          · {t("rebuilding")}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12.5, color: "var(--text-muted, #71717a)" }}>
-                    {t("partSize", { size: formatBytes(part.sizeBytes) })}
-                    {done && (
-                      <span style={{ marginLeft: 8, color: "#16a34a", fontWeight: 500 }}>
-                        · {t("downloaded")}
-                      </span>
-                    )}
-                    {part.rebuilding && (
-                      <span style={{ marginLeft: 8, color: "#d97706", fontWeight: 500 }}>
-                        · {t("rebuilding")}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #a1a1aa)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              </a>
-            );
-          })}
-        </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #a1a1aa)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </a>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function VariantTab({
+  testId,
+  active,
+  onClick,
+  label,
+  hint,
+  building,
+}: {
+  testId: string;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  hint: string;
+  building: boolean;
+}) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      data-testid={testId}
+      onClick={onClick}
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 2,
+        padding: "8px 10px",
+        borderRadius: 9,
+        border: "none",
+        cursor: "pointer",
+        background: active ? "var(--accent, #18181b)" : "transparent",
+        color: active ? "#fff" : "var(--text, #18181b)",
+        transition: "background .15s, color .15s",
+      }}
+    >
+      <span style={{ fontSize: 13.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        {label}
+        {building && (
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0, opacity: 0.85 }}
+          >
+            <path d="M21 12a9 9 0 1 1-6.2-8.5" />
+          </svg>
+        )}
+      </span>
+      <span style={{ fontSize: 11, opacity: active ? 0.8 : 0.6 }}>{hint}</span>
+    </button>
   );
 }
 

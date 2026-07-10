@@ -177,7 +177,15 @@
       "building": "Archive is being prepared, please check back soon.",
       "noArchive": "No archive available yet.",
       "rebuilding": "Updating — a newer version is being prepared",
-      "buildingBanner": "More photos are still being packaged. New parts will appear here in a few minutes."
+      "buildingBanner": "More photos are still being packaged. New parts will appear here in a few minutes.",
+      "tabKompakt": "Compact",
+      "tabOriginal": "Original",
+      "tabKompaktHint": "Smaller, faster download",
+      "tabOriginalHint": "Full resolution",
+      "variantSummary": "{count, plural, one {1 part} other {# parts}} · {size}",
+      "variantSummarySingle": "{size}",
+      "variantBuildingEmpty": "This download is being prepared, please check back soon.",
+      "variantNoArchive": "No download available for this option yet."
     }
   },
   "upload": {
@@ -252,7 +260,12 @@
       "statusBuilding": "Building",
       "statusReady": "Ready",
       "statusFailed": "Failed",
-      "statusCancelled": "Cancelled"
+      "statusCancelled": "Cancelled",
+      "heading": "Download archives",
+      "variantKompakt": "Compact",
+      "variantOriginal": "Original",
+      "variantKompaktHint": "Compressed images — small & fast",
+      "variantOriginalHint": "Full-resolution originals"
     }
   },
   "lightbox": {

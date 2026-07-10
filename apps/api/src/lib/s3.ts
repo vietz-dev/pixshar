@@ -130,6 +130,28 @@ export const s3Keys = {
   archivePrefix: (eventId: string) => `${eventId}/archive/`,
   // The generation suffix lets a rebuilt part (same partIndex) be written under a
   // fresh key so the previous object stays downloadable until the new one lands.
-  zipPart: (eventId: string, partIndex: number, generation: number) =>
-    `${eventId}/archive/gallery-part-${partIndex}-g${generation}.zip`,
+  // The quality segment (DISPLAY / ORIGINAL) keeps the two variants' objects
+  // apart under the shared archive prefix.
+  zipPart: (
+    eventId: string,
+    quality: "DISPLAY" | "ORIGINAL",
+    partIndex: number,
+    generation: number
+  ) => `${eventId}/archive/${quality}-part-${partIndex}-g${generation}.zip`,
+  // Decide which variant owns a listed archive object, so a quality-scoped orphan
+  // sweep never deletes the *other* variant's parts. Legacy objects written
+  // before the quality dimension used the `gallery-part-` prefix and are ORIGINAL
+  // (the old builder zipped originals).
+  archiveKeyQuality: (
+    eventId: string,
+    key: string
+  ): "DISPLAY" | "ORIGINAL" | null => {
+    const prefix = `${eventId}/archive/`;
+    if (!key.startsWith(prefix)) return null;
+    const rest = key.slice(prefix.length);
+    if (rest.startsWith("DISPLAY-part-")) return "DISPLAY";
+    if (rest.startsWith("ORIGINAL-part-")) return "ORIGINAL";
+    if (rest.startsWith("gallery-part-")) return "ORIGINAL"; // legacy
+    return null;
+  },
 };

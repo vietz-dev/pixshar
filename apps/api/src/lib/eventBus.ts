@@ -15,6 +15,9 @@ export interface PhotoStatusPayload {
 }
 
 export interface DownloadStatusPayload {
+  // Which archive variant this status describes. Admin streams filter on it to
+  // route each variant to its own panel.
+  quality: "DISPLAY" | "ORIGINAL";
   status: string;
   message: string;
   photoCount: number;

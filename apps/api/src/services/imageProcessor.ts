@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
 import { sha256Hex } from "../lib/hash.js";
 import { isValidImageBytes, MAX_FILE_SIZE } from "../lib/validate.js";
-import { triggerDebounce } from "./downloadJob.js";
+import { triggerDebounceAllVariants } from "./downloadJob.js";
 import { emitPhotoStatus, emitPhotoProcessed } from "../lib/eventBus.js";
 
 export async function pushPhotoStatus(eventId: string): Promise<void> {
@@ -163,8 +163,9 @@ export const processImageEffect = (input: ProcessImageInput) =>
       }
     });
 
-    // Trigger download archive debounce (non-blocking, failures ignored)
-    yield* Effect.promise(() => triggerDebounce(eventId).catch(() => {}));
+    // Trigger download archive debounce for BOTH variants (Kompakt + Original)
+    // so a late upload eventually appears in each archive (non-blocking).
+    yield* Effect.promise(() => triggerDebounceAllVariants(eventId).catch(() => {}));
 
     return { originalKey, displayKey, thumbKey };
   });

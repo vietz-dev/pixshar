@@ -177,7 +177,15 @@
       "building": "Archiv wird vorbereitet, bitte später nochmal prüfen.",
       "noArchive": "Noch kein Archiv verfügbar.",
       "rebuilding": "Wird aktualisiert — eine neuere Version wird gerade erstellt",
-      "buildingBanner": "Weitere Fotos werden noch verpackt. Neue Teile erscheinen hier in ein paar Minuten."
+      "buildingBanner": "Weitere Fotos werden noch verpackt. Neue Teile erscheinen hier in ein paar Minuten.",
+      "tabKompakt": "Kompakt",
+      "tabOriginal": "Original",
+      "tabKompaktHint": "Kleinerer, schnellerer Download",
+      "tabOriginalHint": "Volle Auflösung",
+      "variantSummary": "{count, plural, one {1 Teil} other {# Teile}} · {size}",
+      "variantSummarySingle": "{size}",
+      "variantBuildingEmpty": "Dieser Download wird vorbereitet, bitte später nochmal prüfen.",
+      "variantNoArchive": "Für diese Option ist noch kein Download verfügbar."
     }
   },
   "upload": {
@@ -252,7 +260,12 @@
       "statusBuilding": "Wird erstellt",
       "statusReady": "Bereit",
       "statusFailed": "Fehlgeschlagen",
-      "statusCancelled": "Abgebrochen"
+      "statusCancelled": "Abgebrochen",
+      "heading": "Download-Archive",
+      "variantKompakt": "Kompakt",
+      "variantOriginal": "Original",
+      "variantKompaktHint": "Komprimierte Bilder — klein & schnell",
+      "variantOriginalHint": "Originale in voller Auflösung"
     }
   },
   "lightbox": {

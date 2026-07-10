@@ -88,8 +88,10 @@ test.describe("Gallery flow", () => {
         await expect(page).toHaveURL(/\/view/, { timeout: 12_000 });
 
         await expect(page.getByText("Gallery Flow Event")).toBeVisible();
-        // Upload button should be visible
-        await expect(page.getByRole("button", { name: /upload/i })).toBeVisible();
+        // Upload button should be visible. Use the specific name — the download
+        // button on this page can read "Waiting for uploads to settle…", which
+        // a loose /upload/i would also match.
+        await expect(page.getByRole("button", { name: /upload your photos/i })).toBeVisible();
       });
     });
 
@@ -101,7 +103,7 @@ test.describe("Gallery flow", () => {
         await page.getByRole("button", { name: /unlock/i }).click();
         await expect(page).toHaveURL(/\/view/, { timeout: 12_000 });
 
-        await page.getByRole("button", { name: /upload/i }).click();
+        await page.getByRole("button", { name: /upload your photos/i }).click();
 
         // Modal should contain a name/photographer field and file input
         await expect(

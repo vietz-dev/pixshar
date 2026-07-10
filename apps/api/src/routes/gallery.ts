@@ -18,7 +18,7 @@ import {
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
-import { buildDownloadPayload } from "../services/downloadJob.js";
+import { buildBothVariantsPayload } from "../services/downloadJob.js";
 import {
   galleryUnlocksTotal,
   photoDownloadsTotal,
@@ -170,9 +170,10 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
     return c.json({ error: "Gallery not found" }, 404);
   }
 
-  // Part-aware payload: serves whatever parts are already built (partial
-  // availability) even while newer photos are appended or a part is rebuilt.
-  const payload = await buildDownloadPayload(event.id, event.slug);
+  // Both-variants payload: Kompakt (default) + Original in one round trip, each
+  // serving whatever parts are already built (partial availability). Lazily
+  // creates the Kompakt job for events that predate the variant.
+  const payload = await buildBothVariantsPayload(event.id, event.slug);
   if (payload.status === "READY") archiveDownloadsTotal.inc();
 
   return c.json(payload);
@@ -182,14 +183,16 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
   const event = c.get("galleryEvent");
 
   return streamSSE(c, async (stream) => {
-    // Always emit the full part-aware payload (fresh presigned URLs) so the
-    // guest page can render already-built parts + a "still building" banner.
-    const initial = await buildDownloadPayload(event.id, event.slug);
+    // Always emit the full both-variants payload (fresh presigned URLs) so the
+    // guest page can render already-built parts of each variant + a
+    // per-variant "still building" banner. Any variant's status change
+    // re-emits the whole payload so both tabs stay live.
+    const initial = await buildBothVariantsPayload(event.id, event.slug);
     if (initial.status === "READY") archiveDownloadsTotal.inc();
     await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 
     const unsubscribe = onDownloadStatus(event.id, async () => {
-      const payload = await buildDownloadPayload(event.id, event.slug);
+      const payload = await buildBothVariantsPayload(event.id, event.slug);
       if (payload.status === "READY") archiveDownloadsTotal.inc();
       await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
     });

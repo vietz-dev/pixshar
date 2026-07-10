@@ -80,7 +80,10 @@ model Event {
   updatedAt           DateTime @updatedAt
   createdBy           User     @relation(fields: [createdById], references: [id])
   photos              Photo[]
-  downloadJob         DownloadJob?
+  // Up to two independent archive builds per event — one per ArchiveQuality
+  // variant (DISPLAY / ORIGINAL). Was a single DownloadJob? before the
+  // quality dimension was added.
+  downloadJobs        DownloadJob[]
 
   @@map("event")
 }
@@ -119,9 +122,23 @@ enum DownloadJobStatus {
   CANCELLED
 }
 
+// Which source objects a download archive zips.
+//   DISPLAY  (Kompakt) — the 1920px / q85 display JPEGs (photo.displayKey)
+//   ORIGINAL          — the full-resolution uploads (photo.originalKey)
+// Default ORIGINAL: pre-existing jobs zipped originals, so migrating them to
+// ORIGINAL is a no-op data-wise.
+enum ArchiveQuality {
+  DISPLAY
+  ORIGINAL
+}
+
 model DownloadJob {
   id              String            @id @default(cuid())
-  eventId         String            @unique
+  eventId         String
+  // The archive variant this job builds. The job (not the part) carries the
+  // variant because the job is the unit a worker atomically claims — two
+  // variants ⇒ two independently claimable jobs per event.
+  quality         ArchiveQuality    @default(ORIGINAL)
   status          DownloadJobStatus @default(DEBOUNCING)
   photoCount      Int               @default(0)
   processedPhotos Int               @default(0)
@@ -141,6 +158,7 @@ model DownloadJob {
   event Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
   parts DownloadArchivePart[]
 
+  @@unique([eventId, quality])
   @@map("download_job")
 }
 

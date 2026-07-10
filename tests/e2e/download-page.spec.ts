@@ -78,11 +78,16 @@ test.describe("Gallery download page", () => {
         // Should NOT be redirected away — session cookie is valid
         await expect(page).toHaveURL(/\/download/, { timeout: 8_000 });
 
-        // Either "no archive" message or "building" message (depends on timing)
+        // Either a "no archive / being prepared" message or the (empty) part
+        // list — the page now always renders the variant toggle. Assert the
+        // toggle is present and a status/summary line is visible.
+        await expect(page.getByTestId("variant-toggle-kompakt")).toBeVisible({
+          timeout: 8_000,
+        });
         const msg = page.getByText(
-          /no archive|archive|preparing|building|queued/i
+          /no archive|archive|prepared|preparing|building|queued|part/i
         );
-        await expect(msg).toBeVisible({ timeout: 8_000 });
+        await expect(msg.first()).toBeVisible({ timeout: 8_000 });
 
         // Back link present
         await expect(page.getByRole("button", { name: /back to gallery/i })).toBeVisible();
@@ -95,7 +100,7 @@ test.describe("Gallery download page", () => {
   test.describe("Given a READY archive (0 photos, forced build)", () => {
     test("Then the download page shows part rows and checkboxes", async ({ page }) => {
       // Force-build via admin API (0 photos → should complete fast)
-      const buildRes = await fetch(`${API}/api/events/${eventId}/download/build`, {
+      const buildRes = await fetch(`${API}/api/events/${eventId}/download/build-now`, {
         method: "POST",
         headers: { Cookie: adminCookie },
       });
@@ -142,7 +147,7 @@ test.describe("Gallery download page", () => {
   test.describe("Given a READY archive with at least one part", () => {
     test("When a part link is clicked, Then the checkbox turns green and persists on reload", async ({ page }) => {
       // Force-build to ensure READY
-      await fetch(`${API}/api/events/${eventId}/download/build`, {
+      await fetch(`${API}/api/events/${eventId}/download/build-now`, {
         method: "POST",
         headers: { Cookie: adminCookie },
       });
@@ -214,17 +219,99 @@ test.describe("Gallery download page", () => {
       // Green check circle should now be visible
       await expect(checkCircle).toBeVisible({ timeout: 4_000 });
 
-      // Verify localStorage was set
-      const lsValue = await page.evaluate(
-        (slug) => localStorage.getItem(`pixshar_dl_${slug}_part_1`),
-        eventSlug
-      );
+      // Verify localStorage was set. The key now includes a quality segment
+      // (DISPLAY = Kompakt, the default tab) and a membership-signature suffix,
+      // so match by prefix rather than an exact key.
+      const lsValue = await page.evaluate((slug) => {
+        const prefix = `pixshar_dl_${slug}_DISPLAY_part_1_`;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(prefix)) return localStorage.getItem(k);
+        }
+        return null;
+      }, eventSlug);
       expect(lsValue).toBe("1");
 
       // Reload — checkbox should still be green (persisted)
       await page.reload();
       await expect(page).toHaveURL(/\/download/, { timeout: 8_000 });
       await expect(checkCircle).toBeVisible({ timeout: 6_000 });
+    });
+  });
+
+  // ── Variant toggle (Kompakt / Original) ───────────────────────────────────
+
+  test.describe("Given a guest on the download page", () => {
+    // Shared setup: unlock the gallery in the browser and land on /download.
+    async function openDownloadPage(page: import("@playwright/test").Page) {
+      await page.context().clearCookies();
+      await page.goto(`${WEB}/gallery/${eventSlug}`);
+      await page.locator("input[type='password']").fill("dl-e2e-pass");
+      await page.getByRole("button", { name: /unlock/i }).click();
+      await expect(page).toHaveURL(/\/view/, { timeout: 12_000 });
+
+      await page.goto(`${WEB}/gallery/${eventSlug}/download`);
+      await expect(page).toHaveURL(/\/download/, { timeout: 8_000 });
+    }
+
+    test.describe("When the page loads", () => {
+      test("Then it defaults to the Kompakt tab (Kompakt is selected, Original is not)", async ({ page }) => {
+        await openDownloadPage(page);
+
+        const kompakt = page.getByTestId("variant-toggle-kompakt");
+        const original = page.getByTestId("variant-toggle-original");
+
+        await expect(kompakt).toBeVisible({ timeout: 8_000 });
+        await expect(original).toBeVisible();
+
+        // Kompakt is the active tab on load; Original is never auto-selected.
+        await expect(kompakt).toHaveAttribute("aria-selected", "true");
+        await expect(original).toHaveAttribute("aria-selected", "false");
+      });
+    });
+
+    test.describe("When the guest explicitly clicks the Original tab", () => {
+      test("Then Original becomes selected and its content is shown", async ({ page }) => {
+        await openDownloadPage(page);
+
+        const kompakt = page.getByTestId("variant-toggle-kompakt");
+        const original = page.getByTestId("variant-toggle-original");
+        await expect(kompakt).toHaveAttribute("aria-selected", "true", {
+          timeout: 8_000,
+        });
+
+        // Switching to Original must be an explicit user action.
+        await original.click();
+        await expect(original).toHaveAttribute("aria-selected", "true");
+        await expect(kompakt).toHaveAttribute("aria-selected", "false");
+
+        // The variant's own content is shown: either a summary line or parts.
+        const content = page.getByText(
+          /no download|prepared|part|total|byte|KB|MB|GB/i
+        );
+        await expect(content.first()).toBeVisible({ timeout: 8_000 });
+      });
+    });
+
+    test.describe("When a variant is mid-build", () => {
+      // Keep this robust to timing: we assert the toggle renders and Kompakt is
+      // the default, and (if present) that the building banner sits on the
+      // active tab. We do NOT depend on catching a specific transient state.
+      test("Then the toggle renders with Kompakt default, and any building banner appears on the active tab", async ({ page }) => {
+        await openDownloadPage(page);
+
+        const kompakt = page.getByTestId("variant-toggle-kompakt");
+        await expect(kompakt).toBeVisible({ timeout: 8_000 });
+        await expect(kompakt).toHaveAttribute("aria-selected", "true");
+
+        // If a build is in progress on the active tab, the building banner is
+        // rendered (non-blocking). Its presence is timing-dependent, so only
+        // assert it when it actually shows.
+        const banner = page.getByTestId("building-banner");
+        if (await banner.count()) {
+          await expect(banner.first()).toBeVisible();
+        }
+      });
     });
   });
 });
