@@ -20,6 +20,16 @@ const schema = z.object({
   // must be the externally reachable host (e.g. http://localhost:3900).
   // Defaults to S3_ENDPOINT when the API and browser share a host.
   S3_PUBLIC_ENDPOINT: z.string().url().optional(),
+  // Whether presigned URLs use path-style (host/bucket/key) instead of
+  // virtual-hosted style (bucket.host/key). MinIO (the bundled self-host store)
+  // needs path-style; most hosted providers (Tigris, R2) need virtual-hosted to
+  // avoid a 307 redirect that re-uploads the whole body. Defaults to false
+  // (virtual-hosted) to preserve hosted deployments; the bundled Docker/Helm
+  // MinIO setup sets this to "true".
+  S3_FORCE_PATH_STYLE: z
+    .string()
+    .transform((v) => v === "true")
+    .default("false"),
   API_PORT: z.string().transform(Number).default("3001"),
   API_URL: z.string().url(),
   WEB_URL: z.string().url(),

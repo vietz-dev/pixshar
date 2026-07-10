@@ -72,6 +72,9 @@ services:
       - S3_BUCKET=pixshar
       - S3_REGION=us-east-1
       - S3_PUBLIC_URL=http://localhost:9000/pixshar
+      # MinIO has no per-bucket virtual host → presign path-style, else the
+      # browser gets bucket.localhost URLs MinIO can't route (404 on upload).
+      - S3_FORCE_PATH_STYLE=true
       - API_PORT=3001
       - API_URL=http://localhost:3001
       - WEB_URL=http://localhost:3000
@@ -107,6 +110,9 @@ services:
       - S3_BUCKET=pixshar
       - S3_REGION=us-east-1
       - S3_PUBLIC_URL=http://localhost:9000/pixshar
+      # MinIO has no per-bucket virtual host → presign path-style, else the
+      # browser gets bucket.localhost URLs MinIO can't route (404 on upload).
+      - S3_FORCE_PATH_STYLE=true
       - API_PORT=4000
       - API_URL=http://localhost:3001
       - WEB_URL=http://localhost:3000
