@@ -3,7 +3,7 @@ type: API
 title: Gallery API (Guest)
 description: The guest-facing HTTP surface — unlock, browse, upload, and download.
 tags: [api, gallery, guest]
-timestamp: 2026-07-03T00:00:00Z
+timestamp: 2026-07-11T00:00:00Z
 ---
 
 # Authentication
@@ -55,26 +55,22 @@ Confirms the S3 upload completed. Enqueues the `photo-resize` job. Triggers arch
 ## GET /api/gallery/:slug/download
 
 **Auth:** Gallery cookie  
-**Response:** Download payload (varies by status)
+**Response:** Both-variants download payload
 
-When `status = "READY"`:
+Returns **both** download variants in a single response — Kompakt (`DISPLAY`) and Original (`ORIGINAL`) — so the toggle can label both tabs from one round trip. Opening the page lazily creates the Kompakt job for events that predate the variant. See [Download-Varianten](/decisions/download-variants.md).
+
 ```json
 {
-  "status": "READY",
-  "photoCount": 42,
-  "partCount": 3,
-  "totalSizeBytes": 5368709120,
-  "parts": [
-    { "index": 1, "url": "https://...", "sizeBytes": 2147483648 },
-    { "index": 2, "url": "https://...", "sizeBytes": 2147483648 },
-    { "index": 3, "url": "https://...", "sizeBytes": 1073741824 }
-  ]
+  "defaultQuality": "DISPLAY",
+  "variants": {
+    "DISPLAY":  { "status": "READY", "photoCount": 42, "partCount": 3, "totalSizeBytes": 734003200, "building": false, "parts": [ { "index": 1, "url": "https://...", "sizeBytes": 268435456, "membershipSig": "…", "rebuilding": false } ] },
+    "ORIGINAL": { "status": "BUILDING", "photoCount": 42, "partCount": 0, "totalSizeBytes": 0, "building": true, "parts": [] }
+  },
+  "status": "READY", "parts": [ … ]
 }
 ```
 
-For non-READY states: `{ "status": "BUILDING" | "DEBOUNCING" | "QUEUED" | "NONE", ... }`.
-
-Presigned part URLs expire after 1 hour and include a `Content-Disposition: attachment; filename="..."` header.
+Each variant carries the per-status fields (`status` ∈ `READY | BUILDING | DEBOUNCING | QUEUED | NONE`, `parts[]`, `partCount`, `totalSizeBytes`, `photoCount`, `building`). The default variant's fields are also spread at the top level for backward compatibility. Presigned part URLs expire after 1 hour and include a `Content-Disposition: attachment; filename="..."` header (Kompakt filenames carry a `-kompakt` segment).
 
 ---
 
@@ -83,7 +79,7 @@ Presigned part URLs expire after 1 hour and include a `Content-Disposition: atta
 **Auth:** Gallery cookie  
 **Response:** `text/event-stream` (SSE)
 
-Pushes `download-status` events matching the same payload shape as `GET /download`. The stream closes when status reaches `READY` or `FAILED`. Used by the gallery view page to show live archive build progress in the download button.
+Pushes `download-status` events matching the same both-variants payload shape as `GET /download`; any variant's status change re-emits the whole payload so both tabs stay live. Used by the gallery view page and the download page.
 
 # Citations
 

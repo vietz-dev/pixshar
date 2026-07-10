@@ -3,7 +3,7 @@ type: Architecture
 title: Storage
 description: S3-compatible object storage with presigned URLs; Minio bundled for self-hosting.
 tags: [storage, s3, minio, presigned-urls]
-timestamp: 2026-07-03T00:00:00Z
+timestamp: 2026-07-11T00:00:00Z
 ---
 
 # Object Storage
@@ -18,8 +18,10 @@ All files live in **one bucket**, organized by event ID and variant:
 {eventId}/originals/{photoId}.{ext}   — as-uploaded original
 {eventId}/display/{photoId}.jpg       — 1920 px resized for lightbox display
 {eventId}/thumbs/{photoId}.jpg        — 400 px thumbnail for grid
-{eventId}/archive/gallery-part-{n}.zip — downloadable archive part(s)
+{eventId}/archive/{quality}-part-{n}-g{gen}.zip — downloadable archive part(s), per variant
 ```
+
+Archive objects carry the variant (`DISPLAY` = Kompakt, `ORIGINAL`) as a key segment so an event's two archives share the `archive/` prefix without colliding. Kompakt parts zip the `display/` objects; Original parts zip the `originals/`. Legacy `gallery-part-…` keys predate the variant split and count as `ORIGINAL`.
 
 Using a single bucket with path prefixes rather than per-event buckets simplifies IAM, reduces API overhead, and makes cleanup (delete everything under `{eventId}/`) a single prefix operation.
 

@@ -3,7 +3,7 @@ type: API
 title: Admin API
 description: Admin-only endpoints for event CRUD, photo management, processing status, and archive control.
 tags: [api, admin]
-timestamp: 2026-07-03T00:00:00Z
+timestamp: 2026-07-11T00:00:00Z
 ---
 
 # Authentication
@@ -35,17 +35,22 @@ SSE stream that pushes photo processing progress and archive build status update
 
 # Archive Control
 
-## GET /api/events/:id/download/status
-Returns the current DownloadJob state with all progress fields. Unlike the gallery-facing endpoint, this returns `totalPhotos`, `partCount`, `totalSizeBytes`, `debounceUntil`, and `failureReason` for the admin UI's detailed panel.
+Every action and status endpoint takes a `?quality=DISPLAY|ORIGINAL` selector (default `ORIGINAL`) and targets **one** variant. Each event has two archives (Kompakt / Original); the admin UI renders two independent per-variant panels. See [Download-Varianten](/decisions/download-variants.md).
 
-## POST /api/events/:id/download/build
-Forces an immediate archive build (bypasses debounce). Cancels any in-progress build, resets the job to QUEUED, and signals the worker. Used from the admin event detail page's "Rebuild archive" button.
+## GET /api/events/:id/download/status?quality=…
+Returns the selected variant's DownloadJob state with all progress fields. Unlike the gallery-facing endpoint, this returns `quality`, `totalPhotos`, `partCount`, `totalSizeBytes`, `debounceUntil`, and `failureReason` for the admin UI's detailed panel.
 
-## POST /api/events/:id/download/cancel
-Cancels a QUEUED or BUILDING job. Existing S3 parts are deleted; the job transitions to CANCELLED.
+## POST /api/events/:id/download/build-now?quality=…
+Skips the debounce wait and queues the pending reconcile immediately for that variant. Only the timer is skipped — it still routes through QUEUED → the FIFO claim. No-op if nothing is pending.
 
-## GET /api/events/:id/download/stream
-SSE stream for real-time archive build progress. Same payload as `GET /api/events/:id/download/status` but pushed on state changes.
+## POST /api/events/:id/download/rebuild-all?quality=…
+Marks every part of that variant `STALE` and reconciles, regenerating each part's bytes from its stored membership (membership preserved, so guests aren't forced to re-download unchanged parts).
+
+## POST /api/events/:id/download/cancel?quality=…
+Cancels a QUEUED/BUILDING/DEBOUNCING job for that variant. Already-committed (immutable) parts stay downloadable; a pending rebuild reverts to READY.
+
+## GET /api/events/:id/download/status/stream?quality=…
+SSE stream for real-time build progress of the selected variant (server-filtered by `quality`), pushed on state changes.
 
 # Auth Routes
 

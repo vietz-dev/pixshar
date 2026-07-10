@@ -2,8 +2,8 @@
 type: Data Model
 title: Download Jobs
 description: DownloadJob state machine and DownloadArchivePart tracking for multi-part ZIP archives.
-tags: [data-model, download, archive, zip]
-timestamp: 2026-07-03T00:00:00Z
+tags: [data-model, download, archive, zip, quality]
+timestamp: 2026-07-11T00:00:00Z
 ---
 
 # Two Tables
@@ -12,12 +12,15 @@ The archive download feature uses two tables:
 
 ## DownloadJob
 
-One row per event (at most). Tracks the overall state of the archive build.
+One row per **(event, variant)** — at most two per event, one for each
+`ArchiveQuality` (`DISPLAY` = Kompakt, `ORIGINAL`). Each variant is an
+independently claimable build. See [Download-Varianten](/decisions/download-variants.md).
 
 | Field | Type | Description |
 |---|---|---|
 | `id` | String (cuid) | Unique job ID |
-| `eventId` | String (unique) | FK to Event — one job per event at most |
+| `eventId` | String | FK to Event |
+| `quality` | Enum | `DISPLAY` \| `ORIGINAL` (default `ORIGINAL`). Selects the S3 source objects the build zips (display images vs. originals) |
 | `status` | Enum | State machine status (see below) |
 | `photoCount` | Int | Number of photos counted when the build started |
 | `processedPhotos` | Int | Photos packed so far (updated during build for progress reporting) |
@@ -35,16 +38,20 @@ One row per event (at most). Tracks the overall state of the archive build.
 | `failureReason` | String? | Terminal failure reason |
 | `updatedAt` | DateTime | Last update timestamp |
 
+`@@unique([eventId, quality])` — the compound key allows the two variants to
+coexist as separate rows. Existing pre-variant rows migrate to `ORIGINAL` (the
+old builder zipped originals), so no data rewrite is needed.
+
 ## DownloadArchivePart
 
-One **long-lived, immutable** row per archive part. Parts are no longer wiped on each build — they persist across builds and are only appended to (new parts) or rebuilt in place (on deletion).
+One **long-lived, immutable** row per archive part. Parts are no longer wiped on each build — they persist across builds and are only appended to (new parts) or rebuilt in place (on deletion). A part has **no** `quality` column: it inherits its variant from the parent `DownloadJob`.
 
 | Field | Type | Description |
 |---|---|---|
 | `id` | String (cuid) | Unique part ID |
 | `jobId` | String | FK to DownloadJob (CASCADE on delete) |
 | `partIndex` | Int | 1-based part number; stable identity, never renumbered (gaps allowed) |
-| `key` | String | Versioned S3 key (`…/gallery-part-{index}-g{generation}.zip`) |
+| `key` | String | Versioned, variant-scoped S3 key (`…/archive/{quality}-part-{index}-g{generation}.zip`) |
 | `sizeBytes` | BigInt | Size of the part in bytes |
 | `status` | String | `READY` (immutable) or `STALE` (queued for in-place rebuild after a deletion / rebuild-all) |
 | `membershipSig` | String | sha1 of sorted photoId list — content identity for guest download-tracking |

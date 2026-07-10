@@ -2,8 +2,8 @@
 type: Architecture
 title: Archive Generation
 description: Streaming multi-part ZIP build with per-process FIFO serialization and a DB-backed state machine.
-tags: [archive, zip, download, streaming, queue]
-timestamp: 2026-07-03T00:00:00Z
+tags: [archive, zip, download, streaming, queue, quality]
+timestamp: 2026-07-11T00:00:00Z
 ---
 
 # Purpose
@@ -12,6 +12,11 @@ When guests download a gallery they receive a ZIP archive containing all PROCESS
 1. **Streamed** — never fully buffered in memory; built incrementally and uploaded to S3 in multipart chunks.
 2. **Split into parts** — each part is at most `DOWNLOAD_MAX_PART_BYTES` (default 2 GB), so an interrupted download loses only one part.
 3. **Incremental & immutable** — parts are built once and sealed. A build appends only the newly-uploaded photos as **new** parts; existing parts are never re-planned. This makes "part N always contains the same photos" true by construction, so a returning guest only downloads the new parts.
+4. **Built in two variants** — every event produces both a **Kompakt** (compressed, from the display images) and an **Original** (full-resolution) archive; see [Download-Varianten](/decisions/download-variants.md).
+
+# Two variants per event
+
+Each event has up to **two** `DownloadJob`s, one per `ArchiveQuality` (`DISPLAY` = Kompakt, `ORIGINAL`). The variant lives on the job because the job is the unit a worker atomically claims, so the two variants are independently claimable builds that can run on different replicas, minutes apart or never together. Both zip the same photo set — only the S3 source object differs (display image vs. original). Everything below (planning, streaming, immutability, crash recovery) applies per variant; the variant name is a segment in the S3 key so the two never collide.
 
 # The immutability invariant
 
@@ -24,6 +29,8 @@ A photo, once assigned to part N, stays in part N until it is deleted. Every bui
 # Trigger: Debounce / Reconcile
 
 After every successful photo processing step, a debounce timer is reset. Once uploads have been quiet for `DOWNLOAD_DEBOUNCE_SECONDS` (default 60 s), the reconcile build is queued. A hard ceiling (`DOWNLOAD_MAX_WAIT_SECONDS`, default 120 s) prevents continuous uploads from starving the build. Re-entering DEBOUNCING never wipes existing parts — they stay downloadable while the new photos are appended. Photo deletion and the admin actions route through the same queue via `triggerReconcile`.
+
+The trigger **fans out over both variants**: a photo upload schedules both the Kompakt and Original jobs; a photo deletion stales the affected parts of both. Events that predate the feature have only an Original archive — their Kompakt job is created **lazily** on first demand (the first guest download request, via an `ensureJob` path), so there is no mass backfill that would stampede the worker pool.
 
 # State Machine: DownloadJob
 
@@ -45,7 +52,7 @@ Each build reconciles rather than rebuilds. It:
 # Part identity: membershipSig & generation
 
 - `membershipSig` = sha1 of the part's sorted photoId list. It is the content identity used by the guest's localStorage download-tracking, so a green "downloaded" tick persists across a pure byte-rebuild and resets only when the part's photo set actually changes (a deletion).
-- `generation` is bumped on every physical (re)build and feeds the versioned S3 key (`{eventId}/archive/gallery-part-{index}-g{gen}.zip`), so the old object stays downloadable until the new one is committed; the old object is deleted afterward. A per-build orphan sweep removes any archive object no longer referenced by a live part.
+- `generation` is bumped on every physical (re)build and feeds the versioned S3 key (`{eventId}/archive/{quality}-part-{index}-g{gen}.zip`), so the old object stays downloadable until the new one is committed; the old object is deleted afterward. A per-build orphan sweep removes any archive object no longer referenced by a live part — scoped to the building variant's objects (legacy `gallery-part-…` keys count as `ORIGINAL`), so a Kompakt build never deletes an Original part.
 
 # Streaming Pipeline
 
@@ -60,9 +67,9 @@ Peak memory per build: ~32 MB of upload buffer + one S3 photo stream in flight a
 
 # Per-Process Serialization (FIFO)
 
-Within a single image-processor process, at most **one archive build runs at a time**. This is enforced by a promise-chain mutex: each call to `runBuildZip` appends to a `buildChain` promise and is deduped by event ID. Multiple pending events queue FIFO (oldest `queuedAt` first).
+Within a single image-processor process, at most **one archive build runs at a time**. This is enforced by a promise-chain mutex: each call to `runBuildZip` appends to a `buildChain` promise and is deduped by `(eventId, quality)`. Multiple pending builds queue FIFO (oldest `queuedAt` first).
 
-Multiple worker replicas can build different events concurrently — each replica runs its own FIFO chain, and the per-event `QUEUED → BUILDING` CAS claim ensures no event is built by two replicas simultaneously.
+Multiple worker replicas can build different jobs concurrently — each replica runs its own FIFO chain, and the per-job `QUEUED → BUILDING` CAS claim ensures no `(event, variant)` is built by two replicas simultaneously. Because the claim key is the job, the Kompakt and Original variants of one event are independently claimable and can build on different replicas.
 
 # Crash Recovery
 
@@ -70,19 +77,22 @@ A heartbeat (`heartbeatAt`) is updated every few photos. A reaper (runs every `D
 
 # Admin controls
 
+All three take a `?quality=` selector (default `ORIGINAL`) and act on exactly **one** variant, so the admin can, e.g., re-zip the cheap Kompakt archive without triggering the expensive Original rebuild across many parts. The admin UI renders two independent per-variant panels.
+
 - `POST /api/events/:id/download/build-now` — skip the debounce wait and queue the pending reconcile immediately. Only the timer is skipped; it still routes through QUEUED → the FIFO claim, so worker/image-processor load stays bounded. No-op if nothing is pending.
 - `POST /api/events/:id/download/rebuild-all` — mark every part `STALE` and reconcile, regenerating each part's bytes from its stored membership. Membership is preserved, so guests are not forced to re-download parts whose contents did not change.
 - `POST /api/events/:id/download/cancel` — stops the current build; already-committed (immutable) parts stay downloadable.
 
 # Deletion
 
-Deleting a photo (`DELETE /events/:id/photos[...]`) marks exactly the parts containing it `STALE` (looked up via the indexed `DownloadArchivePartEntry.photoId`) and schedules a debounced reconcile. Only those parts rebuild; all others are untouched.
+Deleting a photo (`DELETE /events/:id/photos[...]`) marks exactly the parts containing it `STALE` (looked up via the indexed `DownloadArchivePartEntry.photoId`) — across **both** variants' jobs — and schedules a debounced reconcile per variant. Only those parts rebuild; all others are untouched, so a guest who already grabbed an unaffected part isn't forced to re-download it.
 
 # Download UX
 
-The guest download payload lists whatever parts are already built regardless of job state (partial availability), with a `building` flag when more parts are pending and a per-part `rebuilding` flag when a part is being updated (its old version stays downloadable meanwhile).
-- **Single part** (settled): a direct `<a download>` link.
-- **Multiple parts / still building**: the button navigates to `/gallery/[slug]/download`, which lists each part, shows a "more parts coming" banner while building, and greys a part being rebuilt. Clicking a part marks it downloaded in `localStorage`, keyed on `partIndex` + `membershipSig` so a rebuilt (changed) part resets while appended parts stay green. The page live-updates via the SSE stream.
+The guest download payload returns **both variants** in one response (`defaultQuality` = Kompakt, plus a `variants` map); each variant lists whatever parts are already built regardless of job state (partial availability), with a `building` flag when more parts are pending and a per-part `rebuilding` flag when a part is being updated (its old version stays downloadable meanwhile).
+- The download page shows a **segmented Kompakt/Original toggle** and renders only the selected variant's part list (a many-part gallery never shows a doubled list). Kompakt is always the default tab, even while it is still building — it never auto-switches to Original.
+- Each tab carries its own summary (part count + size), build indicator, and "more parts coming" banner. A part being rebuilt is greyed.
+- Clicking a part marks it downloaded in `localStorage`, keyed on `quality` + `partIndex` + `membershipSig` — so the two variants' ticks never collide and a rebuilt (changed) part resets while appended parts stay green. The page live-updates via the SSE stream, which emits per-variant status.
 
 # Citations
 
