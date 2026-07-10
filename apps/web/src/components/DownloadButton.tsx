@@ -77,8 +77,18 @@ export default function DownloadButton({ slug }: { slug: string }) {
     );
   }
 
-  if (state.status === "READY" && state.parts && (state.parts.length > 1 || state.building)) {
+  // Route to the download page whenever an archive is available — even for a
+  // single part. Every event now offers two variants (Kompakt / Original), so
+  // the guest must reach the toggle page to choose. A direct <a download> here
+  // would immediately grab one variant and rob the guest of that choice.
+  if (state.status === "READY" && state.parts && state.parts.length >= 1) {
     const total = state.totalSizeBytes ?? state.parts.reduce((s, p) => s + p.sizeBytes, 0);
+    const label =
+      state.parts.length > 1
+        ? t("multiPartTitle", { count: state.parts.length, size: formatBytes(total) })
+        : total
+          ? t("downloadAllSize", { size: formatBytes(total) })
+          : t("downloadAll");
     return (
       <button
         onClick={() => router.push(`/gallery/${slug}/download`)}
@@ -95,41 +105,7 @@ export default function DownloadButton({ slug }: { slug: string }) {
           alignItems: "center",
           gap: 6,
           cursor: "pointer",
-        }}
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        {t("multiPartTitle", { count: state.parts.length, size: formatBytes(total) })}
-      </button>
-    );
-  }
-
-  const singleUrl = state.parts?.[0]?.url;
-  if (state.status === "READY" && singleUrl && !state.building) {
-    const singleSize = state.parts?.[0]?.sizeBytes ?? state.totalSizeBytes;
-    const sizeLabel = singleSize ? formatBytes(singleSize) : null;
-    return (
-      <a
-        href={singleUrl}
-        download
-        style={{
-          height: 38,
-          padding: "0 14px",
-          borderRadius: 8,
-          border: "1px solid #e4e4e7",
-          background: "#fff",
-          color: "#18181b",
-          fontSize: 13.5,
-          fontWeight: 500,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          textDecoration: "none",
           transition: "background .15s",
-          cursor: "pointer",
         }}
         onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
@@ -139,8 +115,8 @@ export default function DownloadButton({ slug }: { slug: string }) {
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        {sizeLabel ? t("downloadAllSize", { size: sizeLabel }) : t("downloadAll")}
-      </a>
+        {label}
+      </button>
     );
   }
 

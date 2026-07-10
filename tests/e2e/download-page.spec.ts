@@ -4,8 +4,9 @@
  * Covers:
  *  - Unauthenticated access → redirected to password gate
  *  - After unlocking, navigating to the download page shows appropriate state
- *  - Single-download link in DownloadButton stays a direct <a> (not navigating to page)
- *  - Multi-part download button navigates to the download page (requires READY archive)
+ *  - DownloadButton always navigates to the download page (so the guest can pick
+ *    the Kompakt/Original variant) — even for a single-part archive
+ *  - Variant toggle: Kompakt is the default tab, Original is an explicit opt-in
  *  - Checkbox state persists in localStorage after clicking a part link
  */
 import { test, expect } from "@playwright/test";
