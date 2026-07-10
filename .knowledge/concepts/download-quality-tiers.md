@@ -1,72 +1,42 @@
 ---
 type: Concept
-title: Download-Qualitätsstufen — komprimiert immer, Original nur auf Anfrage
-description: Konzept für ein Event-Flag das steuert ob Original-Fotos heruntergeladen werden können. Komprimierte Variante ist immer verfügbar; Originalqualität ist optional und im SaaS-Kontext ggf. kostenpflichtig.
-tags: [concept, future, download, quality, tiers, saas, archive, presigned-url, event-config]
-status: future — nicht implementiert
-timestamp: 2026-07-07T00:00:00Z
+title: Download-Varianten — Kompakt und Original immer verfügbar
+description: Jedes Event bietet zwei Archiv-Varianten an, die beide immer gebaut und angeboten werden — Kompakt (Display-Variante, 1920 px) und Original (voller Upload). Zwei unabhängige DownloadJobs pro Event, per quality unterschieden. Kein Event-Flag in dieser Iteration.
+tags: [concept, download, quality, variants, archive, zip, presigned-url, download-job, lazy-build]
+status: geplant — Umsetzung als Nächstes
+timestamp: 2026-07-09T00:00:00Z
 ---
 
 # Konzept
 
-Standardmäßig stehen Gästen und Administratoren nur **komprimierte Fotos** (Display-Variante,
-1920 px) zum Download bereit. Originalfotos in voller Auflösung sind ein optionales Feature,
-das pro Event explizit freigeschaltet werden muss.
+Jedes Event bietet **zwei Download-Varianten** an, die **beide immer** gebaut und auf der
+Downloadseite angeboten werden:
 
-Diese Trennung gilt für **beide Download-Wege** gleichermaßen:
-- **Archiv-Download** (ZIP): komprimiertes ZIP immer verfügbar; Original-ZIP nur wenn Flag gesetzt
-- **Einzelbild-Download** (presigned URL): Display-URL immer; Original-URL nur wenn Flag gesetzt
+| Variante | Inhalt | Quelle |
+|---|---|---|
+| **Kompakt** | Display-Variante, 1920 px / JPEG q85 | vorhandener `displayKey` in S3 |
+| **Original** | Upload in voller Auflösung | `originalKey` in S3 |
 
-Das Flag ist kein Benutzerrecht, sondern eine **Event-Konfiguration** — der Admin entscheidet
-beim Erstellen oder Bearbeiten des Events, welche Qualitätsstufe angeboten wird.
+Hintergrund: Der Original-Download ist der Gründungszweck der Anwendung. Ein Teil der Gäste hat
+jedoch nach einer kleineren, schnell ladbaren Variante gefragt. Statt pro Event zu entscheiden
+welche Qualität angeboten wird, werden **beide Varianten immer** angeboten — so sind beide Lager
+zufrieden, ohne eine Konfigurationsentscheidung pro Event.
 
-# Regel: komprimiert ⊆ original
+## Kein Flag in dieser Iteration
 
-> Ist Original-Download aktiv, ist der komprimierte Download immer zusätzlich verfügbar.
-> Ist Original-Download inaktiv, ist ausschließlich der komprimierte Download verfügbar.
+Ein früher Entwurf sah ein Event-Flag `allowOriginalDownload` vor. Da nun **beide** Varianten
+immer verfügbar sind, ist das Flag zur Befriedigung beider Gruppen überflüssig. Ein Flag
+lohnt sich erst für einen anderen Zweck — Storage sparen / SaaS-Preisstufen (nur-Kompakt-Events,
+deren Originale nicht dauerhaft vorgehalten werden). Dieser Zweck ist eigenständig, hängt an
+noch nicht konzipierter Billing-Logik und wird **später** nachgezogen. Die Wiedereinführung des
+Flags ist eine additive Migration.
 
-Es gibt keine Kombination in der nur Originale aber keine komprimierte Variante angeboten wird.
+# Datenmodell
 
-# Datenmodell-Änderung
-
-```prisma
-model Event {
-  // ... bestehende Felder ...
-  allowOriginalDownload Boolean @default(false)
-}
-```
-
-Kein weiteres Flag nötig — die komprimierte Variante ist implizit immer aktiv.
-
-# Auswirkungen auf bestehende Systeme
-
-## Presigned URLs (Einzelbild)
-
-`GET /api/gallery/:slug` gibt heute Display- und Thumb-URLs zurück. Mit diesem Konzept:
-
-```ts
-// Bisher: immer beide Keys
-{ displayUrl, thumbUrl }
-
-// Künftig: originalUrl nur wenn Flag gesetzt
-{ thumbUrl, displayUrl, originalUrl?: string }
-```
-
-Das Frontend zeigt den "Original herunterladen"-Button nur wenn `originalUrl` vorhanden ist.
-
-## Archiv-Build (ZIP)
-
-Der Archive-Builder erzeugt heute immer ein ZIP der PROCESSED Fotos — derzeit aus den
-Original-Keys (zu prüfen, ob schon Display-Keys genutzt werden).
-
-Mit diesem Konzept werden **zwei ZIP-Typen** unterschieden:
-
-| ZIP-Typ | Inhalt | Immer gebaut | S3-Pfad |
-|---|---|---|---|
-| Komprimiert | Display-Variante (1920 px) | Ja | `{eventId}/archive/display-part-{n}.zip` |
-| Original | Original-Upload | Nein — nur wenn Flag | `{eventId}/archive/original-part-{n}.zip` |
-
-Die bestehende `DownloadArchivePart`-Tabelle braucht ein `quality`-Feld:
+Die Variante ist eine Eigenschaft des **DownloadJobs**, nicht der einzelnen Part-Zeile — denn der
+Job ist die vom Worker beanspruchte Einheit (`claimJob` macht ein atomares `QUEUED→BUILDING` CAS
+pro Job). Ein Worker baut pro Claim genau **ein** Archiv. Damit Kompakt und Original unabhängig
+von verschiedenen Workern gebaut werden können, müssen sie **zwei getrennte Jobs** sein.
 
 ```prisma
 enum ArchiveQuality {
@@ -74,93 +44,122 @@ enum ArchiveQuality {
   ORIGINAL
 }
 
-model DownloadArchivePart {
+model DownloadJob {
   // ... bestehende Felder ...
-  quality ArchiveQuality @default(DISPLAY)
+  quality ArchiveQuality @default(ORIGINAL)
+
+  // War: @@unique([eventId])
+  @@unique([eventId, quality])
 }
 ```
 
-Der Build-Trigger erzeugt immer den Display-ZIP und zusätzlich den Original-ZIP wenn
-`allowOriginalDownload = true`.
+- `DownloadArchivePart` bekommt **kein** `quality`-Feld — Parts erben die Variante über ihren Job.
+- **Migration Bestandsdaten**: Der heutige Builder zippt aus `originalKey`, d.h. bestehende Jobs
+  sind faktisch Original → `quality = ORIGINAL` als Default deckt die Migration ab. Für Kompakt
+  entsteht der Job **lazy** (siehe unten), es wird nichts vorab gebaut.
 
-## Admin-UI (Event erstellen / bearbeiten)
+# Build-Lebenszyklus
 
-Neue Checkbox/Toggle im Event-Formular:
-> ☐ Original-Fotos zum Download anbieten
+## Kompakt nutzt die vorhandene Display-Variante
 
-Im SaaS-Kontext: Toggle ist gesperrt solange das Paket keinen Original-Download einschließt,
-mit Hinweis auf Upgrade-Möglichkeit.
+Die Kompakt-Variante zippt die bereits existierenden `displayKey`-Objekte (1920 px / q85,
+`imageProcessor.ts` erzeugt sie beim Upload). **Keine neue Bildvariante, keine Änderung an der
+Bildpipeline, kein zusätzlicher Storage für Quellbilder** — die Bytes liegen schon in S3.
 
-## API-Routen
+Konsequenz-Kopplung (bewusst akzeptiert): Die Kompakt-Qualität ist an die Display-Auflösung
+gebunden. Wird die Display-Auflösung fürs Lightbox je erhöht, wächst der Kompakt-Download mit.
 
-`GET /api/gallery/:slug` — prüft `event.allowOriginalDownload` und befüllt `originalUrl`
-entsprechend (oder lässt das Feld weg).
+## Zwei unabhängige Queue-Einträge
 
-`GET /api/upload/events/:id/photos/status` (Admin-Polling) — analog.
+- **Trigger-Fan-out**: Foto-Upload → **beide** Jobs (DISPLAY + ORIGINAL) werden enqueued.
+  Foto-Löschung → die betroffenen Parts **beider** Jobs werden STALE.
+- Beide Jobs sind eigenständige Queue-Einträge, jeder wird von einem freien Worker beansprucht,
+  ein Archiv pro Claim. Skalierung wie gehabt: mehr Worker = schneller. Es gibt **keinen** Zwang,
+  Kompakt und Original zeitgleich zu bauen — sie können Minuten auseinander oder nie gleichzeitig
+  laufen.
 
-`GET /api/events/:id` (Admin-Detail) — gibt das Flag mit zurück damit die Admin-UI es
-anzeigen kann.
+## Lazy für Bestandsevents
 
-# SaaS-Preisgestaltung
+Für Events, die es vor Einführung schon gibt (inkl. des aktiv genutzten Events), existiert nur das
+Original-Archiv. Der **Kompakt-Job entsteht lazy**: beim ersten Aufruf der Downloadseite bzw. der
+nächsten Foto-Aktivität wird er enqueued, ein Worker baut ihn, kurz darauf erscheint das Archiv.
+Kein Massen-Backfill — der würde für jedes historische Event gleichzeitig einen Build auslösen und
+den bewusst knappen Worker-Pool überrennen.
 
-Original-Download ist ein Aufpreis-Feature weil es den Storage-Bedarf erheblich erhöht
-(Originale müssen dauerhaft vorgehalten werden; komprimierte Variante allein würde nur
-Display + Thumbs benötigen — ca. 0.5× des Uploads).
+## S3-Schlüssel
 
-Mögliche Modelle:
-- **Einmaliger Aufpreis pro Event**: "Original-Download freischalten für dieses Event: +X €"
-- **Tier-gebunden**: Basic = nur komprimiert; Premium = Original inklusive
-- **Kombinierbar**: Basis-Tier + buchbares Add-on "Original-Qualität"
+Der Variantenname wandert in den Key:
+```
+{eventId}/archive/{quality}-part-{partIndex}-g{generation}.zip
+```
+(bisher: `{eventId}/archive/gallery-part-{partIndex}-g{generation}.zip`).
 
-Die Implementierung des Flags ist preismodell-unabhängig — die Steuerung welcher Plan das
-Flag setzen darf, gehört in die Billing-Logik (noch nicht konzipiert).
+## Storage-Konsequenz
+
+Ab sofort treiben aktive Events **zwei** Builds und speichern **zwei** Sätze Archiv-Parts
+(Kompakt + Original) → Archiv-Storage und Queue-Tiefe verdoppeln sich etwa, bis TTL greift
+(siehe unten).
+
+# Gast-UI — `gallery/[slug]/download`
+
+**Segmented Toggle** `[ Kompakt ] [ Original ]` — es wird immer nur **eine** Part-Liste gerendert.
+Das löst das Längenproblem: Galerien haben heute schon 7+ Parts, potenziell 20+, und zwei volle
+Listen übereinander würden das verdoppeln.
+
+- **Kompakt ist immer der Default-Tab** — auch wenn es gerade noch gebaut wird. Es wird **nicht**
+  automatisch auf Original umgeschaltet. Original ist eine bewusste Opt-in-Entscheidung des Gasts.
+- Ein laufender Build auf dem aktiven Tab ist okay, wird aber **transparent** über das bestehende
+  „building…"-Banner dargestellt.
+- Jeder Tab trägt eine kleine Zusammenfassung (Teile-Anzahl, Größe) und ggf. einen Build-Indikator.
+- Die „heruntergeladen"-Häkchen pro Part werden **pro Variante** getrackt — der localStorage-Key
+  bekommt ein Quality-Segment (sonst kollidieren Kompakt-Part-1 und Original-Part-1).
+
+# Admin-UI — `DownloadPanel`
+
+**Zwei Panels pro Variante** (Kompakt / Original), jedes mit eigenem SSE-Status und eigenen Aktionen
+**Build-now / Rebuild-all / Cancel**. So kann der Admin z.B. nur das günstige Kompakt-Archiv neu
+bauen, ohne den teuren Original-Rebuild über 20 Parts anzustoßen. Kein zusammengefasster Status
+(wäre mehrdeutig, wenn Original READY und Kompakt BUILDING ist).
+
+# API-Auswirkungen
+
+- `GET /api/gallery/:slug/download` gibt **beide** Varianten in einer Antwort zurück (eine
+  Runde, damit die Tab-Labels beide Zusammenfassungen haben).
+- `GET /api/gallery/:slug/download/stream` (SSE) — analog, Status je Variante.
+- Admin-Status-Stream — je Variante ein Job.
 
 # Interaktion mit anderen Konzepten
 
-## ZIP TTL Storage
+## ZIP TTL Storage (Folgephase)
 
-Wenn Original-Download deaktiviert ist, müssen Originale nach dem Resize-Processing
-**nicht dauerhaft in S3 vorgehalten** werden (nur Display + Thumbs reichen). Das ist der
-Haupthebel aus dem [ZIP TTL Konzept](/concepts/zip-ttl-storage.md):
-
-| Event-Konfiguration | Originale in S3 | Display in S3 | Faktor |
-|---|---|---|---|
-| `allowOriginalDownload = false` | Gelöscht nach Processing | Dauerhaft | ~0.5× |
-| `allowOriginalDownload = true` | Dauerhaft | Dauerhaft | ~1.5× |
-
-Das Löschen der Originale darf erst erfolgen nachdem der Display-ZIP erfolgreich gebaut
-und committed ist — andernfalls gibt es keine Möglichkeit mehr, einen Original-ZIP
-nachträglich zu generieren.
+TTL auf die gebauten Archive wird **nachträglich** ergänzt und ist der Haupthebel gegen die
+verdoppelte Storage-Last aus diesem Konzept. Details im [ZIP TTL Konzept](/concepts/zip-ttl-storage.md):
+Parts verfallen per S3-Lifecycle und werden bei nächster Anfrage lazy neu gebaut. In dieser
+Iteration **nicht** umgesetzt, aber im Modell vorgesehen.
 
 ## KEDA Worker Scaling
 
-Der ZIP-Builder bekommt im Kontext des [KEDA-Konzepts](/concepts/keda-worker-scaling.md)
-zwei separate Job-Typen in der Queue:
-```
-ZIP_BUILD_DISPLAY   — immer enqueued nach Photo-Processing
-ZIP_BUILD_ORIGINAL  — nur enqueued wenn allowOriginalDownload = true
-```
+Der ZIP-Builder erhält im Kontext des [KEDA-Konzepts](/concepts/keda-worker-scaling.md) zwei
+Job-Varianten in derselben Queue (DISPLAY + ORIGINAL), die per Queue-Tiefe skaliert werden.
 
 ## Cloud-Export (Google Fotos / Dropbox)
 
-Der [Cloud-Export](/concepts/cloud-export-google-dropbox.md) folgt derselben Logik:
-Default-Export überträgt Display-Varianten; Original-Transfer nur wenn Flag gesetzt.
+Der [Cloud-Export](/concepts/cloud-export-google-dropbox.md) kann später derselben Logik folgen:
+Default-Export der Kompakt-Variante, Original-Transfer als Opt-in.
+
+# Zukünftige Erweiterungen (nicht in dieser Iteration)
+
+- **E-Mail-Benachrichtigung** bei Build-Fertigstellung, damit Gäste nicht auf der Seite warten
+  müssen — freiwillig, eigenes kleines Konzept.
+- **`allowOriginalDownload`-Flag + SaaS-Preisstufen** — nur-Kompakt-Events, deren Originale nach
+  dem Kompakt-Build aus S3 gelöscht werden (Storage-Ersparnis ~0.5×). Additive Migration.
 
 # Was heute bereits passt
 
-- Display-Varianten (`{eventId}/display/`) werden bereits erzeugt und in S3 gespeichert.
-- Presigned URLs werden bereits pro Variante generiert.
-- Die Archive-Architektur ist bereits auf mehrere Part-Typen auslegbar (das `quality`-Feld
-  ist eine additive Migration).
-
-# Offene Fragen vor Implementierung
-
-- [ ] Erzeugt der aktuelle Archive-Builder ZIPs aus `display/`- oder `originals/`-Keys?
-      → Bestimmt ob der heutige ZIP de-facto schon "komprimiert" ist oder nicht.
-- [ ] Sollen bereits hochgeladene Events (vor Einführung des Flags) `allowOriginalDownload = true`
-      bekommen (Rückwärtskompatibilität) oder `false` (sparsamste Default-Annahme)?
-      Empfehlung: `true` für Bestandsdaten (kein Verhalten bricht), `false` als Default
-      für neue Events.
-- [ ] Darf der Admin das Flag nachträglich **deaktivieren**? Dann müssten Original-ZIPs und
-      ggf. Originaldateien aus S3 gelöscht werden — ein destruktiver Vorgang, der eine
-      explizite Bestätigung braucht.
+- Display-Varianten (`display.jpg`, 1920 px / q85) werden beim Upload erzeugt und in S3 gehalten.
+- Die Part-Architektur (`DownloadArchivePart`, stabile `partIndex`, `generation`, `membershipSig`)
+  ist bereits mehrteilig und rebuild-fähig — das `quality`-Feld auf dem Job ist additiv.
+- Presigned URLs, SSE-Status-Streams und die localStorage-Download-Verfolgung existieren bereits
+  und werden nur um die Variantendimension erweitert.
+</content>
+</invoke>
