@@ -1,5 +1,13 @@
 # @pixshar/web
 
+## 0.0.31
+
+### Patch Changes
+
+- 94b7ef7: Compressed version of images
+- Updated dependencies [94b7ef7]
+  - @pixshar/shared@0.0.31
+
 ## 0.0.30
 
 ### Patch Changes
