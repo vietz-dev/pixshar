@@ -1,5 +1,11 @@
 # @pixshar/shared
 
+## 0.0.31
+
+### Patch Changes
+
+- 94b7ef7: Compressed version of images
+
 ## 0.0.30
 
 ### Patch Changes
