@@ -83,6 +83,24 @@ export async function deleteS3Object(key: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
 }
 
+// Delete an explicit list of keys in one round trip per 1000 (the DeleteObjects
+// cap). Used to reclaim an archive's part objects: the keys are known from the
+// part rows, so listing the bucket is unnecessary.
+export async function deleteS3Objects(keys: string[]): Promise<number> {
+  let deleted = 0;
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000);
+    await s3.send(
+      new DeleteObjectsCommand({
+        Bucket: env.S3_BUCKET,
+        Delete: { Objects: batch.map((Key) => ({ Key })) },
+      })
+    );
+    deleted += batch.length;
+  }
+  return deleted;
+}
+
 // List every object key under a prefix (paginated).
 export async function listS3Prefix(prefix: string): Promise<string[]> {
   const keys: string[] = [];

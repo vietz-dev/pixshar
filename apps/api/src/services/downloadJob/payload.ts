@@ -1,0 +1,303 @@
+import type { DownloadJobStatus } from "@prisma/client";
+import { prisma } from "../../lib/prisma.js";
+import { env } from "../../lib/env.js";
+import { DEFAULT_QUALITY, jobWhere, statusMessage, type Quality } from "./status.js";
+import { archiveExpiresAt } from "./expiry.js";
+
+export interface DownloadPart {
+  index: number;
+  url: string | null; // null when no downloadable object exists yet
+  sizeBytes: number;
+  photoCount: number;
+  membershipSig: string; // client keys its "downloaded" tick on this
+  rebuilding: boolean; // STALE: a newer version is being built; url serves the old one
+}
+
+// How long a presigned archive-part URL stays signable. Short on purpose: S3
+// validates the signature at request *start*, so an in-flight multi-GB transfer
+// is not cut off when the window elapses — and a link that leaks out of the
+// gallery goes dead quickly. The guest never sees this URL directly; the
+// part-redirect endpoint mints a fresh one per click.
+export const ARCHIVE_PART_PRESIGN_SECONDS = 15 * 60;
+
+// Does this part currently have ZIP bytes on S3? EXPIRED parts keep their row
+// (the membership is the durable thing) but their object is gone.
+export function partHasObject(part: { key: string | null; status: string }): boolean {
+  return Boolean(part.key) && part.status !== "EXPIRED";
+}
+
+// An EXPIRED job's objects are gone, or are being deleted right now. Expiry
+// claims the job (READY → EXPIRED) and flips its part rows to EXPIRED in one
+// transaction *before* it touches S3, so this gate is redundant belt-and-braces
+// — but it makes the invariant hold for the whole job in one check: nothing is
+// offered from the moment the reclaim starts.
+function jobHoldsObjects(job: { status: DownloadJobStatus }): boolean {
+  return job.status !== "EXPIRED";
+}
+
+// The guest's part link. It points at the API, not at S3: the redirect endpoint
+// stamps the job's idle clock and only then hands the browser a fresh presigned
+// URL. Handing out the S3 URL here would make the real download invisible — the
+// API would only ever learn that the download *page* was opened.
+export function partDownloadUrl(slug: string, quality: Quality, partIndex: number): string {
+  return `/api/gallery/${slug}/download/part/${partIndex}?quality=${quality}`;
+}
+
+// Content-Disposition for a part's S3 response. Kompakt gets a distinct filename
+// base so both variants can coexist in the guest's downloads folder without
+// overwriting each other; ORIGINAL keeps the plain slug (back-compat). A single
+// part is named after the gallery; multiple parts carry "-part-N-of-M".
+export function partContentDisposition(
+  slug: string,
+  quality: Quality,
+  partIndex: number,
+  partCount: number
+): string {
+  const fileBase = quality === "DISPLAY" ? `${slug}-kompakt` : slug;
+  const name = partCount === 1 ? `${fileBase}.zip` : `${fileBase}-part-${partIndex}-of-${partCount}.zip`;
+  return `attachment; filename="${name}"`;
+}
+
+export interface DownloadPayload {
+  status: "READY" | "BUILDING" | "DEBOUNCING" | "FAILED" | "NONE" | "EXPIRED";
+  parts: DownloadPart[];
+  partCount: number;
+  totalSizeBytes: number;
+  photoCount: number;
+  building: boolean; // more content pending (job active or a part being rebuilt)
+  message: string;
+  debounceUntil?: string | null;
+  processedPhotos?: number;
+  uploadProgress?: number;
+}
+
+// The guest download endpoint returns BOTH variants in one response so the
+// Kompakt/Original toggle can label both tabs from a single round trip.
+// `defaultQuality` is DISPLAY (Kompakt) — the "I just want the photos" path.
+// The default variant's fields are also spread at the top level so older
+// clients that read `status`/`parts` directly keep working during the
+// transition.
+export interface BothVariantsPayload extends DownloadPayload {
+  defaultQuality: Quality;
+  variants: Record<Quality, DownloadPayload>;
+}
+
+// Part-aware download payload. Existing parts are served regardless of the job's
+// state (partial availability): a guest can always grab the parts already built,
+// even while newer photos are being appended or a part is being rebuilt.
+//
+// Part URLs are API URLs, not presigned S3 URLs — so this payload signs nothing,
+// which is what makes it cheap enough to re-emit on every SSE tick of a 20-part
+// gallery.
+export async function buildDownloadPayload(
+  eventId: string,
+  slug: string,
+  quality: Quality = DEFAULT_QUALITY
+): Promise<DownloadPayload> {
+  const job = await prisma.downloadJob.findUnique({
+    where: jobWhere(eventId, quality),
+    include: { parts: { orderBy: { partIndex: "asc" } } },
+  });
+
+  if (!job) {
+    return { status: "NONE", parts: [], partCount: 0, totalSizeBytes: 0, photoCount: 0, building: false, message: statusMessage("NONE") };
+  }
+
+  const jobActive = job.status === "DEBOUNCING" || job.status === "QUEUED" || job.status === "BUILDING";
+  const anyStale = job.parts.some((p) => p.status === "STALE");
+  const building = jobActive || anyStale;
+
+  // A partially available variant: a photo deletion reclaims the object of the
+  // parts that contained it (they go EXPIRED) and leaves the rest downloadable.
+  // Those parts are still *listed* — with a null url — so the page can show them
+  // as unavailable-until-rebuilt instead of silently losing a part number. Only
+  // parts with a committed S3 object are offered for download.
+  const offered = jobHoldsObjects(job) ? job.parts : [];
+  const downloadable = offered.filter(partHasObject);
+  const n = downloadable.length;
+
+  // A READY job whose parts ALL lost their object (a photo deletion emptied the
+  // only part of a single-part archive of its bytes) is partially available —
+  // the membership is intact and the next request rebuilds it. Listing those
+  // parts with a null url says exactly that; collapsing them into "NONE" would
+  // tell the guest the archive was never built.
+  const partiallyAvailable = job.status === "READY" && offered.length > 0;
+
+  if (n === 0 && !partiallyAvailable) {
+    // EXPIRED is checked first: an EXPIRED job never holds objects (see
+    // jobHoldsObjects above), so n is always 0 here — without this branch the
+    // guest payload collapsed EXPIRED into "NONE" ("never built"), which is a
+    // different truth than "was built, expired, ask again to rebuild".
+    const status: DownloadPayload["status"] =
+      job.status === "EXPIRED" ? "EXPIRED"
+      : job.status === "FAILED" || job.status === "CANCELLED" ? "FAILED"
+      : job.status === "DEBOUNCING" ? "DEBOUNCING"
+      : job.status === "QUEUED" || job.status === "BUILDING" ? "BUILDING"
+      : "NONE";
+    return {
+      status,
+      parts: [],
+      partCount: 0,
+      totalSizeBytes: 0,
+      photoCount: job.photoCount,
+      building,
+      message: statusMessage(status),
+      debounceUntil: job.debounceUntil?.toISOString() ?? null,
+      processedPhotos: job.processedPhotos,
+      uploadProgress: job.uploadProgress,
+    };
+  }
+
+  const parts: DownloadPart[] = offered.map((p) => ({
+    index: p.partIndex,
+    // Last known size — an EXPIRED part has no bytes right now, and does not
+    // count towards what the guest can actually download (totalSizeBytes below).
+    sizeBytes: Number(p.sizeBytes),
+    photoCount: p.photoCount,
+    membershipSig: p.membershipSig,
+    rebuilding: p.status === "STALE",
+    url: partHasObject(p) ? partDownloadUrl(slug, quality, p.partIndex) : null,
+  }));
+
+  return {
+    status: "READY",
+    // partCount / totalSizeBytes describe what is downloadable now — a part
+    // whose object was reclaimed contributes to neither.
+    parts,
+    partCount: n,
+    totalSizeBytes: downloadable.reduce((sum, p) => sum + Number(p.sizeBytes), 0),
+    photoCount: job.parts.reduce((sum, p) => sum + p.photoCount, 0),
+    building,
+    message:
+      building ? "Some parts are still being prepared."
+      : n === 0 ? "The archive's files were reclaimed — request a rebuild."
+      : statusMessage("READY"),
+    debounceUntil: job.debounceUntil?.toISOString() ?? null,
+    processedPhotos: job.processedPhotos,
+    uploadProgress: job.uploadProgress,
+  };
+}
+
+// Guest default variant — Kompakt is the sensible lightweight option.
+export const GUEST_DEFAULT_QUALITY: Quality = "DISPLAY";
+
+// Build the both-variants guest payload. Returns each variant's payload plus the
+// default variant spread at the top level for back-compat.
+//
+// A pure READ: it creates no job and starts no build. Opening the download page
+// costs nothing — a variant with no archive reports status NONE and the guest
+// asks for it explicitly (POST …/download/request). Building on GET is what made
+// every event pay for two archives nobody had asked for.
+export async function buildBothVariantsPayload(
+  eventId: string,
+  slug: string
+): Promise<BothVariantsPayload> {
+  const [display, original] = await Promise.all([
+    buildDownloadPayload(eventId, slug, "DISPLAY"),
+    buildDownloadPayload(eventId, slug, "ORIGINAL"),
+  ]);
+
+  const variants: Record<Quality, DownloadPayload> = { DISPLAY: display, ORIGINAL: original };
+  const def = variants[GUEST_DEFAULT_QUALITY];
+  return { ...def, defaultQuality: GUEST_DEFAULT_QUALITY, variants };
+}
+
+export interface PartDownloadTicket {
+  key: string;
+  contentDisposition: string;
+}
+
+/**
+ * Resolve one archive part for the guest's part-redirect endpoint — and stamp
+ * the job's idle clock while doing so. This is the ONLY place the API learns
+ * that a guest actually pulled bytes (the payload/SSE endpoints are reads and
+ * must leave the clock alone), and it stamps per (event, variant): downloading
+ * Kompakt never keeps the Original archive alive.
+ *
+ * Returns null when the part has no committed S3 object — EXPIRED or not yet
+ * built — so the caller answers 404 instead of redirecting to a dead object.
+ */
+export async function registerPartDownload(
+  eventId: string,
+  slug: string,
+  quality: Quality,
+  partIndex: number
+): Promise<PartDownloadTicket | null> {
+  const job = await prisma.downloadJob.findUnique({
+    where: jobWhere(eventId, quality),
+    include: { parts: { orderBy: { partIndex: "asc" } } },
+  });
+  if (!job || !jobHoldsObjects(job)) return null;
+
+  // Part count is over the downloadable parts, exactly as the payload counts
+  // them — so the "-part-N-of-M" filename a guest gets matches what the page shows.
+  const downloadable = job.parts.filter(partHasObject);
+  const part = downloadable.find((p) => p.partIndex === partIndex);
+  if (!part?.key) return null;
+
+  await prisma.downloadJob.update({
+    where: { id: job.id },
+    data: { lastDownloadedAt: new Date() },
+  });
+
+  return {
+    key: part.key,
+    contentDisposition: partContentDisposition(slug, quality, part.partIndex, downloadable.length),
+  };
+}
+
+export async function getDownloadJobStatus(
+  eventId: string,
+  quality: Quality = DEFAULT_QUALITY
+) {
+  const job = await prisma.downloadJob.findUnique({
+    where: jobWhere(eventId, quality),
+    include: { parts: { orderBy: { partIndex: "asc" } } },
+  });
+  if (!job) return null;
+
+  // Honest counts (PIXSHAR-8): DownloadJob.partCount/totalSizeBytes are NOT
+  // decremented by a photo deletion (PIXSHAR-6), so a partially-expired
+  // variant would still report its pre-deletion numbers. Derive both from the
+  // parts that actually hold an S3 object right now — the same rule
+  // buildDownloadPayload uses for the guest payload.
+  const holdsObjects = jobHoldsObjects(job);
+  const downloadableParts = holdsObjects ? job.parts.filter(partHasObject) : [];
+  const partCount = downloadableParts.length;
+  const totalSizeBytes = downloadableParts.reduce((sum, p) => sum + Number(p.sizeBytes), 0);
+
+  // The remaining-lifetime countdown the admin panel shows next to a READY
+  // variant ("läuft in 3 Tagen ab, wenn niemand lädt") — the reaper's own idle
+  // clock (expiry.ts owns it; the TTL comes in as a parameter, which is how
+  // that module stays env-free). null when nothing will be reclaimed: expiry
+  // disabled, or the job holds no bytes.
+  const expiresAt = archiveExpiresAt(job, env.DOWNLOAD_ARCHIVE_TTL_DAYS);
+
+  return {
+    id: job.id,
+    quality: job.quality,
+    status: job.status,
+    photoCount: job.photoCount,
+    processedPhotos: job.processedPhotos,
+    uploadProgress: job.uploadProgress,
+    totalSizeBytes,
+    partCount,
+    parts: job.parts.map((p) => ({
+      partIndex: p.partIndex,
+      key: p.key,
+      sizeBytes: Number(p.sizeBytes),
+      status: p.status,
+      photoCount: p.photoCount,
+      membershipSig: p.membershipSig,
+      generation: p.generation,
+    })),
+    debounceUntil: job.debounceUntil,
+    failureReason: job.failureReason,
+    // Idle-clock provenance + the derived countdown (PIXSHAR-8).
+    lastDownloadedAt: job.lastDownloadedAt,
+    readyAt: job.readyAt,
+    expiredAt: job.expiredAt,
+    expiresAt,
+    updatedAt: job.updatedAt,
+  };
+}

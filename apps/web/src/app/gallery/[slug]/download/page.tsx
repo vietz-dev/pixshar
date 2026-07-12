@@ -163,6 +163,53 @@ export default function GalleryDownloadPage() {
     setDownloaded((prev) => ({ ...prev, [q]: { ...prev[q], [partIndex]: true } }));
   };
 
+  // Per-variant "request in flight" — disables the button for the tab that was
+  // clicked without touching the other tab's own state.
+  const [requesting, setRequesting] = useState<Record<Quality, boolean>>({
+    DISPLAY: false,
+    ORIGINAL: false,
+  });
+
+  // Ask the API to build (or repair) exactly the SELECTED variant — never both.
+  // Idempotent server-side: NONE / EXPIRED / FAILED queue a build; a READY
+  // variant with EXPIRED parts (the post-deletion partial case) queues a
+  // targeted rebuild too; anything already building is a no-op. We merge the
+  // response's status into just that variant so its tab flips to "building"
+  // immediately, without waiting for the next SSE tick — the untouched
+  // variant's own state is left completely alone.
+  const requestArchive = useCallback(
+    async (q: Quality) => {
+      setRequesting((prev) => ({ ...prev, [q]: true }));
+      try {
+        const res = await fetch(`/api/gallery/${slug}/download/request?quality=${q}`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { status: string; queued: boolean };
+          setPayload((prev) => {
+            if (!prev) return prev;
+            const variant: VariantPayload = {
+              ...prev.variants[q],
+              status: data.status,
+              building: data.queued || prev.variants[q].building,
+            };
+            const variants = { ...prev.variants, [q]: variant };
+            return prev.defaultQuality === q
+              ? { ...prev, variants, status: variant.status, building: variant.building }
+              : { ...prev, variants };
+          });
+        }
+      } catch {
+        // Best-effort optimistic update — the SSE stream reconciles the real
+        // state regardless of whether this request succeeded.
+      } finally {
+        setRequesting((prev) => ({ ...prev, [q]: false }));
+      }
+    },
+    [slug]
+  );
+
   // ---- Render states -------------------------------------------------------
 
   if (error) {
@@ -191,6 +238,22 @@ export default function GalleryDownloadPage() {
   const parts = active.parts ?? [];
   const total = active.totalSizeBytes ?? parts.reduce((s, p) => s + p.sizeBytes, 0);
   const n = parts.length;
+
+  // A build is under way for the active variant: either the payload says so
+  // (an active job status, or a STALE part being rebuilt), or we just clicked
+  // "Archiv erstellen" and are waiting for the next SSE tick to confirm it.
+  const isPending =
+    active.building ||
+    active.status === "BUILDING" ||
+    active.status === "QUEUED" ||
+    active.status === "DEBOUNCING";
+  // No archive at all for this tab — never built, expired, or a failed build.
+  // Needs an explicit "Archiv erstellen" action instead of a part list.
+  const isAbsent = n === 0 && !isPending;
+  // Post-deletion partial availability: some parts still hold bytes, others
+  // don't (their object was reclaimed when a photo was deleted) — offer a
+  // targeted rebuild without disturbing the parts that still work.
+  const hasMissingParts = n > 0 && parts.some((p) => !p.url);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg, #fafaf9)", padding: "32px 16px" }}>
@@ -268,24 +331,72 @@ export default function GalleryDownloadPage() {
           </div>
         )}
 
-        {/* Empty state for the active variant (no parts yet) */}
-        {n === 0 && (
+        {/* Building, but no committed part yet for this tab */}
+        {n === 0 && isPending && (
           <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 20px" }}>
-            {active.building ||
-            active.status === "BUILDING" ||
-            active.status === "QUEUED" ||
-            active.status === "DEBOUNCING"
-              ? t("variantBuildingEmpty")
-              : t("variantNoArchive")}
+            {t("variantBuildingEmpty")}
           </p>
         )}
 
-        {/* Part list (active variant only — galleries can have 20+ parts) */}
+        {/* Absent (never built), expired, or failed — no part list, just the
+            explanatory line and a button that acts on THIS tab only. */}
+        {isAbsent && (
+          <div style={{ marginBottom: 20 }}>
+            {active.status === "EXPIRED" && (
+              <div
+                data-testid="expired-banner"
+                style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v4M12 16h.01" />
+                </svg>
+                {t("expiredBanner")}
+              </div>
+            )}
+            <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 14px" }}>
+              {active.status === "EXPIRED" ? t("variantExpired") : t("variantNoArchive")}
+            </p>
+            <button
+              data-testid="create-archive-button"
+              onClick={() => requestArchive(quality)}
+              disabled={requesting[quality]}
+              style={createButtonStyle}
+            >
+              {requesting[quality] ? t("creatingButton") : t("createButton")}
+            </button>
+          </div>
+        )}
+
+        {/* Post-deletion partial availability: some parts unavailable, the rest
+            still clickable — offer a targeted rebuild of just this tab. */}
+        {hasMissingParts && !isPending && (
+          <div
+            data-testid="repair-banner"
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", fontSize: 12.5, color: "var(--text-muted, #71717a)", background: "var(--surface, #fff)", border: "1px solid var(--border, #e4e4e7)", borderRadius: 10, padding: "10px 12px", marginBottom: 16 }}
+          >
+            <span>{t("partsUnavailableHint")}</span>
+            <button
+              data-testid="repair-button"
+              onClick={() => requestArchive(quality)}
+              disabled={requesting[quality]}
+              style={{ ...createButtonStyle, height: 32, padding: "0 12px", fontSize: 12.5 }}
+            >
+              {requesting[quality] ? t("creatingButton") : t("repairButton")}
+            </button>
+          </div>
+        )}
+
+        {/* Part list (active variant only — galleries can have 20+ parts).
+            Rendered as soon as ANY part exists, even while later parts are
+            still being committed — the builder finishes parts one at a time
+            and each becomes clickable the moment it lands. */}
         {n > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {parts.map((part) => {
               const done = !!downloaded[quality]?.[part.index];
               const sig = part.membershipSig ?? "";
+              const unavailable = !part.url && !part.rebuilding;
               return (
                 <a
                   key={part.index}
@@ -303,6 +414,7 @@ export default function GalleryDownloadPage() {
                     textDecoration: "none",
                     transition: "background .15s, border-color .15s",
                     cursor: part.url ? "pointer" : "default",
+                    opacity: unavailable ? 0.55 : 1,
                   }}
                   onMouseEnter={(e) => {
                     if (!done && part.url) e.currentTarget.style.background = "#f9f9f8";
@@ -326,6 +438,11 @@ export default function GalleryDownloadPage() {
                       {part.rebuilding && (
                         <span style={{ marginLeft: 8, color: "#d97706", fontWeight: 500 }}>
                           · {t("rebuilding")}
+                        </span>
+                      )}
+                      {unavailable && (
+                        <span style={{ marginLeft: 8, color: "#a1a1aa", fontWeight: 500 }}>
+                          · {t("unavailable")}
                         </span>
                       )}
                     </div>
@@ -402,6 +519,18 @@ function VariantTab({
     </button>
   );
 }
+
+const createButtonStyle: React.CSSProperties = {
+  height: 40,
+  padding: "0 18px",
+  borderRadius: 10,
+  border: "none",
+  background: "var(--accent, #18181b)",
+  color: "#fff",
+  fontSize: 13.5,
+  fontWeight: 600,
+  cursor: "pointer",
+};
 
 const backBtnStyle: React.CSSProperties = {
   height: 36,

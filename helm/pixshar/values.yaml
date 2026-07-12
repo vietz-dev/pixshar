@@ -274,6 +274,12 @@ config:
   # Max size of a single gallery-archive part; larger galleries are split into
   # multiple ZIPs so guests never have to restart a >2GB download. 2 GiB.
   downloadMaxPartBytes: "2147483648"
+  # Idle expiry — an archive nobody has downloaded for this many days has its ZIP
+  # objects deleted from S3 and is rebuilt on demand from the preserved
+  # membership. 0 disables expiry (archives live forever, as they used to).
+  downloadArchiveTtlDays: 5
+  # How often the expiry sweep looks for idle archives.
+  downloadArchiveSweepSeconds: 3600
 
 # --- Ingress ---
 # The ingress routes all traffic to the web service.

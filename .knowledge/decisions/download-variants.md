@@ -1,15 +1,24 @@
 ---
 type: Decision
 title: Download-Varianten — Kompakt und Original
-description: Jedes Event bietet zwei Archiv-Varianten, die beide immer gebaut und angeboten werden — Kompakt (Display-Bilder, 1920 px) und Original (voller Upload). Zwei unabhängige DownloadJobs pro Event, per quality unterschieden.
+description: Jedes Event bietet zwei Archiv-Varianten an — Kompakt (Display-Bilder, 1920 px) und Original (voller Upload) — als zwei unabhängige DownloadJobs pro Event, per quality unterschieden. Seit Archiv-Lebenszeit (siehe /decisions/archive-lifetime.md) wird keine der beiden mehr eager gebaut; beide entstehen nur noch auf explizite Anforderung.
 tags: [decision, download, quality, variants, archive, zip]
-timestamp: 2026-07-11T00:00:00Z
+timestamp: 2026-07-12T00:00:00Z
 ---
+
+> **Update (2026-07-12):** Diese Entscheidung beschrieb ursprünglich zwei Varianten, die **beide
+> immer eager** gebaut wurden. [Archiv-Lebenszeit](/decisions/archive-lifetime.md) hat das
+> Build-Verhalten seither auf **lazy** umgestellt: keine Variante wird mehr automatisch gebaut,
+> weder beim Upload noch beim Öffnen der Downloadseite. Was hier bleibt — und weshalb dieses
+> Dokument nicht einfach gelöscht wurde — ist die Entscheidung, dass es überhaupt **zwei**
+> unabhängige Varianten gibt, wie die Variante auf dem `DownloadJob` statt auf dem Part lebt, und
+> die S3-Schlüssel-/Orphan-Sweep-Trennung. Abschnitte, die das alte Eager-Verhalten beschrieben,
+> sind unten korrigiert; Details zum Lazy-Build gehören in die neuere Entscheidung.
 
 # Entscheidung
 
-Jedes Event bietet **zwei Download-Varianten** an, die **beide immer** gebaut und auf der
-Downloadseite angeboten werden:
+Jedes Event **kann** zwei Download-Varianten anbieten — Kompakt und Original —, die auf der
+Downloadseite als Toggle erscheinen:
 
 | Variante | Inhalt | Quelle |
 |---|---|---|
@@ -39,17 +48,21 @@ werden können, sind sie **zwei getrennte Jobs**:
 - **Kompakt reuse Display-Bilder** — zippt die bereits beim Upload erzeugten 1920-px-Objekte.
   Keine neue Bildvariante, keine Pipeline-Änderung, kein zusätzlicher Quell-Storage. Bewusst
   akzeptierte Kopplung: die Kompakt-Qualität hängt an der Display-Auflösung.
-- **Trigger-Fan-out**: Foto-Upload enqueued **beide** Jobs; Foto-Löschung markiert die betroffenen
-  Parts **beider** Jobs STALE. Debounce/Reconcile arbeiten je Variante getrennt.
-- **Lazy für Bestandsevents**: Events, die es vor der Einführung schon gab, haben nur ein
-  Original-Archiv. Der Kompakt-Job entsteht **lazy** beim ersten Gast-Aufruf der Downloadseite
-  (bzw. der nächsten Foto-Aktivität) — kein Massen-Backfill, der den Worker-Pool überrennen würde.
+- **Trigger (aktueller Stand, siehe [Archiv-Lebenszeit](/decisions/archive-lifetime.md)
+  für die Details)**: Weder Foto-Upload noch das Öffnen der Downloadseite legen einen Job an oder
+  bauen eager. Ein Foto-Upload hängt eine neue Foto an **jede Variante an, die gerade lebt**
+  (`READY`/`DEBOUNCING`/`QUEUED`/`BUILDING`) — eine Variante, die nie angefordert oder deren
+  Bytes vom Idle-Reaper reklamiert wurden, bleibt unangetastet. Foto-Löschung reklamiert die
+  betroffenen Parts **beider** Varianten sofort (nicht mehr nur `STALE` mit verzögertem
+  Reconcile). Ein Job entsteht ausschließlich, wenn ein Gast oder Admin ihn explizit anfordert.
 - **S3-Schlüssel** trägt die Variante: `{eventId}/archive/{quality}-part-{index}-g{generation}.zip`.
   Alt-Objekte (`gallery-part-…`) gelten als `ORIGINAL` und bleiben herunterladbar; der Orphan-Sweep
   ist variantengebunden und löscht nie die Objekte der anderen Variante.
 
-Konsequenz: Aktive Events treiben **zwei** Builds und speichern zwei Sätze Archiv-Parts →
-Archiv-Storage und Queue-Tiefe verdoppeln sich etwa, bis TTL greift (siehe unten).
+Konsequenz: Ein Event, dessen Gäste **beide** Varianten aktiv herunterladen, hält zwei Sätze
+Archiv-Parts lebendig — Archiv-Storage verdoppelt sich für dieses Event etwa, bis der Idle-Reaper
+eine ungenutzte Variante reklamiert (siehe [Archiv-Lebenszeit](/decisions/archive-lifetime.md)).
+Ein Event, dessen Gäste nur Kompakt anfordern, zahlt für Original gar nichts.
 
 # Gast-UI
 
@@ -73,13 +86,11 @@ Variante READY und die andere BUILDING ist).
   = DISPLAY, `variants.{DISPLAY,ORIGINAL}`); die Default-Variante ist zusätzlich zur Abwärtskompat
   auf oberster Ebene gespiegelt.
 - Guest- und Admin-SSE-Streams senden Status je Variante.
-- `build-now` / `rebuild-all` / `cancel` sowie Admin-Status nehmen einen `quality`-Selektor
-  (Default `ORIGINAL`) und wirken auf genau **eine** Variante.
+- `build-now` / `rebuild-all` / `cancel` / `release` sowie Admin-Status nehmen einen
+  `quality`-Selektor (Default `ORIGINAL`) und wirken auf genau **eine** Variante.
 
 # Nicht in dieser Iteration
 
-- **TTL / Lazy-Expiry** der gebauten Archive — der Haupthebel gegen die verdoppelte Storage-Last,
-  Folgephase (siehe [ZIP TTL Konzept](/concepts/zip-ttl-storage.md)).
 - **`allowOriginalDownload`-Flag + SaaS-Preisstufen** (nur-Kompakt-Events, Originale gelöscht) —
   hängt an Billing-Logik, additive Migration.
 - **E-Mail-Benachrichtigung** bei Build-Fertigstellung; **eigener** Kompressions-Tier abweichend
@@ -91,3 +102,4 @@ Variante READY und die andere BUILDING ist).
 [1] [Archive generation architecture](/architecture/archive-generation.md)
 [2] [Download Jobs data model](/data-model/download-jobs.md)
 [3] [Multi-part archive decision](/decisions/multi-part-archive.md)
+[4] [Archiv-Lebenszeit decision](/decisions/archive-lifetime.md)

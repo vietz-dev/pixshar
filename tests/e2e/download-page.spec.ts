@@ -16,6 +16,7 @@ import {
   apiSignIn,
   apiCreateEvent,
   apiDeleteEvent,
+  apiUploadPhoto,
   uniqueSlug,
 } from "./helpers.js";
 
@@ -312,6 +313,125 @@ test.describe("Gallery download page", () => {
         if (await banner.count()) {
           await expect(banner.first()).toBeVisible();
         }
+      });
+    });
+  });
+
+  // ── Absent archive → "Archiv erstellen" (PIXSHAR-7) ───────────────────────
+  // A dedicated, freshly created event so "no build has happened yet" is an
+  // actual fact rather than an assumption about the shared `eventId` above,
+  // which earlier tests in this file already force-build against.
+
+  test.describe("Given a freshly created event whose archives were never built", () => {
+    let freshCookie: string;
+    let freshEventId: string;
+    let freshSlug: string;
+
+    test.beforeAll(async () => {
+      freshCookie = adminCookie;
+      freshSlug = uniqueSlug("dl-fresh");
+      const ev = await apiCreateEvent(adminCookie, {
+        name: "Fresh Archive E2E Event",
+        slug: freshSlug,
+        password: "dl-fresh-pass",
+      });
+      freshEventId = ev.id;
+      // A real photo, so a requested build actually commits a part. Under the
+      // lazy model the upload itself builds nothing — which is exactly what the
+      // "no build is triggered" assertion below relies on.
+      await apiUploadPhoto(adminCookie, freshEventId);
+    });
+
+    test.afterAll(async () => {
+      await apiDeleteEvent(adminCookie, freshEventId);
+    });
+
+    async function openFreshDownloadPage(page: import("@playwright/test").Page) {
+      await page.context().clearCookies();
+      await page.goto(`${WEB}/gallery/${freshSlug}`);
+      await page.locator("input[type='password']").fill("dl-fresh-pass");
+      await page.getByRole("button", { name: /unlock/i }).click();
+      await expect(page).toHaveURL(/\/view/, { timeout: 12_000 });
+
+      await page.goto(`${WEB}/gallery/${freshSlug}/download`);
+      await expect(page).toHaveURL(/\/download/, { timeout: 8_000 });
+    }
+
+    async function adminVariantStatus(quality: "DISPLAY" | "ORIGINAL"): Promise<string> {
+      const res = await fetch(
+        `${API}/api/events/${freshEventId}/download/status?quality=${quality}`,
+        { headers: { Cookie: freshCookie } }
+      );
+      const body = (await res.json()) as { status: string };
+      return body.status;
+    }
+
+    test.describe("When the download page loads", () => {
+      test("Then both tabs offer 'Archiv erstellen', no part list is shown, and no build is triggered", async ({ page }) => {
+        await openFreshDownloadPage(page);
+
+        // Kompakt (the default tab): create button, no part rows.
+        await expect(page.getByTestId("create-archive-button")).toBeVisible({ timeout: 8_000 });
+        await expect(page.locator("a[download]")).toHaveCount(0);
+
+        // Original: its own independent create affordance, still no parts.
+        await page.getByTestId("variant-toggle-original").click();
+        await expect(page.getByTestId("create-archive-button")).toBeVisible();
+        await expect(page.locator("a[download]")).toHaveCount(0);
+
+        // Opening the page is a pure read — neither variant was queued.
+        expect(await adminVariantStatus("DISPLAY")).toBe("NONE");
+        expect(await adminVariantStatus("ORIGINAL")).toBe("NONE");
+      });
+    });
+
+    test.describe("When 'Archiv erstellen' is clicked on the Kompakt tab", () => {
+      test("Then Kompakt starts building, Original stays untouched, and parts appear as they are committed", async ({ page }) => {
+        await openFreshDownloadPage(page);
+
+        await expect(page.getByTestId("variant-toggle-kompakt")).toHaveAttribute(
+          "aria-selected",
+          "true",
+          { timeout: 8_000 }
+        );
+        await page.getByTestId("create-archive-button").click();
+
+        // The building state appears for Kompakt — the building banner and/or
+        // the empty-building copy while the first part is still being
+        // committed. Either is proof the tab left the "Archiv erstellen" state;
+        // `.first()` because both can legitimately be on screen at once.
+        await expect(
+          page
+            .getByTestId("building-banner")
+            .or(page.getByText(/prepared|being built|wird erstellt|vorbereitet/i))
+            .first()
+        ).toBeVisible({ timeout: 10_000 });
+        // …and the create button is gone: the tab is no longer archive-less.
+        await expect(page.getByTestId("create-archive-button")).toHaveCount(0);
+
+        // Original is untouched: still shows its own "Archiv erstellen" and
+        // reports NONE server-side — asking for Kompakt must not build Original.
+        await page.getByTestId("variant-toggle-original").click();
+        await expect(page.getByTestId("create-archive-button")).toBeVisible();
+        expect(await adminVariantStatus("ORIGINAL")).toBe("NONE");
+
+        // Back to Kompakt. The event has a real photo, so the build commits a
+        // part — and it appears on the page over SSE, with no reload.
+        await page.getByTestId("variant-toggle-kompakt").click();
+
+        const partLinks = page.locator("a[download]");
+        await expect(partLinks.first()).toBeVisible({ timeout: 60_000 });
+
+        // The part link points at the API redirect endpoint (which stamps the
+        // idle clock), not straight at S3.
+        await expect(partLinks.first()).toHaveAttribute(
+          "href",
+          new RegExp(`/api/gallery/${freshSlug}/download/part/1\\?quality=DISPLAY`)
+        );
+
+        // Kompakt is READY; Original was never built.
+        expect(await adminVariantStatus("DISPLAY")).toBe("READY");
+        expect(await adminVariantStatus("ORIGINAL")).toBe("NONE");
       });
     });
   });

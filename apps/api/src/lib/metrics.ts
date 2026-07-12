@@ -60,6 +60,74 @@ export const resizeQueueInflight = new Gauge({
   registers: [register],
 });
 
+// Archive lifecycle (PIXSHAR-9). expiryCount/rebuildCount live on DownloadJob,
+// not in process memory: expiry and rebuild are rare per-event events whose
+// whole value is their history across weeks, and an in-process counter would
+// reset on every pod restart/rollout — erasing exactly the history the
+// operator is tuning DOWNLOAD_ARCHIVE_TTL_DAYS against. So these two gauges
+// mirror the DB counters at scrape time, same pattern as photosByStatus:
+// aggregate query inside collect(), reset() before set(). Restricted to
+// DownloadJobs touched in the last 30 days so the `event` label cardinality is
+// bounded by recent activity, not by every event ever hosted.
+const RECENT_ARCHIVE_ACTIVITY_DAYS = 30;
+
+export const archiveExpiries = new Gauge({
+  name: "pixshar_archive_expiries",
+  help: "Cumulative archive expiries per event and variant (mirrors DownloadJob.expiryCount)",
+  labelNames: ["event", "quality"] as const,
+  registers: [register],
+  async collect() {
+    const cutoff = new Date(Date.now() - RECENT_ARCHIVE_ACTIVITY_DAYS * 24 * 60 * 60 * 1000);
+    const rows = await prisma.downloadJob.findMany({
+      where: { updatedAt: { gte: cutoff } },
+      select: { quality: true, expiryCount: true, event: { select: { slug: true } } },
+    });
+    this.reset();
+    for (const row of rows) {
+      this.set({ event: row.event.slug, quality: row.quality }, row.expiryCount);
+    }
+  },
+});
+
+export const archiveRebuilds = new Gauge({
+  name: "pixshar_archive_rebuilds",
+  help: "Cumulative archive rebuilds per event and variant (mirrors DownloadJob.rebuildCount)",
+  labelNames: ["event", "quality"] as const,
+  registers: [register],
+  async collect() {
+    const cutoff = new Date(Date.now() - RECENT_ARCHIVE_ACTIVITY_DAYS * 24 * 60 * 60 * 1000);
+    const rows = await prisma.downloadJob.findMany({
+      where: { updatedAt: { gte: cutoff } },
+      select: { quality: true, rebuildCount: true, event: { select: { slug: true } } },
+    });
+    this.reset();
+    for (const row of rows) {
+      this.set({ event: row.event.slug, quality: row.quality }, row.rebuildCount);
+    }
+  },
+});
+
+export const archiveLiveBytes = new Gauge({
+  name: "pixshar_archive_live_bytes",
+  help: "Bytes currently held in S3 by READY archive parts, by variant — the savings curve",
+  labelNames: ["quality"] as const,
+  registers: [register],
+  async collect() {
+    const rows = await prisma.downloadArchivePart.findMany({
+      where: { status: "READY" },
+      select: { sizeBytes: true, job: { select: { quality: true } } },
+    });
+    const sums = new Map<string, number>();
+    for (const row of rows) {
+      sums.set(row.job.quality, (sums.get(row.job.quality) ?? 0) + Number(row.sizeBytes));
+    }
+    this.reset();
+    for (const [quality, bytes] of sums) {
+      this.set({ quality }, bytes);
+    }
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Counters
 // ---------------------------------------------------------------------------
@@ -78,9 +146,48 @@ export const photoDownloadsTotal = new Counter({
   registers: [register],
 });
 
+// One increment per archive part a guest actually pulls — counted in the
+// part-redirect handler, the only place bytes leave S3 (PIXSHAR-3). Opening the
+// download page is a read and counts nothing: it hands out no presigned URL, and
+// counting page loads (or SSE ticks) measured neither presigns nor downloads.
 export const archiveDownloadsTotal = new Counter({
   name: "pixshar_archive_downloads_total",
-  help: "Archive ZIP download presigned URLs generated",
+  help: "Archive ZIP parts downloaded by guests (part-redirect hits)",
+  labelNames: ["quality"] as const,
+  registers: [register],
+});
+
+// Idle expiry (PIXSHAR-4). Written by expireArchive — both by the periodic
+// reaper (worker process) and by the admin "release archive" endpoint (API
+// process); each process exposes its own /metrics, Prometheus sums them.
+export const archiveExpiredTotal = new Counter({
+  name: "pixshar_archive_expired_total",
+  help: "Archives expired: ZIP objects reclaimed from S3, membership kept",
+  labelNames: ["quality"] as const,
+  registers: [register],
+});
+
+export const archiveBytesReclaimedTotal = new Counter({
+  name: "pixshar_archive_bytes_reclaimed_total",
+  help: "Bytes freed from S3 by archive expiry",
+  labelNames: ["quality"] as const,
+  registers: [register],
+});
+
+// Lazy build (PIXSHAR-5). Counted where a build is *scheduled from an idle
+// state* — one increment per build cycle initiated, not per trigger call: a
+// second photo landing during the debounce window extends the same cycle and
+// does not count again. `trigger` is why the bytes are being spent:
+//   first_build         a guest asked for a variant that never existed
+//   on_demand_rebuild   a guest asked for a variant whose bytes had expired
+//   append              a photo arrived while the variant was alive (eager append)
+//   admin               the admin forced a build/rebuild
+// The append counts are emitted by the image-processor process, the rest by the
+// API process; each exposes its own /metrics and Prometheus sums them.
+export const archiveBuildsTotal = new Counter({
+  name: "pixshar_archive_builds_total",
+  help: "Archive builds scheduled, by variant and what triggered them",
+  labelNames: ["quality", "trigger"] as const,
   registers: [register],
 });
 
@@ -137,6 +244,19 @@ export const archiveBuildDuration = new Histogram({
   help: "ZIP archive build duration in seconds",
   labelNames: ["result"] as const,
   buckets: [1, 5, 15, 30, 60, 120, 300, 600],
+  registers: [register],
+});
+
+// How long an expired archive stayed gone before someone asked for it back.
+// This is the metric that tells the operator whether DOWNLOAD_ARCHIVE_TTL_DAYS
+// is cutting into live usage: a pile of observations in the low buckets means
+// the TTL is expiring archives guests still want. Buckets are 1h/6h/1d/3d/7d/
+// 14d/30d, since the TTL itself is measured in days.
+export const archiveExpiryToRebuildSeconds = new Histogram({
+  name: "pixshar_archive_expiry_to_rebuild_seconds",
+  help: "Seconds between an archive expiring and a request rebuilding it",
+  labelNames: ["quality"] as const,
+  buckets: [3600, 21600, 86400, 259200, 604800, 1209600, 2592000],
   registers: [register],
 });
 

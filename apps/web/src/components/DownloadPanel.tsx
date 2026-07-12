@@ -17,6 +17,10 @@ interface AdminDownloadState {
   partCount: number;
   debounceUntil: string | null;
   failureReason: string | null;
+  lastDownloadedAt: string | null;
+  readyAt: string | null;
+  expiredAt: string | null;
+  expiresAt: string | null;
   updatedAt: string;
 }
 
@@ -67,6 +71,7 @@ function VariantPanel({
     READY:     { label: t("statusReady"),     bg: "#ecfdf5", color: "#16a34a", dot: "#16a34a" },
     FAILED:    { label: t("statusFailed"),    bg: "#fef2f2", color: "#dc2626", dot: "#dc2626" },
     CANCELLED: { label: t("statusCancelled"), bg: "#fef2f2", color: "#dc2626", dot: "#dc2626" },
+    EXPIRED:   { label: t("statusExpired"),   bg: "#f4f4f5", color: "#71717a", dot: "#a1a1aa" },
   };
 
   useEffect(() => {
@@ -123,6 +128,21 @@ function VariantPanel({
     }
   }
 
+  // Reclaims this variant's S3 objects right now (the endpoint Ticket 3
+  // built); membership survives so the next build reproduces the same parts.
+  async function handleRelease() {
+    if (!confirm(t("releaseConfirm"))) return;
+    setActionLoading("release");
+    try {
+      await fetch(`/api/events/${eventId}/download/release?quality=${quality}`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   const titleBlock = (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: "#18181b" }}>{label}</div>
@@ -156,13 +176,32 @@ function VariantPanel({
   const meta = STATUS_META[state.status] || STATUS_META.NONE;
   const isBuilding = state.status === "BUILDING" || state.status === "QUEUED";
   const canCancel = isBuilding || state.status === "DEBOUNCING";
-  const canBuildNow = state.status === "DEBOUNCING";
+  // Pre-warm (PIXSHAR-8): "Jetzt bauen" also works from the empty (NONE) and
+  // expired (EXPIRED) state, not only to skip an already-running debounce —
+  // that's the whole point of letting the admin warm a variant before
+  // sharing the link.
+  const canBuildNow = state.status === "DEBOUNCING" || state.status === "NONE" || state.status === "EXPIRED";
   // "Rebuild all" regenerates every existing part from its stored membership.
   const canRebuildAll = state.status === "READY" || state.status === "FAILED" || state.status === "CANCELLED";
+  // "Archiv freigeben" only has bytes to reclaim while READY.
+  const canRelease = state.status === "READY";
   const isUploading = state.status === "BUILDING" && state.processedPhotos === -1;
   const isZipping = state.status === "BUILDING" && state.processedPhotos >= 0;
   const zipPct = state.photoCount > 0 ? Math.round((state.processedPhotos / state.photoCount) * 100) : 0;
   const uploadPct = state.uploadProgress;
+
+  // The remaining-lifetime line: "läuft in 3 Tagen ab, wenn niemand lädt" for
+  // a READY archive with a countdown, "läuft nie ab" when TTL is disabled
+  // (expiresAt null but the job is READY), and a plain expiry note once the
+  // bytes are gone — the membership (and a rebuild) is still one click away.
+  let expiryLine: string | null = null;
+  if (state.status === "READY") {
+    expiryLine = state.expiresAt
+      ? t("expiresInDays", { days: Math.max(0, Math.ceil((new Date(state.expiresAt).getTime() - Date.now()) / 86_400_000)) })
+      : t("expiresNever");
+  } else if (state.status === "EXPIRED") {
+    expiryLine = t("expiredHint");
+  }
 
   return (
     <div
@@ -187,7 +226,10 @@ function VariantPanel({
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: meta.dot }} />
             {meta.label}
           </div>
-          <span style={{ fontSize: 13, color: "#71717a" }}>{state.message}</span>
+          <span style={{ fontSize: 13, color: "#71717a" }}>
+            {state.message}
+            {expiryLine ? ` · ${expiryLine}` : ""}
+          </span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {canCancel && (
@@ -277,6 +319,35 @@ function VariantPanel({
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
               </svg>
               {actionLoading === "rebuildAll" ? t("rebuildingAllButton") : t("rebuildAllButton")}
+            </button>
+          )}
+          {canRelease && (
+            <button
+              onClick={handleRelease}
+              disabled={actionLoading === "release"}
+              style={{
+                height: 32,
+                padding: "0 12px",
+                borderRadius: 7,
+                border: "1px solid #e4e4e7",
+                background: "#fff",
+                color: "#52525b",
+                fontSize: 12.5,
+                fontWeight: 500,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                cursor: "pointer",
+                transition: "background .15s",
+                opacity: actionLoading === "release" ? 0.6 : 1,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+              </svg>
+              {actionLoading === "release" ? t("releasingButton") : t("releaseButton")}
             </button>
           )}
         </div>

@@ -3,7 +3,7 @@ type: Architecture
 title: Storage
 description: S3-compatible object storage with presigned URLs; Minio bundled for self-hosting.
 tags: [storage, s3, minio, presigned-urls]
-timestamp: 2026-07-11T00:00:00Z
+timestamp: 2026-07-12T00:00:00Z
 ---
 
 # Object Storage
@@ -47,11 +47,19 @@ This separation is necessary because the browser cannot reach the internal Docke
 | Use case | Expiry |
 |---|---|
 | Thumbnail / display URLs returned in gallery API | 15 minutes (re-fetched on next gallery load) |
-| Archive part download URLs | 1 hour |
+| Archive part download URLs | 15 minutes (down from 1 hour) |
 | Admin per-photo download | 5 minutes |
+
+Archive part URLs are no longer handed to the guest directly in the download payload — the
+payload's part `url` now points at the API's `GET /api/gallery/:slug/download/part/:index`
+redirect endpoint, which mints a fresh 15-minute presigned URL per click and 302s to it. This is
+the real-download signal that drives archive idle expiry; see
+[Archiv-Lebenszeit](/decisions/archive-lifetime.md). Bytes still stream directly from S3 — only
+the URL-minting step gained one redirect hop.
 
 # Citations
 
 [1] [Minio documentation](https://min.io/docs)
 [2] [AWS S3 presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)
 [3] [Why presigned URLs over proxy](/decisions/presigned-urls.md)
+[4] [Archiv-Lebenszeit decision](/decisions/archive-lifetime.md)

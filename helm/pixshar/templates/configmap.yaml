@@ -21,5 +21,8 @@ data:
   {{- end }}
   DOWNLOAD_DEBOUNCE_SECONDS: {{ .Values.config.downloadDebounceSeconds | quote }}
   DOWNLOAD_MAX_PART_BYTES: {{ .Values.config.downloadMaxPartBytes | default "2147483648" | quote }}
+  {{- /* dig, not default: `default` treats 0 as empty, and 0 means "never expire". */}}
+  DOWNLOAD_ARCHIVE_TTL_DAYS: {{ dig "downloadArchiveTtlDays" 5 .Values.config | quote }}
+  DOWNLOAD_ARCHIVE_SWEEP_SECONDS: {{ dig "downloadArchiveSweepSeconds" 3600 .Values.config | quote }}
   WORKER_CONCURRENCY: {{ .Values.imageProcessor.concurrency | default 2 | quote }}
   WORKER_METRICS_PORT: {{ .Values.imageProcessor.metricsPort | default 4000 | quote }}

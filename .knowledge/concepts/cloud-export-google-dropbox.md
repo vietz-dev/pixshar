@@ -4,7 +4,7 @@ title: Direktexport zu Google Fotos und Dropbox
 description: Zukünftiges Konzept für server-seitigen Direkttransfer von Event-Fotos in die Cloud-Bibliothek des Gastes — als komfortablere Alternative zum ZIP-Download.
 tags: [concept, future, google-photos, dropbox, oauth, export, saas, guest-ux]
 status: future — nicht implementiert
-timestamp: 2026-07-07T00:00:00Z
+timestamp: 2026-07-12T00:00:00Z
 ---
 
 # Motivation
@@ -129,7 +129,7 @@ Fehlen diese, wird die jeweilige Export-Option in der UI nicht angezeigt.
 
 # Verwandte Konzepte und Entscheidungen
 
-- [ZIP TTL Storage](/concepts/zip-ttl-storage.md) — ZIP bleibt der primäre Download-Weg;
+- [Archiv-Lebenszeit](/decisions/archive-lifetime.md) — ZIP bleibt der primäre Download-Weg;
   Cloud-Export ist eine komplementäre Option, kein Ersatz.
 - [KEDA Worker Scaling](/concepts/keda-worker-scaling.md) — Export-Jobs könnten denselben
   KEDA-skalierten Worker-Pool nutzen wie ZIP-Builds.

@@ -3,7 +3,7 @@ type: Product Overview
 title: Pixshar
 description: A self-hostable, private event photo sharing application for photographers.
 tags: [product, overview]
-timestamp: 2026-07-03T00:00:00Z
+timestamp: 2026-07-12T00:00:00Z
 ---
 
 # What Pixshar Is
@@ -16,14 +16,13 @@ Pixshar is a self-hostable web application that lets a photographer (the admin) 
 1. Creates a named gallery with a password and optional description.
 2. Uploads photos via a drag-and-drop interface; uploads go directly to S3 (never through the server).
 3. Photos are automatically resized to a display size (1920 px) and thumbnail (400 px) in the background.
-4. Shares the gallery URL and password with guests.
-5. A downloadable archive of all gallery photos is automatically built once processing is complete.
+4. Shares the gallery URL and password with guests, optionally pre-warming a downloadable archive first.
 
 **Guest:**
 1. Opens the gallery URL and enters the password.
 2. Browses the photo grid; clicks a photo to open a full-screen lightbox.
 3. Uploads their own photos (which are also processed and appear in the gallery).
-4. Downloads the archive — split into parts if the gallery is large enough that a single download would be impractical.
+4. On the download page, requests a downloadable archive — built on demand rather than upfront — split into parts if the gallery is large enough that a single download would be impractical. An archive nobody has downloaded in a while is reclaimed and rebuilt on the next request; see [Archiv-Lebenszeit](/decisions/archive-lifetime.md).
 
 # What Pixshar Is Not
 

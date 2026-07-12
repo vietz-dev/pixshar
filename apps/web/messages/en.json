@@ -185,7 +185,14 @@
       "variantSummary": "{count, plural, one {1 part} other {# parts}} · {size}",
       "variantSummarySingle": "{size}",
       "variantBuildingEmpty": "This download is being prepared, please check back soon.",
-      "variantNoArchive": "No download available for this option yet."
+      "variantNoArchive": "No download available for this option yet.",
+      "variantExpired": "The archive for this option expired — create it again to download.",
+      "createButton": "Create archive",
+      "creatingButton": "Requesting…",
+      "expiredBanner": "This archive expired because it wasn't downloaded for a while. Rebuilding it usually takes just a few minutes.",
+      "partsUnavailableHint": "Some parts were removed (e.g. a deleted photo) and need to be rebuilt.",
+      "repairButton": "Rebuild missing parts",
+      "unavailable": "No longer available"
     }
   },
   "upload": {
@@ -261,11 +268,18 @@
       "statusReady": "Ready",
       "statusFailed": "Failed",
       "statusCancelled": "Cancelled",
+      "statusExpired": "Expired",
       "heading": "Download archives",
       "variantKompakt": "Compact",
       "variantOriginal": "Original",
       "variantKompaktHint": "Compressed images — small & fast",
-      "variantOriginalHint": "Full-resolution originals"
+      "variantOriginalHint": "Full-resolution originals",
+      "releaseButton": "Release archive",
+      "releasingButton": "Releasing…",
+      "releaseConfirm": "Release the archive now? Its files are removed from S3, the membership is kept and it can be rebuilt any time.",
+      "expiresInDays": "expires in {days, plural, =0 {less than a day} =1 {a day} other {# days}} if nobody downloads it",
+      "expiresNever": "never expires",
+      "expiredHint": "Membership kept — click \"Build now\" to rebuild the same parts"
     }
   },
   "lightbox": {
