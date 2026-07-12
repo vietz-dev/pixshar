@@ -21,6 +21,8 @@
 //   reaper   — the effect side of expiry: expireArchive (S3 reclaim → EXPIRED,
 //              membership preserved), the admin release path and the periodic
 //              sweep that drives them.
+//   deletion — expirePartsForDeletedPhotos: a deleted photo's parts lose their
+//              S3 object immediately (correctness, not cost), no build queued.
 
 export {
   type Quality,
@@ -72,3 +74,5 @@ export {
   sweepExpiredArchives,
   startExpiryReaper,
 } from "./downloadJob/reaper.js";
+
+export { expirePartsForDeletedPhotos } from "./downloadJob/deletion.js";

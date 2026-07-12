@@ -145,6 +145,11 @@ export type BuildSource = "guest" | "admin";
  * build is already pending, so a guest hammering the button cannot stack builds
  * (the per-(event, variant) CAS claim in the builder is the second guarantee).
  *
+ * One exception to the READY no-op: a photo deletion reclaims the objects of the
+ * parts that contained the photo (PIXSHAR-6) and queues nothing, which leaves a
+ * READY job that is only *partially* available. Such a job is not current, and
+ * this — the next request — is what rebuilds those parts.
+ *
  * Returns true only when this call actually scheduled a build.
  */
 export async function requestBuild(
@@ -171,9 +176,24 @@ export async function requestBuild(
     return true;
   }
 
-  if (job.status === "READY" || BUILD_PENDING.includes(job.status)) {
+  if (BUILD_PENDING.includes(job.status)) {
     console.log(`[RequestBuild] event=${eventId} quality=${quality} no-op (status=${job.status})`);
     return false;
+  }
+
+  if (job.status === "READY") {
+    // Complete = every part still holds its object. Only a deletion can leave a
+    // READY job with EXPIRED (object-less) parts; those must be rebuilt.
+    const missingParts = await prisma.downloadArchivePart.count({
+      where: { jobId: job.id, status: "EXPIRED" },
+    });
+    if (missingParts === 0) {
+      console.log(`[RequestBuild] event=${eventId} quality=${quality} no-op (status=READY)`);
+      return false;
+    }
+    console.log(
+      `[RequestBuild] event=${eventId} quality=${quality} READY but ${missingParts} part(s) reclaimed — rebuilding`
+    );
   }
 
   // EXPIRED / FAILED / CANCELLED. The reconcile that follows rebuilds each

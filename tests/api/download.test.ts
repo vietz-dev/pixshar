@@ -1025,4 +1025,227 @@ describe("Gallery archive download", () => {
       }
     }, 60_000);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Photo deletion — the archive object goes immediately (PIXSHAR-6)
+  //
+  // A correctness rule, not a cost rule: under the lazy model nothing rebuilds
+  // an archive by itself, so a part that keeps serving a deleted photo would
+  // keep serving it for days. Deleting a photo therefore reclaims the object of
+  // every part containing it, in BOTH variants, inside the delete request —
+  // leaving a partially available variant, and no build queued.
+  //
+  // The fixture builds an archive with two parts per variant:
+  //   part 1 = {photo A, photo B}   (built from the first request)
+  //   part 2 = {photo C}            (appended while the variant was READY)
+  // so a deletion of A hits part 1 and must leave part 2 alone.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Photo deletion expires the affected archive parts", () => {
+    let delEvent: TestEvent;
+    let delCookie: string;
+    let photoA: string;
+    let photoB: string;
+    const QUALITIES = ["DISPLAY", "ORIGINAL"] as const;
+    // Per variant: the parts as built, and a presigned S3 URL for part 1 minted
+    // BEFORE the deletion — the proof that the object itself is gone afterwards,
+    // not merely hidden behind the API.
+    const before: Record<string, { parts: Array<{ index: number; membershipSig: string }>; part1Object: string }> = {};
+
+    /** Follows the part-redirect endpoint; returns the presigned S3 URL, or null on 404. */
+    async function partObjectUrl(quality: "DISPLAY" | "ORIGINAL", index: number): Promise<string | null> {
+      const res = await fetch(`${API}/api/gallery/${delEvent.slug}/download/part/${index}?quality=${quality}`, {
+        headers: { Cookie: delCookie },
+        redirect: "manual",
+      });
+      if (res.status === 404) return null;
+      expect(res.status).toBe(302);
+      return res.headers.get("location");
+    }
+
+    /** Drives a pending append through the 60s quiet window and waits until it stays READY. */
+    async function settleReady(quality: "DISPLAY" | "ORIGINAL"): Promise<void> {
+      for (let i = 0; i < 5; i++) {
+        if ((await adminStatus(adminCookie, delEvent.id, quality)) !== "READY") {
+          await authedFetch(`/api/events/${delEvent.id}/download/build-now?quality=${quality}`, adminCookie, {
+            method: "POST",
+          });
+          const s = await pollAdminStatus(
+            adminCookie,
+            delEvent.id,
+            quality,
+            (v) => v === "READY" || v === "FAILED",
+            120_000
+          );
+          if (s !== "READY") throw new Error(`${quality} build not READY (got ${s})`);
+        }
+        // A trigger may still be in flight; only a job that is READY twice in a
+        // row is really idle — and the deletion assertions below need it idle.
+        await new Promise((r) => setTimeout(r, 3_000));
+        if ((await adminStatus(adminCookie, delEvent.id, quality)) === "READY") return;
+      }
+      throw new Error(`${quality} never settled on READY`);
+    }
+
+    beforeAll(async () => {
+      delEvent = await createEvent(adminCookie, { password: "del-pass" });
+      delCookie = await unlockGallery(delEvent.slug, "del-pass");
+
+      // Two photos before the first build → both land in part 1.
+      photoA = await uploadAndProcessPhoto(adminCookie, delEvent);
+      photoB = await uploadAndProcessPhoto(adminCookie, delEvent);
+
+      for (const q of QUALITIES) await requestArchive(delCookie, delEvent.slug, q);
+      for (const q of QUALITIES) {
+        const s = await pollAdminStatus(adminCookie, delEvent.id, q, (v) => v === "READY" || v === "FAILED", 120_000);
+        if (s !== "READY") throw new Error(`${q} archive not READY (got ${s})`);
+      }
+
+      // A third photo, uploaded while both variants are READY → appended as part 2.
+      await uploadAndProcessPhoto(adminCookie, delEvent);
+      for (const q of QUALITIES) {
+        // Wait for the append trigger to land (READY → DEBOUNCING), then build it.
+        await pollAdminStatus(adminCookie, delEvent.id, q, (s) => s !== "READY", 30_000);
+        await settleReady(q);
+      }
+
+      for (const q of QUALITIES) {
+        const payload = await variantPayload(delCookie, delEvent.slug, q);
+        if (payload.parts.length !== 2) {
+          throw new Error(`${q} expected 2 parts, got ${payload.parts.length}`);
+        }
+        const part1Object = await partObjectUrl(q, 1);
+        if (!part1Object) throw new Error(`${q} part 1 has no object before the deletion`);
+        before[q] = {
+          parts: payload.parts.map((p) => ({ index: p.index, membershipSig: p.membershipSig })),
+          part1Object,
+        };
+      }
+
+      // The deletion under test.
+      const res = await authedFetch(`/api/events/${delEvent.id}/photos/${photoA}`, adminCookie, {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(200);
+    }, 600_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, delEvent.id);
+    });
+
+    it.each(QUALITIES)(
+      "Then %s's part 1 lost its S3 object the moment the delete returned",
+      async (quality) => {
+        // The presigned URL was minted before the deletion and is still valid for
+        // 15 minutes — so a 404 here is the object being gone, not the link.
+        const gone = await fetch(before[quality].part1Object);
+        expect(gone.status).toBe(404);
+
+        // …and the API refuses to hand out a new link for it.
+        expect(await partObjectUrl(quality, 1)).toBeNull();
+      }
+    );
+
+    it.each(QUALITIES)("Then no archive object of %s contains the deleted photo", async (quality) => {
+      const payload = await variantPayload(delCookie, delEvent.slug, quality);
+      for (const part of payload.parts.filter((p) => p.url)) {
+        const location = await partObjectUrl(quality, part.index);
+        expect(location).toBeTruthy();
+        const zip = Buffer.from(await (await fetch(location!)).arrayBuffer());
+        // Store-mode ZIP: entry names (which carry the photo id) are plain bytes.
+        expect(zip.includes(Buffer.from(photoA))).toBe(false);
+      }
+    });
+
+    it.each(QUALITIES)("Then %s's part 2 is untouched: downloadable, same membershipSig", async (quality) => {
+      const payload = await variantPayload(delCookie, delEvent.slug, quality);
+      const part2 = payload.parts.find((p) => p.index === 2);
+      expect(part2).toBeDefined();
+      expect(part2!.url).toBe(`/api/gallery/${delEvent.slug}/download/part/2?quality=${quality}`);
+      // The guest's "downloaded" tick for this part keys on the sig — it stays valid.
+      const sigBefore = before[quality].parts.find((p) => p.index === 2)!.membershipSig;
+      expect(part2!.membershipSig).toBe(sigBefore);
+
+      const location = await partObjectUrl(quality, 2);
+      const zip = await fetch(location!);
+      expect(zip.status).toBe(200);
+      expect(Buffer.from(await zip.arrayBuffer()).subarray(0, 2).toString("ascii")).toBe("PK");
+    });
+
+    it.each(QUALITIES)("Then %s renders part 1 with a null url (partially available)", async (quality) => {
+      const payload = await variantPayload(delCookie, delEvent.slug, quality);
+      const part1 = payload.parts.find((p) => p.index === 1);
+      expect(part1).toBeDefined();
+      expect(part1!.url).toBeNull();
+      // Only what is really downloadable is counted.
+      expect(payload.partCount).toBe(1);
+      expect(payload.parts.filter((p) => p.url !== null)).toHaveLength(1);
+    });
+
+    it("Then the deletion queued NO build in either variant", async () => {
+      // A queued reconcile would have flipped the job to DEBOUNCING/QUEUED at
+      // once (the debounce window is 60s, so this is not a timing race).
+      for (const q of QUALITIES) {
+        expect(await adminStatus(adminCookie, delEvent.id, q)).toBe("READY");
+      }
+      await new Promise((r) => setTimeout(r, 5_000));
+      for (const q of QUALITIES) {
+        expect(await adminStatus(adminCookie, delEvent.id, q)).toBe("READY");
+        // …and the reclaimed part is still gone: nothing rebuilt it behind our back.
+        expect(await partObjectUrl(q, 1)).toBeNull();
+      }
+    }, 30_000);
+
+    it("Then the next request rebuilds DISPLAY's part 1 from the pruned membership", async () => {
+      const requested = await requestArchive(delCookie, delEvent.slug, "DISPLAY");
+      expect(requested.queued).toBe(true); // a partially available variant is NOT current
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        delEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        120_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = await variantPayload(delCookie, delEvent.slug, "DISPLAY");
+      expect(rebuilt.parts).toHaveLength(2);
+
+      const part1 = rebuilt.parts.find((p) => p.index === 1)!;
+      expect(part1.url).toBe(`/api/gallery/${delEvent.slug}/download/part/1?quality=DISPLAY`);
+      // Its contents genuinely changed (photo A is gone), so the sig must change…
+      expect(part1.membershipSig).not.toBe(before.DISPLAY.parts.find((p) => p.index === 1)!.membershipSig);
+      // …while the untouched part keeps its identity, and with it the guest's tick.
+      const part2 = rebuilt.parts.find((p) => p.index === 2)!;
+      expect(part2.membershipSig).toBe(before.DISPLAY.parts.find((p) => p.index === 2)!.membershipSig);
+
+      // The rebuilt object exists, is a ZIP, and no longer carries the deleted photo.
+      const location = await partObjectUrl("DISPLAY", 1);
+      const zip = Buffer.from(await (await fetch(location!)).arrayBuffer());
+      expect(zip.subarray(0, 2).toString("ascii")).toBe("PK");
+      expect(zip.includes(Buffer.from(photoA))).toBe(false);
+      expect(zip.includes(Buffer.from(photoB))).toBe(true); // rebuilt from membership minus A
+
+      // Rebuilding Kompakt left Original partially available — variants are independent.
+      const original = await variantPayload(delCookie, delEvent.slug, "ORIGINAL");
+      expect(original.parts.find((p) => p.index === 1)!.url).toBeNull();
+    }, 180_000);
+
+    it("Then deleting the last photo of a part removes the part, without renumbering", async () => {
+      const res = await authedFetch(`/api/events/${delEvent.id}/photos/${photoB}`, adminCookie, {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(200);
+
+      for (const q of QUALITIES) {
+        const payload = await variantPayload(delCookie, delEvent.slug, q);
+        // Part 1 is empty now → its row is gone. Part 2 keeps its index: identities
+        // are stable, gaps are allowed.
+        expect(payload.parts.map((p) => p.index)).toEqual([2]);
+        expect(payload.parts[0].url).toBe(`/api/gallery/${delEvent.slug}/download/part/2?quality=${q}`);
+        expect(await partObjectUrl(q, 1)).toBeNull();
+      }
+    }, 30_000);
+  });
 });

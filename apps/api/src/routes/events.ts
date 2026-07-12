@@ -7,7 +7,7 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { buildNow, rebuildAll, cancelJob, releaseArchive, triggerReconcileAllVariants, statusMessage } from "../services/downloadJob.js";
+import { buildNow, rebuildAll, cancelJob, releaseArchive, expirePartsForDeletedPhotos, statusMessage } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
@@ -507,7 +507,7 @@ app.delete(
       where: { id: { in: photos.map((p) => p.id) }, eventId },
     });
 
-    await staleArchivePartsForPhotos(eventId, photos.map((p) => p.id));
+    await expirePartsForDeletedPhotos(eventId, photos.map((p) => p.id));
 
     return c.json({ success: true, deleted: photos.length });
   }
@@ -540,31 +540,13 @@ app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {
 
   await prisma.photo.delete({ where: { id: photoId } });
 
-  await staleArchivePartsForPhotos(eventId, [photoId]);
+  // The deleted photo must stop being downloadable at once: every archive part
+  // containing it loses its S3 object here and now, in both variants. No build
+  // is queued — the next request rebuilds those parts from the pruned
+  // membership (see services/downloadJob/deletion.ts).
+  await expirePartsForDeletedPhotos(eventId, [photoId]);
 
   return c.json({ success: true });
 });
-
-// When photos inside already-built (immutable) archive parts are deleted, those
-// parts must be rebuilt to drop the deleted images. Mark exactly the affected
-// parts STALE and schedule a reconcile (debounced so bursts of deletions batch).
-async function staleArchivePartsForPhotos(eventId: string, photoIds: string[]): Promise<void> {
-  if (photoIds.length === 0) return;
-  // Marks affected parts across BOTH variants' jobs STALE (the `job: { eventId }`
-  // filter spans DISPLAY and ORIGINAL), then reconciles each variant so only the
-  // affected parts are rebuilt — a guest who already downloaded an unaffected
-  // part isn't forced to re-fetch it.
-  const affected = await prisma.downloadArchivePart.updateMany({
-    where: {
-      job: { eventId },
-      status: "READY",
-      entries: { some: { photoId: { in: photoIds } } },
-    },
-    data: { status: "STALE" },
-  });
-  if (affected.count > 0) {
-    await triggerReconcileAllVariants(eventId);
-  }
-}
 
 export default app;

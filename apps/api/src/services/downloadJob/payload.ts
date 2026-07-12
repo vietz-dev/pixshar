@@ -105,8 +105,13 @@ export async function buildDownloadPayload(
   const anyStale = job.parts.some((p) => p.status === "STALE");
   const building = jobActive || anyStale;
 
-  // Only parts with a committed S3 object are offered for download.
-  const downloadable = jobHoldsObjects(job) ? job.parts.filter(partHasObject) : [];
+  // A partially available variant: a photo deletion reclaims the object of the
+  // parts that contained it (they go EXPIRED) and leaves the rest downloadable.
+  // Those parts are still *listed* — with a null url — so the page can show them
+  // as unavailable-until-rebuilt instead of silently losing a part number. Only
+  // parts with a committed S3 object are offered for download.
+  const offered = jobHoldsObjects(job) ? job.parts : [];
+  const downloadable = offered.filter(partHasObject);
   const n = downloadable.length;
 
   if (n === 0) {
@@ -129,20 +134,24 @@ export async function buildDownloadPayload(
     };
   }
 
-  const parts: DownloadPart[] = downloadable.map((p) => ({
+  const parts: DownloadPart[] = offered.map((p) => ({
     index: p.partIndex,
+    // Last known size — an EXPIRED part has no bytes right now, and does not
+    // count towards what the guest can actually download (totalSizeBytes below).
     sizeBytes: Number(p.sizeBytes),
     photoCount: p.photoCount,
     membershipSig: p.membershipSig,
     rebuilding: p.status === "STALE",
-    url: partDownloadUrl(slug, quality, p.partIndex),
+    url: partHasObject(p) ? partDownloadUrl(slug, quality, p.partIndex) : null,
   }));
 
   return {
     status: "READY",
+    // partCount / totalSizeBytes describe what is downloadable now — a part
+    // whose object was reclaimed contributes to neither.
     parts,
     partCount: n,
-    totalSizeBytes: parts.reduce((sum, p) => sum + p.sizeBytes, 0),
+    totalSizeBytes: downloadable.reduce((sum, p) => sum + Number(p.sizeBytes), 0),
     photoCount: job.parts.reduce((sum, p) => sum + p.photoCount, 0),
     building,
     message: building ? "Some parts are still being prepared." : statusMessage("READY"),
