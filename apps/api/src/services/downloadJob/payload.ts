@@ -58,7 +58,7 @@ export function partContentDisposition(
 }
 
 export interface DownloadPayload {
-  status: "READY" | "BUILDING" | "DEBOUNCING" | "FAILED" | "NONE";
+  status: "READY" | "BUILDING" | "DEBOUNCING" | "FAILED" | "NONE" | "EXPIRED";
   parts: DownloadPart[];
   partCount: number;
   totalSizeBytes: number;
@@ -116,8 +116,13 @@ export async function buildDownloadPayload(
   const n = downloadable.length;
 
   if (n === 0) {
+    // EXPIRED is checked first: an EXPIRED job never holds objects (see
+    // jobHoldsObjects above), so n is always 0 here — without this branch the
+    // guest payload collapsed EXPIRED into "NONE" ("never built"), which is a
+    // different truth than "was built, expired, ask again to rebuild".
     const status: DownloadPayload["status"] =
-      job.status === "FAILED" || job.status === "CANCELLED" ? "FAILED"
+      job.status === "EXPIRED" ? "EXPIRED"
+      : job.status === "FAILED" || job.status === "CANCELLED" ? "FAILED"
       : job.status === "DEBOUNCING" ? "DEBOUNCING"
       : job.status === "QUEUED" || job.status === "BUILDING" ? "BUILDING"
       : "NONE";
@@ -128,7 +133,7 @@ export async function buildDownloadPayload(
       totalSizeBytes: 0,
       photoCount: job.photoCount,
       building,
-      message: statusMessage(status === "FAILED" ? "FAILED" : status === "DEBOUNCING" ? "DEBOUNCING" : status === "BUILDING" ? "BUILDING" : "NONE"),
+      message: statusMessage(status),
       debounceUntil: job.debounceUntil?.toISOString() ?? null,
       processedPhotos: job.processedPhotos,
       uploadProgress: job.uploadProgress,

@@ -185,7 +185,14 @@
       "variantSummary": "{count, plural, one {1 Teil} other {# Teile}} · {size}",
       "variantSummarySingle": "{size}",
       "variantBuildingEmpty": "Dieser Download wird vorbereitet, bitte später nochmal prüfen.",
-      "variantNoArchive": "Für diese Option ist noch kein Download verfügbar."
+      "variantNoArchive": "Für diese Option ist noch kein Download verfügbar.",
+      "variantExpired": "Für diese Option ist das Archiv abgelaufen — erstelle es neu, um wieder herunterzuladen.",
+      "createButton": "Archiv erstellen",
+      "creatingButton": "Wird angefordert…",
+      "expiredBanner": "Dieses Archiv ist abgelaufen, weil es länger nicht heruntergeladen wurde. Ein neuer Build dauert in der Regel nur wenige Minuten.",
+      "partsUnavailableHint": "Einige Teile wurden entfernt (z. B. durch ein gelöschtes Foto) und müssen neu erstellt werden.",
+      "repairButton": "Fehlende Teile neu erstellen",
+      "unavailable": "Nicht mehr verfügbar"
     }
   },
   "upload": {
