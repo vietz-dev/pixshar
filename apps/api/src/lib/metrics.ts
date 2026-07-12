@@ -101,6 +101,23 @@ export const archiveBytesReclaimedTotal = new Counter({
   registers: [register],
 });
 
+// Lazy build (PIXSHAR-5). Counted where a build is *scheduled from an idle
+// state* — one increment per build cycle initiated, not per trigger call: a
+// second photo landing during the debounce window extends the same cycle and
+// does not count again. `trigger` is why the bytes are being spent:
+//   first_build         a guest asked for a variant that never existed
+//   on_demand_rebuild   a guest asked for a variant whose bytes had expired
+//   append              a photo arrived while the variant was alive (eager append)
+//   admin               the admin forced a build/rebuild
+// The append counts are emitted by the image-processor process, the rest by the
+// API process; each exposes its own /metrics and Prometheus sums them.
+export const archiveBuildsTotal = new Counter({
+  name: "pixshar_archive_builds_total",
+  help: "Archive builds scheduled, by variant and what triggered them",
+  labelNames: ["quality", "trigger"] as const,
+  registers: [register],
+});
+
 export const photoUploadsInitiatedTotal = new Counter({
   name: "pixshar_photo_uploads_initiated_total",
   help: "Photo upload presigned PUT URLs issued (new files only, not resumes)",
@@ -154,6 +171,19 @@ export const archiveBuildDuration = new Histogram({
   help: "ZIP archive build duration in seconds",
   labelNames: ["result"] as const,
   buckets: [1, 5, 15, 30, 60, 120, 300, 600],
+  registers: [register],
+});
+
+// How long an expired archive stayed gone before someone asked for it back.
+// This is the metric that tells the operator whether DOWNLOAD_ARCHIVE_TTL_DAYS
+// is cutting into live usage: a pile of observations in the low buckets means
+// the TTL is expiring archives guests still want. Buckets span minutes to a
+// month, since the TTL itself is measured in days.
+export const archiveExpiryToRebuildSeconds = new Histogram({
+  name: "pixshar_archive_expiry_to_rebuild_seconds",
+  help: "Seconds between an archive expiring and a request rebuilding it",
+  labelNames: ["quality"] as const,
+  buckets: [60, 600, 3600, 21600, 86400, 259200, 604800, 2592000],
   registers: [register],
 });
 

@@ -1,39 +1,24 @@
+import type { DownloadJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { env } from "../../lib/env.js";
+import { archiveBuildsTotal, archiveExpiryToRebuildSeconds } from "../../lib/metrics.js";
 import { DEFAULT_QUALITY, ALL_QUALITIES, jobWhere, notifyDownloadStatus, type Quality } from "./status.js";
 
 // ---------------------------------------------------------------------------
 // 1. Debounce trigger — called after every successful photo processing
 // ---------------------------------------------------------------------------
 
-// Ensure a (event, variant) job row exists in a build-scheduled state. Used for
-// lazy creation of the DISPLAY variant for events that predate it: the first
-// guest download request (or the next photo activity) materializes the job so a
-// worker picks it up — no mass backfill. If the job already exists this is a
-// no-op that leaves its current state untouched.
-export async function ensureJob(
-  eventId: string,
-  quality: Quality
-): Promise<void> {
-  const existing = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
-  if (existing) return;
-  const now = Date.now();
-  try {
-    await prisma.downloadJob.create({
-      data: {
-        eventId,
-        quality,
-        status: "DEBOUNCING",
-        debounceUntil: new Date(now + env.DOWNLOAD_DEBOUNCE_SECONDS * 1000),
-        debounceStartedAt: new Date(now),
-      },
-    });
-    console.log(`[EnsureJob] event=${eventId} quality=${quality} created DEBOUNCING job`);
-    notifyDownloadStatus(eventId, quality).catch(() => {});
-  } catch {
-    // Lost a race to a concurrent creator (unique constraint) — fine, it exists.
-  }
-}
+// An archive is *alive* when it currently holds ZIP bytes (READY) or is on its
+// way to holding them. Governing rule of the lazy model: lazy to create, eager
+// to keep current — only a live variant gets the append. A variant that never
+// existed, or whose bytes the idle reaper reclaimed (EXPIRED), stays gone until
+// someone explicitly asks for it; that is the whole cost saving.
+const ALIVE_STATUSES: readonly DownloadJobStatus[] = ["READY", "DEBOUNCING", "QUEUED", "BUILDING"];
+
+// States from which a build must NOT be scheduled again: one is already pending
+// or the archive is current. Guarantees a guest hammering the request button
+// cannot stack builds.
+const BUILD_PENDING: readonly DownloadJobStatus[] = ["DEBOUNCING", "QUEUED", "BUILDING"];
 
 export async function triggerDebounce(
   eventId: string,
@@ -45,15 +30,6 @@ export async function triggerDebounce(
   console.log(`[Debounce] event=${eventId} quality=${quality} debounceUntil=${debounceUntil.toISOString()}`);
 
   await prisma.$transaction(async (tx) => {
-    // Increment processed photo count once per photo — only on the canonical
-    // ORIGINAL trigger so the fan-out to DISPLAY doesn't double-count.
-    if (quality === DEFAULT_QUALITY) {
-      await tx.event.update({
-        where: { id: eventId },
-        data: { processedPhotoCount: { increment: 1 } },
-      });
-    }
-
     // Upsert DownloadJob with state-machine transitions. `debounceStartedAt` is
     // set only when *entering* DEBOUNCING (never on extend) so checkDebounceTimers
     // can enforce a max-wait ceiling and the zip still builds during bulk uploads.
@@ -118,13 +94,122 @@ export async function triggerDebounce(
   notifyDownloadStatus(eventId, quality).catch(() => {});
 }
 
-// Fan-out trigger: a photo upload feeds BOTH variants' jobs. Called by the image
-// processor after a photo lands, so late uploads eventually appear in Kompakt
-// and Original alike.
+// Fan-out trigger: a processed photo is appended to every variant that is ALIVE
+// — never to one that is absent or EXPIRED. Called by the image processor after
+// a photo lands.
+//
+// This is the "eager to keep current" half of the rule: an event whose guests
+// are actively downloading keeps a complete archive, because the append goes
+// through the ordinary debounce-and-reconcile path (the new photo becomes a new
+// part; the existing parts are untouched). The "lazy to create" half is the
+// gate below: an upload never resurrects an archive nobody asked for, so an
+// event nobody downloads costs nothing but its photos.
 export async function triggerDebounceAllVariants(eventId: string): Promise<void> {
-  for (const q of ALL_QUALITIES) {
-    await triggerDebounce(eventId, q).catch(() => {});
+  // The event's processed-photo counter tracks the event, not any archive, so it
+  // is bumped even when no variant is alive to append to.
+  await prisma.event
+    .update({ where: { id: eventId }, data: { processedPhotoCount: { increment: 1 } } })
+    .catch(() => {});
+
+  for (const quality of ALL_QUALITIES) {
+    const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
+    if (!job || !ALIVE_STATUSES.includes(job.status)) {
+      console.log(
+        `[Debounce] event=${eventId} quality=${quality} not alive (${job?.status ?? "NONE"}) — no build`
+      );
+      continue;
+    }
+    // READY → DEBOUNCING starts a new build cycle; the other alive states are
+    // already inside one, so counting them again would count one build twice.
+    if (job.status === "READY") archiveBuildsTotal.inc({ quality, trigger: "append" });
+    await triggerDebounce(eventId, quality).catch(() => {});
   }
+}
+
+// ---------------------------------------------------------------------------
+// 1a. Explicit build request — the only thing that CREATES an archive
+// ---------------------------------------------------------------------------
+
+// Who asked. `guest` requests are labelled by what the job needs (first build vs
+// rebuild after expiry); an admin action is labelled as such whatever the state.
+export type BuildSource = "guest" | "admin";
+
+/**
+ * Schedule a build of one (event, variant) archive on explicit demand, creating
+ * the job if it does not exist. THE single entry point for materializing an
+ * archive — the guest "request archive" endpoint and the admin pre-warm both go
+ * through here, so the state machine and the metrics have exactly one home.
+ *
+ * NONE / EXPIRED / FAILED / CANCELLED → QUEUED.
+ * READY / DEBOUNCING / QUEUED / BUILDING → no-op: the archive is current or a
+ * build is already pending, so a guest hammering the button cannot stack builds
+ * (the per-(event, variant) CAS claim in the builder is the second guarantee).
+ *
+ * Returns true only when this call actually scheduled a build.
+ */
+export async function requestBuild(
+  eventId: string,
+  quality: Quality = DEFAULT_QUALITY,
+  source: BuildSource = "guest"
+): Promise<boolean> {
+  const now = new Date();
+  const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
+
+  if (!job) {
+    try {
+      await prisma.downloadJob.create({
+        data: { eventId, quality, status: "QUEUED", queuedAt: now },
+      });
+    } catch {
+      // Lost the unique-constraint race to a concurrent request — it queued the
+      // build, not us.
+      return false;
+    }
+    archiveBuildsTotal.inc({ quality, trigger: source === "admin" ? "admin" : "first_build" });
+    console.log(`[RequestBuild] event=${eventId} quality=${quality} created QUEUED job (${source})`);
+    notifyDownloadStatus(eventId, quality).catch(() => {});
+    return true;
+  }
+
+  if (job.status === "READY" || BUILD_PENDING.includes(job.status)) {
+    console.log(`[RequestBuild] event=${eventId} quality=${quality} no-op (status=${job.status})`);
+    return false;
+  }
+
+  // EXPIRED / FAILED / CANCELLED. The reconcile that follows rebuilds each
+  // surviving part from its stored membership — same partIndex, same
+  // membershipSig, generation + 1 — and appends whatever arrived while the
+  // archive was gone as new parts. Nothing is re-planned, so a guest's per-part
+  // "downloaded" ticks survive an expire/rebuild cycle.
+  const wasExpired = job.status === "EXPIRED";
+  const res = await prisma.downloadJob.updateMany({
+    // CAS on the status we observed: two concurrent requests queue one build.
+    where: { eventId, quality, status: job.status },
+    data: {
+      status: "QUEUED",
+      queuedAt: now,
+      debounceUntil: null,
+      failureReason: null,
+      processedPhotos: 0,
+      ...(wasExpired ? { rebuildCount: { increment: 1 } } : {}),
+    },
+  });
+  if (res.count !== 1) return false;
+
+  const trigger =
+    source === "admin" ? "admin"
+    : job.readyAt ? "on_demand_rebuild" // it held bytes once — this is a rebuild
+    : "first_build";
+  archiveBuildsTotal.inc({ quality, trigger });
+  if (wasExpired && job.expiredAt) {
+    archiveExpiryToRebuildSeconds.observe(
+      { quality },
+      (now.getTime() - job.expiredAt.getTime()) / 1000
+    );
+  }
+  console.log(`[RequestBuild] event=${eventId} quality=${quality} ${job.status} -> QUEUED (${trigger})`);
+  notifyDownloadStatus(eventId, quality).catch(() => {});
+  return true;
 }
 
 // ---------------------------------------------------------------------------

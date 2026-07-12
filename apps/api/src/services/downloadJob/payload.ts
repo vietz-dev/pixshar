@@ -1,7 +1,6 @@
 import type { DownloadJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { DEFAULT_QUALITY, jobWhere, statusMessage, type Quality } from "./status.js";
-import { ensureJob } from "./triggers.js";
 
 export interface DownloadPart {
   index: number;
@@ -156,18 +155,17 @@ export async function buildDownloadPayload(
 // Guest default variant — Kompakt is the sensible lightweight option.
 export const GUEST_DEFAULT_QUALITY: Quality = "DISPLAY";
 
-// Build the both-variants guest payload. Lazily materializes the DISPLAY job for
-// events that predate the variant (so an older event's compressed archive
-// appears shortly after the guest first opens the download page) — no mass
-// backfill. Returns each variant's payload plus the default variant spread at
-// the top level for back-compat.
+// Build the both-variants guest payload. Returns each variant's payload plus the
+// default variant spread at the top level for back-compat.
+//
+// A pure READ: it creates no job and starts no build. Opening the download page
+// costs nothing — a variant with no archive reports status NONE and the guest
+// asks for it explicitly (POST …/download/request). Building on GET is what made
+// every event pay for two archives nobody had asked for.
 export async function buildBothVariantsPayload(
   eventId: string,
   slug: string
 ): Promise<BothVariantsPayload> {
-  // Lazy creation of the Kompakt job on first demand.
-  await ensureJob(eventId, "DISPLAY").catch(() => {});
-
   const [display, original] = await Promise.all([
     buildDownloadPayload(eventId, slug, "DISPLAY"),
     buildDownloadPayload(eventId, slug, "ORIGINAL"),

@@ -85,9 +85,55 @@ async function pollAdminStatus(
     const res = await authedFetch(`/api/events/${eventId}/download/status?quality=${quality}`, cookie);
     status = ((await res.json()) as { status: string }).status;
     if (until(status)) return status;
-    await new Promise((r) => setTimeout(r, 500));
+    // 1s, not less: the admin status endpoint is rate-limited to 60/min per event.
+    await new Promise((r) => setTimeout(r, 1_000));
   }
   return status;
+}
+
+/**
+ * The guest's explicit build request — since PIXSHAR-5 the only thing that
+ * creates an archive. Returns whether this call actually queued a build.
+ */
+async function requestArchive(
+  cookie: string,
+  slug: string,
+  quality: "DISPLAY" | "ORIGINAL"
+): Promise<{ status: number; queued: boolean; jobStatus: string }> {
+  const res = await fetch(`${API}/api/gallery/${slug}/download/request?quality=${quality}`, {
+    method: "POST",
+    headers: { Cookie: cookie },
+  });
+  const body = (await res.json()) as { queued?: boolean; status?: string };
+  return { status: res.status, queued: body.queued ?? false, jobStatus: body.status ?? "" };
+}
+
+/** Builds an archive the way a guest does, and waits for it. */
+async function requestAndAwaitArchive(
+  adminCookie: string,
+  guestCookie: string,
+  event: TestEvent,
+  quality: "DISPLAY" | "ORIGINAL"
+): Promise<void> {
+  await requestArchive(guestCookie, event.slug, quality);
+  const s = await pollAdminStatus(
+    adminCookie,
+    event.id,
+    quality,
+    (v) => v === "READY" || v === "FAILED",
+    90_000
+  );
+  if (s !== "READY") throw new Error(`${quality} archive not READY (got ${s})`);
+}
+
+/** Scrapes one labelled sample out of the API process's /metrics exposition. */
+async function metricValue(name: string, labels: Record<string, string>): Promise<number> {
+  const text = await (await fetch(`${API}/metrics`)).text();
+  const label = Object.entries(labels)
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(",");
+  const line = new RegExp(`^${name}\\{${label}\\} (\\d+(?:\\.\\d+)?)`, "m").exec(text);
+  return line ? Number(line[1]) : 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -378,32 +424,25 @@ describe("Gallery archive download", () => {
         expect(body.status).toBe(body.variants.DISPLAY.status);
       });
 
-      it("Then opening the download page lazily creates the DISPLAY (Kompakt) job", async () => {
-        // Fresh event, no ORIGINAL build triggered → DISPLAY job only exists once
-        // a guest opens the download page (ensureJob on first demand).
+      it("Then opening the download page creates NO job (a GET is a read)", async () => {
+        // Since PIXSHAR-5 the download page builds nothing: a variant with no
+        // archive stays absent until a guest explicitly requests it.
         const lazyEvent = await createEvent(adminCookie, { password: "lazy-pass" });
         const lazyCookie = await unlockGallery(lazyEvent.slug, "lazy-pass");
         try {
-          // Before any guest request the admin DISPLAY status is NONE.
-          const before = await authedFetch(
-            `/api/events/${lazyEvent.id}/download/status?quality=DISPLAY`,
-            adminCookie
-          );
-          expect(((await before.json()) as { status: string }).status).toBe("NONE");
-
-          // Guest opens the download page → lazily materializes the DISPLAY job.
           const gres = await fetch(`${API}/api/gallery/${lazyEvent.slug}/download`, {
             headers: { Cookie: lazyCookie },
           });
           expect(gres.status).toBe(200);
+          const body = (await gres.json()) as BothVariantsBody;
+          expect(body.variants.DISPLAY.status).toBe("NONE");
+          expect(body.variants.ORIGINAL.status).toBe("NONE");
 
-          const after = await pollAdminStatus(
-            adminCookie,
-            lazyEvent.id,
-            "DISPLAY",
-            (s) => s !== "NONE"
-          );
-          expect(after).not.toBe("NONE");
+          // Give any (now removed) side effect a chance to land, then prove no
+          // job exists for either variant.
+          await new Promise((r) => setTimeout(r, 2_000));
+          expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("NONE");
+          expect(await adminStatus(adminCookie, lazyEvent.id, "ORIGINAL")).toBe("NONE");
         } finally {
           await deleteEvent(adminCookie, lazyEvent.id);
         }
@@ -411,28 +450,14 @@ describe("Gallery archive download", () => {
     });
   });
 
-  describe("Upload trigger fan-out — both jobs created + Kompakt is fetchable", () => {
-    it("Then uploading a photo creates BOTH jobs, and the DISPLAY archive builds and is downloadable", async () => {
+  describe("Requested Kompakt archive is fetchable", () => {
+    it("Then requesting DISPLAY builds it and its parts download as -kompakt ZIPs", async () => {
       const fanEvent = await createEvent(adminCookie, { password: "fan-pass" });
       const fanCookie = await unlockGallery(fanEvent.slug, "fan-pass");
       try {
         await uploadAndProcessPhoto(adminCookie, fanEvent);
 
-        // Fan-out proof: the processing trigger created BOTH variants' jobs, so
-        // neither admin status is NONE (they start DEBOUNCING right after upload).
-        const displayExists = await pollAdminStatus(adminCookie, fanEvent.id, "DISPLAY", (s) => s !== "NONE");
-        const originalExists = await pollAdminStatus(adminCookie, fanEvent.id, "ORIGINAL", (s) => s !== "NONE");
-        expect(displayExists).not.toBe("NONE");
-        expect(originalExists).not.toBe("NONE");
-
-        // Force both builds (skip the 60s debounce) so we can verify fetchability.
-        await authedFetch(`/api/events/${fanEvent.id}/download/build-now?quality=DISPLAY`, adminCookie, { method: "POST" });
-        await authedFetch(`/api/events/${fanEvent.id}/download/build-now?quality=ORIGINAL`, adminCookie, { method: "POST" });
-
-        const displayStatus = await pollAdminStatus(adminCookie, fanEvent.id, "DISPLAY", (s) => s === "READY" || s === "FAILED", 60_000);
-        const originalStatus = await pollAdminStatus(adminCookie, fanEvent.id, "ORIGINAL", (s) => s === "READY" || s === "FAILED", 60_000);
-        expect(displayStatus).toBe("READY");
-        expect(originalStatus).toBe("READY");
+        await requestAndAwaitArchive(adminCookie, fanCookie, fanEvent, "DISPLAY");
 
         // The Kompakt (DISPLAY) archive is downloadable: a valid presigned part URL.
         const res = await fetch(`${API}/api/gallery/${fanEvent.slug}/download`, { headers: { Cookie: fanCookie } });
@@ -458,33 +483,20 @@ describe("Gallery archive download", () => {
   });
 
   describe("Admin per-variant controls — independence", () => {
-    it("Then build-now on DISPLAY does not create or touch the ORIGINAL job", async () => {
-      // Fresh event, no ORIGINAL trigger. A guest visit creates only the DISPLAY
-      // job; building DISPLAY must leave ORIGINAL untouched (still NONE).
+    it("Then requesting DISPLAY does not create or touch the ORIGINAL job", async () => {
+      // Fresh event. A guest request creates only the DISPLAY job; building it
+      // must leave ORIGINAL untouched (still NONE).
       const indyEvent = await createEvent(adminCookie, { password: "indy-pass" });
       const indyCookie = await unlockGallery(indyEvent.slug, "indy-pass");
       try {
-        // Lazily create the DISPLAY job.
-        await fetch(`${API}/api/gallery/${indyEvent.slug}/download`, {
-          headers: { Cookie: indyCookie },
-        });
+        const requested = await requestArchive(indyCookie, indyEvent.slug, "DISPLAY");
+        expect(requested.status).toBe(200);
+        expect(requested.queued).toBe(true);
 
-        // Force-build only the DISPLAY variant.
-        const buildRes = await authedFetch(
-          `/api/events/${indyEvent.id}/download/build-now?quality=DISPLAY`,
-          adminCookie,
-          { method: "POST" }
-        );
-        expect(buildRes.status).toBe(200);
+        // ORIGINAL was never requested → still NONE (independence).
+        expect(await adminStatus(adminCookie, indyEvent.id, "ORIGINAL")).toBe("NONE");
 
-        // ORIGINAL was never triggered → still NONE (independence).
-        const originalRes = await authedFetch(
-          `/api/events/${indyEvent.id}/download/status?quality=ORIGINAL`,
-          adminCookie
-        );
-        expect(((await originalRes.json()) as { status: string }).status).toBe("NONE");
-
-        // DISPLAY progressed off NONE.
+        // DISPLAY is queued for a build.
         const displayStatus = await pollAdminStatus(
           adminCookie,
           indyEvent.id,
@@ -523,10 +535,9 @@ describe("Gallery archive download", () => {
       partCookie = await unlockGallery(partEvent.slug, "part-pass");
       await uploadAndProcessPhoto(adminCookie, partEvent);
 
+      // Archives are lazy: the upload alone builds nothing — the guest asks.
       for (const q of ["DISPLAY", "ORIGINAL"] as const) {
-        await authedFetch(`/api/events/${partEvent.id}/download/build-now?quality=${q}`, adminCookie, {
-          method: "POST",
-        });
+        await requestArchive(partCookie, partEvent.slug, q);
       }
       for (const q of ["DISPLAY", "ORIGINAL"] as const) {
         const s = await pollAdminStatus(adminCookie, partEvent.id, q, (v) => v === "READY" || v === "FAILED", 90_000);
@@ -662,10 +673,9 @@ describe("Gallery archive download", () => {
       relCookie = await unlockGallery(relEvent.slug, "release-pass");
       await uploadAndProcessPhoto(adminCookie, relEvent);
 
+      // Archives are lazy: the upload alone builds nothing — the guest asks.
       for (const q of ["DISPLAY", "ORIGINAL"] as const) {
-        await authedFetch(`/api/events/${relEvent.id}/download/build-now?quality=${q}`, adminCookie, {
-          method: "POST",
-        });
+        await requestArchive(relCookie, relEvent.slug, q);
       }
       for (const q of ["DISPLAY", "ORIGINAL"] as const) {
         const s = await pollAdminStatus(adminCookie, relEvent.id, q, (v) => v === "READY" || v === "FAILED", 90_000);
@@ -792,5 +802,227 @@ describe("Gallery archive download", () => {
       expect(reclaimed).toBeTruthy();
       expect(Number(reclaimed![1])).toBeGreaterThan(0);
     });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Lazy build — an archive nobody asks for is never built (PIXSHAR-5)
+  //
+  // "Lazy to create, eager to keep current": uploads never create a job, a GET
+  // never creates a job, only POST …/download/request does. Once a variant is
+  // alive, uploads keep appending to it; once it expired, they do not revive it.
+  // One event runs the whole lifecycle, since building archives is the slow part.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Lazy build", () => {
+    let lazyEvent: TestEvent;
+    let lazyCookie: string;
+    // The DISPLAY parts as first built — the identities the post-expiry rebuild
+    // must reproduce so a guest's per-part "downloaded" ticks survive.
+    let partsBeforeExpiry: Array<{ index: number; membershipSig: string }> = [];
+
+    beforeAll(async () => {
+      lazyEvent = await createEvent(adminCookie, { password: "lazy-build-pass" });
+      lazyCookie = await unlockGallery(lazyEvent.slug, "lazy-build-pass");
+      await uploadAndProcessPhoto(adminCookie, lazyEvent); // photo 1
+    }, 120_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, lazyEvent.id);
+    });
+
+    it("Given a processed photo and no archive, Then no DownloadJob exists and no build started", async () => {
+      // The eager fan-out is gone: processing a photo into an event nobody has
+      // asked an archive for spends nothing.
+      await new Promise((r) => setTimeout(r, 3_000)); // let any trigger land
+      expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("NONE");
+      expect(await adminStatus(adminCookie, lazyEvent.id, "ORIGINAL")).toBe("NONE");
+    });
+
+    it("Given no archive, When the guest opens the download page, Then still no job exists", async () => {
+      const res = await fetch(`${API}/api/gallery/${lazyEvent.slug}/download`, {
+        headers: { Cookie: lazyCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as BothVariantsBody;
+      expect(body.variants.DISPLAY.status).toBe("NONE");
+      expect(body.variants.ORIGINAL.status).toBe("NONE");
+
+      await new Promise((r) => setTimeout(r, 2_000));
+      expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("NONE");
+      expect(await adminStatus(adminCookie, lazyEvent.id, "ORIGINAL")).toBe("NONE");
+    });
+
+    it("Then POST /download/request without a gallery session returns 401 and queues nothing", async () => {
+      const res = await fetch(`${API}/api/gallery/${lazyEvent.slug}/download/request?quality=DISPLAY`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(401);
+      expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("NONE");
+    });
+
+    it("Then POST /download/request?quality=DISPLAY queues Kompakt ONLY (Original stays absent)", async () => {
+      const requested = await requestArchive(lazyCookie, lazyEvent.slug, "DISPLAY");
+      expect(requested.status).toBe(200);
+      expect(requested.queued).toBe(true);
+
+      // The other variant is untouched — a request buys exactly one archive.
+      expect(await adminStatus(adminCookie, lazyEvent.id, "ORIGINAL")).toBe("NONE");
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        lazyEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        90_000
+      );
+      expect(status).toBe("READY");
+      expect(await adminStatus(adminCookie, lazyEvent.id, "ORIGINAL")).toBe("NONE");
+
+      const display = await variantPayload(lazyCookie, lazyEvent.slug, "DISPLAY");
+      expect(display.status).toBe("READY");
+      expect(display.parts).toHaveLength(1);
+    }, 120_000);
+
+    it("Then requesting an already-READY variant is an idempotent no-op (no second build)", async () => {
+      const before = await variantPayload(lazyCookie, lazyEvent.slug, "DISPLAY");
+
+      const again = await requestArchive(lazyCookie, lazyEvent.slug, "DISPLAY");
+      expect(again.status).toBe(200);
+      expect(again.queued).toBe(false); // no error, and nothing queued
+      expect(again.jobStatus).toBe("READY");
+
+      // A guest hammering the button must not stack builds: the job never leaves
+      // READY and the parts are the very same ones.
+      for (let i = 0; i < 3; i++) {
+        await requestArchive(lazyCookie, lazyEvent.slug, "DISPLAY");
+      }
+      await new Promise((r) => setTimeout(r, 3_000));
+      expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("READY");
+      const after = await variantPayload(lazyCookie, lazyEvent.slug, "DISPLAY");
+      expect(after.parts).toEqual(before.parts);
+    });
+
+    it("Then uploading while DISPLAY is READY still appends it (eager append preserved), and Original stays absent", async () => {
+      await uploadAndProcessPhoto(adminCookie, lazyEvent); // photo 2
+
+      // The live variant re-enters a build cycle to append the new photo…
+      const appended = await pollAdminStatus(
+        adminCookie,
+        lazyEvent.id,
+        "DISPLAY",
+        (s) => s !== "READY",
+        30_000
+      );
+      expect(["DEBOUNCING", "QUEUED", "BUILDING"]).toContain(appended);
+      // …while the variant nobody asked for is NOT resurrected by the upload.
+      expect(await adminStatus(adminCookie, lazyEvent.id, "ORIGINAL")).toBe("NONE");
+
+      // Skip the quiet window and let the append land.
+      await authedFetch(`/api/events/${lazyEvent.id}/download/build-now?quality=DISPLAY`, adminCookie, {
+        method: "POST",
+      });
+      const status = await pollAdminStatus(
+        adminCookie,
+        lazyEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        90_000
+      );
+      expect(status).toBe("READY");
+
+      const display = await variantPayload(lazyCookie, lazyEvent.slug, "DISPLAY");
+      // Existing part immutable, new photo appended as a NEW part.
+      expect(display.parts).toHaveLength(2);
+      expect(display.parts.map((p) => p.index)).toEqual([1, 2]);
+
+      partsBeforeExpiry = display.parts.map((p) => ({ index: p.index, membershipSig: p.membershipSig }));
+    }, 180_000);
+
+    it("Then uploading while DISPLAY is EXPIRED does not revive it", async () => {
+      const released = await authedFetch(
+        `/api/events/${lazyEvent.id}/download/release?quality=DISPLAY`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(released.status).toBe(200);
+      expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("EXPIRED");
+
+      await uploadAndProcessPhoto(adminCookie, lazyEvent); // photo 3, while EXPIRED
+
+      // An upload must not resurrect an archive whose bytes were reclaimed —
+      // that would defeat the whole idle-expiry saving.
+      await new Promise((r) => setTimeout(r, 3_000));
+      expect(await adminStatus(adminCookie, lazyEvent.id, "DISPLAY")).toBe("EXPIRED");
+      expect((await variantPayload(lazyCookie, lazyEvent.slug, "DISPLAY")).parts).toHaveLength(0);
+    }, 120_000);
+
+    it("Then a request after expiry rebuilds the same parts and the meanwhile photo appears as a new part", async () => {
+      const requested = await requestArchive(lazyCookie, lazyEvent.slug, "DISPLAY");
+      expect(requested.status).toBe(200);
+      expect(requested.queued).toBe(true);
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        lazyEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        120_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = await variantPayload(lazyCookie, lazyEvent.slug, "DISPLAY");
+      // Parts 1 and 2 come back with identical identities (rebuilt from the
+      // surviving membership, never re-planned) → the guest's ticks survive…
+      expect(rebuilt.parts.slice(0, 2).map((p) => ({ index: p.index, membershipSig: p.membershipSig })))
+        .toEqual(partsBeforeExpiry);
+      // …and the photo uploaded while the archive was gone is appended as part 3.
+      expect(rebuilt.parts).toHaveLength(3);
+      expect(rebuilt.parts[2].index).toBe(3);
+
+      // The rebuilt bytes are really there.
+      const back = await fetch(`${API}${rebuilt.parts[0].url}`, {
+        headers: { Cookie: lazyCookie },
+        redirect: "manual",
+      });
+      expect(back.status).toBe(302);
+    }, 180_000);
+
+    it("Then the build counter carries the trigger label and the expiry→rebuild cycle is in the histogram", async () => {
+      const firstBuild = await metricValue("pixshar_archive_builds_total", {
+        quality: "DISPLAY",
+        trigger: "first_build",
+      });
+      expect(firstBuild).toBeGreaterThan(0);
+
+      const rebuild = await metricValue("pixshar_archive_builds_total", {
+        quality: "DISPLAY",
+        trigger: "on_demand_rebuild",
+      });
+      expect(rebuild).toBeGreaterThan(0);
+
+      // The histogram that tells the operator whether the TTL cuts into live use.
+      const observations = await metricValue("pixshar_archive_expiry_to_rebuild_seconds_count", {
+        quality: "DISPLAY",
+      });
+      expect(observations).toBeGreaterThan(0);
+    });
+
+    it("Then two concurrent requests for the same variant queue exactly one build", async () => {
+      const raceEvent = await createEvent(adminCookie, { password: "race-pass" });
+      const raceCookie = await unlockGallery(raceEvent.slug, "race-pass");
+      try {
+        const [a, b] = await Promise.all([
+          requestArchive(raceCookie, raceEvent.slug, "ORIGINAL"),
+          requestArchive(raceCookie, raceEvent.slug, "ORIGINAL"),
+        ]);
+        expect(a.status).toBe(200);
+        expect(b.status).toBe(200);
+        // The unique (event, variant) job is the guarantee: one caller creates it,
+        // the other observes a build already on its way.
+        expect([a.queued, b.queued].filter(Boolean)).toHaveLength(1);
+      } finally {
+        await deleteEvent(adminCookie, raceEvent.id);
+      }
+    }, 60_000);
   });
 });

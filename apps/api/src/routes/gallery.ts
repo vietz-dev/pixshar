@@ -22,7 +22,9 @@ import {
   ARCHIVE_PART_PRESIGN_SECONDS,
   GUEST_DEFAULT_QUALITY,
   buildBothVariantsPayload,
+  buildDownloadPayload,
   registerPartDownload,
+  requestBuild,
 } from "../services/downloadJob.js";
 import {
   galleryUnlocksTotal,
@@ -43,7 +45,8 @@ const unlockSchema = z.object({
 const partParamSchema = z.object({
   index: z.coerce.number().int().positive(),
 });
-const partQuerySchema = z.object({
+// ?quality= on the archive endpoints — omitted means the guest default (Kompakt).
+const qualityQuerySchema = z.object({
   quality: z.enum(["DISPLAY", "ORIGINAL"]).optional(),
 });
 
@@ -185,13 +188,43 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
   }
 
   // Both-variants payload: Kompakt (default) + Original in one round trip, each
-  // serving whatever parts are already built (partial availability). Lazily
-  // creates the Kompakt job for events that predate the variant.
+  // serving whatever parts are already built (partial availability). A read —
+  // it creates no job and starts no build; the guest asks for a missing archive
+  // explicitly via POST /:slug/download/request.
   const payload = await buildBothVariantsPayload(event.id, event.slug);
   if (payload.status === "READY") archiveDownloadsTotal.inc();
 
   return c.json(payload);
 });
+
+// Ask for an archive to be built. The ONLY guest path that spends S3 bytes on a
+// ZIP: an archive nobody requested is never built, and one the idle reaper
+// reclaimed comes back only when a guest asks for it again. Idempotent — from
+// READY or an already-pending build it changes nothing, so hammering the button
+// cannot stack builds.
+app.post(
+  "/:slug/download/request",
+  requireGallerySession,
+  zValidator("query", qualityQuerySchema),
+  async (c) => {
+    // Rate limit: 20 build requests per minute per gallery — a build is the most
+    // expensive thing a guest can ask for.
+    const rateKey = getRateLimitKey(c, `download-request:${c.req.param("slug")}`);
+    if (!checkRateLimit(rateKey, 20, 60_000)) {
+      return c.json({ error: "Too many requests. Please try again later." }, 429);
+    }
+
+    const event = c.get("galleryEvent");
+    const quality = c.req.valid("query").quality ?? GUEST_DEFAULT_QUALITY;
+
+    const queued = await requestBuild(event.id, quality, "guest");
+    const payload = await buildDownloadPayload(event.id, event.slug, quality);
+
+    // `queued: false` is a success: the archive is current or a build is already
+    // on its way. The payload's status tells the guest which.
+    return c.json({ success: true, quality, queued, status: payload.status });
+  }
+);
 
 // The measured download. Every part link on the guest page points here rather
 // than at S3 directly: this endpoint stamps the (event, variant) job's idle
@@ -201,7 +234,7 @@ app.get(
   "/:slug/download/part/:index",
   requireGallerySession,
   zValidator("param", partParamSchema),
-  zValidator("query", partQuerySchema),
+  zValidator("query", qualityQuerySchema),
   async (c) => {
     // Rate limit: 60 part downloads per minute per gallery
     const rateKey = getRateLimitKey(c, `download-part:${c.req.param("slug")}`);

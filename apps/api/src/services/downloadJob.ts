@@ -8,8 +8,8 @@
 //   status   — shared core (quality constants, statusMessage, membershipSig,
 //              pushDownloadStatus/notifyDownloadStatus). Leaf: imports none
 //              of the other downloadJob modules.
-//   triggers — §1/§1b: ensureJob, triggerDebounce(AllVariants),
-//              triggerReconcile(AllVariants).
+//   triggers — §1/§1a/§1b: triggerDebounce(AllVariants), requestBuild (the only
+//              path that creates an archive), triggerReconcile(AllVariants).
 //   poller   — §2/§2b: startDebouncePoller, reapStaleBuilding, startZipReaper.
 //   admin    — §3: buildNow, rebuildAll, cancelJob.
 //   payload  — DownloadPart/DownloadPayload/BothVariantsPayload,
@@ -32,7 +32,8 @@ export {
 } from "./downloadJob/status.js";
 
 export {
-  ensureJob,
+  type BuildSource,
+  requestBuild,
   triggerDebounce,
   triggerDebounceAllVariants,
   triggerReconcile,

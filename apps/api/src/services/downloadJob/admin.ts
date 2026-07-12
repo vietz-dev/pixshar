@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
+import { archiveBuildsTotal } from "../../lib/metrics.js";
 import { DEFAULT_QUALITY, jobWhere, notifyDownloadStatus, type Quality } from "./status.js";
-import { triggerReconcile } from "./triggers.js";
+import { requestBuild, triggerReconcile } from "./triggers.js";
 
 // ---------------------------------------------------------------------------
 // 3. Manual controls (admin)
@@ -16,17 +17,23 @@ export async function buildNow(
   quality: Quality = DEFAULT_QUALITY
 ): Promise<void> {
   const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
-  if (!job) return; // no job → no pending uploads to build
+  if (!job) return; // no job → nothing pending to accelerate
 
-  if (job.status === "DEBOUNCING" || job.status === "FAILED" || job.status === "CANCELLED") {
+  if (job.status === "DEBOUNCING") {
+    // Same build cycle, only the quiet timer skipped — it was counted when the
+    // cycle was scheduled, so no second build counter here.
     await prisma.downloadJob.updateMany({
-      where: { eventId, quality, status: job.status },
+      where: { eventId, quality, status: "DEBOUNCING" },
       data: { status: "QUEUED", queuedAt: new Date(), debounceUntil: null, failureReason: null, processedPhotos: 0 },
     });
-    console.log(`[BuildNow] event=${eventId} quality=${quality} ${job.status} -> QUEUED`);
+    console.log(`[BuildNow] event=${eventId} quality=${quality} DEBOUNCING -> QUEUED`);
     notifyDownloadStatus(eventId, quality).catch(() => {});
+  } else if (job.status === "FAILED" || job.status === "CANCELLED") {
+    // A fresh cycle after a dead end — the same transition requestBuild makes,
+    // so it is accounted for in one place.
+    await requestBuild(eventId, quality, "admin");
   } else {
-    // QUEUED / BUILDING / READY: already queued or nothing new to build.
+    // QUEUED / BUILDING / READY / EXPIRED: already queued, or nothing new to build.
     console.log(`[BuildNow] event=${eventId} quality=${quality} no-op (status=${job.status})`);
   }
 }
@@ -47,6 +54,7 @@ export async function rebuildAll(
     where: { jobId: job.id },
     data: { status: "STALE" },
   });
+  archiveBuildsTotal.inc({ quality, trigger: "admin" });
   console.log(`[RebuildAll] event=${eventId} quality=${quality} marked all parts STALE`);
   await triggerReconcile(eventId, quality, { immediate: true });
 }
