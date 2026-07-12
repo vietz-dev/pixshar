@@ -126,14 +126,85 @@ async function requestAndAwaitArchive(
   if (s !== "READY") throw new Error(`${quality} archive not READY (got ${s})`);
 }
 
-/** Scrapes one labelled sample out of the API process's /metrics exposition. */
-async function metricValue(name: string, labels: Record<string, string>): Promise<number> {
-  const text = await (await fetch(`${API}/metrics`)).text();
+// The image-processor's own metrics endpoint. It is a SEPARATE process with a
+// SEPARATE exposition, and it is the ONLY writer of the idle reaper's counters
+// and of builds_total{trigger="append"} — so what the API serves says nothing
+// about whether those are exposed at all.
+const WORKER = "http://localhost:4000";
+
+/** Scrapes one labelled sample out of a process's /metrics exposition. */
+async function scrapeMetric(
+  base: string,
+  name: string,
+  labels: Record<string, string>
+): Promise<number> {
+  const text = await (await fetch(`${base}/metrics`)).text();
   const label = Object.entries(labels)
     .map(([k, v]) => `${k}="${v}"`)
     .join(",");
   const line = new RegExp(`^${name}\\{${label}\\} (\\d+(?:\\.\\d+)?)`, "m").exec(text);
   return line ? Number(line[1]) : 0;
+}
+
+const metricValue = (name: string, labels: Record<string, string>) => scrapeMetric(API, name, labels);
+const workerMetricValue = (name: string, labels: Record<string, string>) =>
+  scrapeMetric(WORKER, name, labels);
+
+/** Waits (up to timeoutMs) for a metric to satisfy a predicate. */
+async function pollMetric(
+  read: () => Promise<number>,
+  until: (v: number) => boolean,
+  timeoutMs = 15_000
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  let v = await read();
+  while (Date.now() < deadline && !until(v)) {
+    await new Promise((r) => setTimeout(r, 500));
+    v = await read();
+  }
+  return v;
+}
+
+/**
+ * Follows the admin SSE stream until `match` accepts a payload, then disconnects.
+ * The plain status endpoint is rate-limited to 60/min, far too coarse to catch a
+ * BUILDING window that lasts a second or two — the stream pushes every
+ * transition the instant it happens.
+ */
+async function awaitAdminStatus(
+  cookie: string,
+  eventId: string,
+  quality: "DISPLAY" | "ORIGINAL",
+  match: (s: { status: string; photoCount: number }) => boolean,
+  timeoutMs = 120_000
+): Promise<void> {
+  const controller = new AbortController();
+  const res = await fetch(
+    `${API}/api/events/${eventId}/download/status/stream?quality=${quality}`,
+    { headers: { Cookie: cookie }, signal: controller.signal }
+  );
+  if (!res.ok || !res.body) throw new Error(`SSE stream failed: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const deadline = Date.now() + timeoutMs;
+  try {
+    while (Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const m = /^data:\s*(\{.*\})$/.exec(line.trim());
+        if (!m) continue;
+        if (match(JSON.parse(m[1]) as { status: string; photoCount: number })) return;
+      }
+    }
+    throw new Error("Timed out waiting for the expected admin status");
+  } finally {
+    controller.abort();
+  }
 }
 
 /**
@@ -1733,5 +1804,434 @@ describe("Gallery archive download", () => {
       const liveBytesAfterRebuild = await metricValue("pixshar_archive_live_bytes", { quality: "ORIGINAL" });
       expect(liveBytesAfterRebuild).toBeGreaterThan(0);
     }, 240_000);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Admin "rebuild all" on an archive whose bytes are already gone.
+  //
+  // STALE means "the OLD object keeps serving while the new one is built", so it
+  // is only ever valid for a part that HAS an object. Marking an EXPIRED part
+  // STALE re-advertises bytes the reaper already deleted, and `cancel` then
+  // settles it back to READY — at which point requestBuild's READY branch finds
+  // no EXPIRED parts and no-ops forever. The dead link is permanent. That is the
+  // guest being handed a URL to a deleted S3 object, which this epic exists to
+  // prevent.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Admin rebuild-all on an EXPIRED archive", () => {
+    let reEvent: TestEvent;
+    let reCookie: string;
+    let sigBefore: string;
+
+    /** Follows a part link and reports what the guest actually ends up with. */
+    async function fetchPart(
+      index: number
+    ): Promise<{ api: number; object: number | null }> {
+      const res = await fetch(
+        `${API}/api/gallery/${reEvent.slug}/download/part/${index}?quality=ORIGINAL`,
+        { headers: { Cookie: reCookie }, redirect: "manual" }
+      );
+      if (res.status !== 302) return { api: res.status, object: null };
+      const object = await fetch(res.headers.get("location")!);
+      return { api: 302, object: object.status };
+    }
+
+    beforeAll(async () => {
+      reEvent = await createEvent(adminCookie, { password: "rebuild-pass" });
+      reCookie = await unlockGallery(reEvent.slug, "rebuild-pass");
+      await uploadAndProcessPhoto(adminCookie, reEvent);
+      await requestAndAwaitArchive(adminCookie, reCookie, reEvent, "ORIGINAL");
+
+      const built = await variantPayload(reCookie, reEvent.slug, "ORIGINAL");
+      if (built.parts.length !== 1) throw new Error(`expected 1 part, got ${built.parts.length}`);
+      sigBefore = built.parts[0].membershipSig;
+
+      // Reclaim the bytes: the membership survives, the S3 object does not.
+      const released = await authedFetch(
+        `/api/events/${reEvent.id}/download/release?quality=ORIGINAL`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(released.status).toBe(200);
+      expect(await adminStatus(adminCookie, reEvent.id, "ORIGINAL")).toBe("EXPIRED");
+    }, 300_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, reEvent.id);
+    });
+
+    it("Then rebuild-all followed by cancel never offers a part whose object is gone", async () => {
+      const rebuildsBefore = await metricValue("pixshar_archive_rebuilds", {
+        event: reEvent.slug,
+        quality: "ORIGINAL",
+      });
+      const histBefore = await metricValue("pixshar_archive_expiry_to_rebuild_seconds_count", {
+        quality: "ORIGINAL",
+      });
+
+      expect(
+        (
+          await authedFetch(`/api/events/${reEvent.id}/download/rebuild-all?quality=ORIGINAL`, adminCookie, {
+            method: "POST",
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (
+          await authedFetch(`/api/events/${reEvent.id}/download/cancel?quality=ORIGINAL`, adminCookie, {
+            method: "POST",
+          })
+        ).status
+      ).toBe(200);
+
+      // THE INVARIANT — every part the payload offers must resolve to real bytes.
+      // (If the poller happened to claim the build before the cancel landed, the
+      // part is legitimately rebuilt and this still holds; what must never happen
+      // is a link into a NoSuchKey.)
+      const payload = await variantPayload(reCookie, reEvent.slug, "ORIGINAL");
+      for (const part of payload.parts) {
+        const got = await fetchPart(part.index);
+        if (part.url === null) {
+          expect(got.api).toBe(404); // listed as unavailable, and refused
+        } else {
+          expect(got.api).toBe(302);
+          expect(got.object).toBe(200); // NOT a 404 from S3
+        }
+      }
+
+      // A rebuild after an expiry IS a rebuild, whoever asked for it: queueing it
+      // outside requestBuild left rebuildCount and the histogram frozen.
+      expect(
+        await metricValue("pixshar_archive_rebuilds", { event: reEvent.slug, quality: "ORIGINAL" })
+      ).toBeGreaterThan(rebuildsBefore);
+      expect(
+        await metricValue("pixshar_archive_expiry_to_rebuild_seconds_count", { quality: "ORIGINAL" })
+      ).toBeGreaterThan(histBefore);
+      expect(
+        await metricValue("pixshar_archive_builds_total", { quality: "ORIGINAL", trigger: "admin" })
+      ).toBeGreaterThan(0);
+    }, 60_000);
+
+    it("Then the archive is still repairable — the next request brings the same part back", async () => {
+      await requestArchive(reCookie, reEvent.slug, "ORIGINAL");
+      const status = await pollAdminStatus(
+        adminCookie,
+        reEvent.id,
+        "ORIGINAL",
+        (s) => s === "READY" || s === "FAILED",
+        120_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = await variantPayload(reCookie, reEvent.slug, "ORIGINAL");
+      expect(rebuilt.parts).toHaveLength(1);
+      expect(rebuilt.parts[0].index).toBe(1);
+      // Same membership → the guest's per-part "downloaded" tick survived.
+      expect(rebuilt.parts[0].membershipSig).toBe(sigBefore);
+      expect(rebuilt.parts[0].url).not.toBeNull();
+
+      // …and the link leads to real bytes. Pre-fix, cancel settled the part as
+      // READY with the reclaimed object's key and nothing ever rebuilt it, so
+      // this 302'd straight into a NoSuchKey.
+      const got = await fetchPart(1);
+      expect(got.api).toBe(302);
+      expect(got.object).toBe(200);
+    }, 180_000);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // The worker's own /metrics exposition (PIXSHAR-9).
+  //
+  // The idle reaper and the append build counter run ONLY in the image-processor
+  // process. Serving prom-client's GLOBAL registry there — while every pixshar_*
+  // metric is registered on the custom Registry in lib/metrics.ts — exposed none
+  // of them, from the one process that writes them.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Worker (image-processor) metrics exposition", () => {
+    it("Then the worker's /metrics serves the Pixshar registry, not prom-client's global one", async () => {
+      const text = await (await fetch(`${WORKER}/metrics`)).text();
+
+      expect(text).toMatch(/^# TYPE pixshar_archive_expired_total counter$/m);
+      expect(text).toMatch(/^# TYPE pixshar_archive_bytes_reclaimed_total counter$/m);
+      expect(text).toMatch(/^# TYPE pixshar_archive_builds_total counter$/m);
+      expect(text).toMatch(/^# TYPE pixshar_archive_expiry_to_rebuild_seconds histogram$/m);
+      // A worker-only metric, proving this is the process's own exposition.
+      expect(text).toMatch(/^# TYPE pixshar_resize_queue_inflight gauge$/m);
+    });
+
+    it("Then builds_total{trigger=append} — which only the worker writes — shows up there", async () => {
+      const apEvent = await createEvent(adminCookie, { password: "append-pass" });
+      try {
+        const apCookie = await unlockGallery(apEvent.slug, "append-pass");
+        await uploadAndProcessPhoto(adminCookie, apEvent);
+        await requestAndAwaitArchive(adminCookie, apCookie, apEvent, "DISPLAY");
+
+        const read = () =>
+          workerMetricValue("pixshar_archive_builds_total", { quality: "DISPLAY", trigger: "append" });
+        const before = await read();
+
+        // A photo landing on a live variant appends to it. The increment happens
+        // in the image-processor, so only the worker's registry can show it.
+        await uploadAndProcessPhoto(adminCookie, apEvent);
+        await pollAdminStatus(adminCookie, apEvent.id, "DISPLAY", (s) => s !== "READY", 60_000);
+
+        expect(await pollMetric(read, (v) => v > before)).toBeGreaterThan(before);
+      } finally {
+        await deleteEvent(adminCookie, apEvent.id);
+      }
+    }, 300_000);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // pixshar_archive_downloads_total measures DOWNLOADS.
+  //
+  // It used to be incremented on every download-page load and on every SSE tick
+  // of a READY variant — neither of which downloads anything or signs a URL.
+  // Since the archive moved behind GET /download/part/:index, that redirect is
+  // the one place bytes are actually handed out.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Archive download counter", () => {
+    let cntEvent: TestEvent;
+    let cntCookie: string;
+
+    beforeAll(async () => {
+      cntEvent = await createEvent(adminCookie, { password: "count-pass" });
+      cntCookie = await unlockGallery(cntEvent.slug, "count-pass");
+      await uploadAndProcessPhoto(adminCookie, cntEvent);
+      await requestAndAwaitArchive(adminCookie, cntCookie, cntEvent, "ORIGINAL");
+    }, 300_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, cntEvent.id);
+    });
+
+    it("Then opening the download page counts nothing, and pulling a part counts one", async () => {
+      const read = () => metricValue("pixshar_archive_downloads_total", { quality: "ORIGINAL" });
+      const before = await read();
+
+      // A page load is a pure read — it hands out no bytes.
+      const page = await fetch(`${API}/api/gallery/${cntEvent.slug}/download`, {
+        headers: { Cookie: cntCookie },
+      });
+      expect(page.status).toBe(200);
+      expect(await read()).toBe(before);
+
+      // The part redirect IS the download.
+      const part = await fetch(
+        `${API}/api/gallery/${cntEvent.slug}/download/part/1?quality=ORIGINAL`,
+        { headers: { Cookie: cntCookie }, redirect: "manual" }
+      );
+      expect(part.status).toBe(302);
+      expect(await read()).toBe(before + 1);
+    });
+
+    it("Then a part with no object counts nothing (nothing was downloaded)", async () => {
+      const read = () => metricValue("pixshar_archive_downloads_total", { quality: "ORIGINAL" });
+      const before = await read();
+
+      const missing = await fetch(
+        `${API}/api/gallery/${cntEvent.slug}/download/part/99?quality=ORIGINAL`,
+        { headers: { Cookie: cntCookie }, redirect: "manual" }
+      );
+      expect(missing.status).toBe(404);
+      expect(await read()).toBe(before);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // A photo deleted DURING a build (PIXSHAR-6's core promise).
+  //
+  // The builder snapshots the event's photos, then commits the part rows minutes
+  // later. DownloadArchivePartEntry.photoId has no FK to Photo, so nothing
+  // rejects an entry for a photo deleted in between — and the delete request's
+  // own sweep found no entries to expire, because they did not exist yet. The
+  // part then commits READY with the deleted photo's bytes inside, and under the
+  // lazy model no later build ever revisits it.
+  //
+  // Driving the race: the first photo is small, so its bytes are inside the ZIP
+  // within milliseconds of the build starting; the rest are large, so the build
+  // stays busy streaming for ~1.5s — long enough for the DELETE to land after the
+  // photo snapshot but before the part is committed.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("A photo deleted DURING a build", () => {
+    let raceEvent: TestEvent;
+    let raceCookie: string;
+    let deletedPhoto: string;
+    let survivor: string;
+    const BIG = 45 * 1024 * 1024;
+
+    beforeAll(async () => {
+      raceEvent = await createEvent(adminCookie, { password: "race-pass" });
+      raceCookie = await unlockGallery(raceEvent.slug, "race-pass");
+
+      // createdAt order = zip order. The small one goes in first.
+      deletedPhoto = await uploadAndProcessPhoto(adminCookie, raceEvent);
+      survivor = await uploadAndProcessPhoto(adminCookie, raceEvent, BIG);
+      for (let i = 0; i < 6; i++) await uploadAndProcessPhoto(adminCookie, raceEvent, BIG);
+    }, 600_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, raceEvent.id);
+    });
+
+    it("Then the finished archive does not contain it, and its part is not offered", async () => {
+      await requestArchive(raceCookie, raceEvent.slug, "ORIGINAL");
+
+      // Wait for the builder to have taken its snapshot: photoCount is written by
+      // markBuilding, which runs straight after loadPhotos.
+      await awaitAdminStatus(
+        adminCookie,
+        raceEvent.id,
+        "ORIGINAL",
+        (s) => s.status === "BUILDING" && s.photoCount > 0,
+        120_000
+      );
+
+      // The delete lands mid-build: the photo's bytes are already in the ZIP, but
+      // its membership row has not been committed, so the delete sweep sees
+      // nothing to expire.
+      const del = await authedFetch(
+        `/api/events/${raceEvent.id}/photos/${deletedPhoto}`,
+        adminCookie,
+        { method: "DELETE" }
+      );
+      expect(del.status).toBe(200);
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        raceEvent.id,
+        "ORIGINAL",
+        (s) => s === "READY" || s === "FAILED",
+        180_000
+      );
+      expect(status).toBe("READY");
+
+      // THE INVARIANT: nothing the guest can download contains the deleted photo.
+      const payload = await variantPayload(raceCookie, raceEvent.slug, "ORIGINAL");
+      for (const part of payload.parts.filter((p) => p.url !== null)) {
+        const res = await fetch(`${API}${part.url}`, {
+          headers: { Cookie: raceCookie },
+          redirect: "manual",
+        });
+        expect(res.status).toBe(302);
+        const zip = Buffer.from(await (await fetch(res.headers.get("location")!)).arrayBuffer());
+        // Store-mode ZIP: entry names carry the photo id as plain bytes.
+        expect(zip.includes(Buffer.from(deletedPhoto))).toBe(false);
+      }
+
+      // The part that held it lost its object, exactly as an ordinary deletion
+      // would have left it — the build's own close-out put it through the same path.
+      const poisoned = payload.parts.find((p) => p.index === 1);
+      expect(poisoned).toBeDefined();
+      expect(poisoned!.url).toBeNull();
+    }, 300_000);
+
+    it("Then requesting a rebuild restores it from the pruned membership", async () => {
+      const requested = await requestArchive(raceCookie, raceEvent.slug, "ORIGINAL");
+      expect(requested.queued).toBe(true); // a reclaimed part is NOT current
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        raceEvent.id,
+        "ORIGINAL",
+        (s) => s === "READY" || s === "FAILED",
+        180_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = await variantPayload(raceCookie, raceEvent.slug, "ORIGINAL");
+      const part1 = rebuilt.parts.find((p) => p.index === 1)!;
+      expect(part1.url).not.toBeNull();
+
+      const res = await fetch(`${API}${part1.url}`, {
+        headers: { Cookie: raceCookie },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+      const zip = Buffer.from(await (await fetch(res.headers.get("location")!)).arrayBuffer());
+      expect(zip.subarray(0, 2).toString("ascii")).toBe("PK");
+      expect(zip.includes(Buffer.from(deletedPhoto))).toBe(false);
+      expect(zip.includes(Buffer.from(survivor))).toBe(true);
+    }, 300_000);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // A deletion that empties the ONLY part leaves a READY job with no parts.
+  // requestBuild used to look solely for EXPIRED parts, find none, and no-op —
+  // so the "Archiv erstellen" button the guest is shown does nothing.
+  //
+  // It must stay a no-op when there is genuinely nothing to archive (no photos),
+  // or every click would queue a build that produces an empty archive and lands
+  // right back here.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("A deletion that empties the only part", () => {
+    let emEvent: TestEvent;
+    let emCookie: string;
+
+    beforeAll(async () => {
+      emEvent = await createEvent(adminCookie, { password: "empty-pass" });
+      emCookie = await unlockGallery(emEvent.slug, "empty-pass");
+      const only = await uploadAndProcessPhoto(adminCookie, emEvent);
+      await requestAndAwaitArchive(adminCookie, emCookie, emEvent, "DISPLAY");
+
+      const built = await variantPayload(emCookie, emEvent.slug, "DISPLAY");
+      if (built.parts.length !== 1) throw new Error(`expected 1 part, got ${built.parts.length}`);
+
+      const res = await authedFetch(`/api/events/${emEvent.id}/photos/${only}`, adminCookie, {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(200);
+    }, 300_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, emEvent.id);
+    });
+
+    it("Then the job is READY with no parts at all", async () => {
+      expect(await adminStatus(adminCookie, emEvent.id, "DISPLAY")).toBe("READY");
+      const payload = await variantPayload(emCookie, emEvent.slug, "DISPLAY");
+      expect(payload.parts).toHaveLength(0);
+      expect(payload.partCount).toBe(0);
+    });
+
+    it("Then requesting it is a safe no-op — no photos are left to archive", async () => {
+      const requested = await requestArchive(emCookie, emEvent.slug, "DISPLAY");
+      expect(requested.queued).toBe(false);
+      expect(await adminStatus(adminCookie, emEvent.id, "DISPLAY")).toBe("READY");
+    });
+
+    it("Then a new photo brings the archive back (the variant is still alive)", async () => {
+      const fresh = await uploadAndProcessPhoto(adminCookie, emEvent);
+
+      // The append cycle waits out the 60s quiet window; skip it.
+      await pollAdminStatus(adminCookie, emEvent.id, "DISPLAY", (s) => s !== "READY", 60_000);
+      await authedFetch(`/api/events/${emEvent.id}/download/build-now?quality=DISPLAY`, adminCookie, {
+        method: "POST",
+      });
+      const status = await pollAdminStatus(
+        adminCookie,
+        emEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        120_000
+      );
+      expect(status).toBe("READY");
+
+      const payload = await variantPayload(emCookie, emEvent.slug, "DISPLAY");
+      expect(payload.parts).toHaveLength(1);
+      expect(payload.parts[0].url).not.toBeNull();
+
+      const res = await fetch(`${API}${payload.parts[0].url}`, {
+        headers: { Cookie: emCookie },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+      const zip = Buffer.from(await (await fetch(res.headers.get("location")!)).arrayBuffer());
+      expect(zip.includes(Buffer.from(fresh))).toBe(true);
+    }, 300_000);
   });
 });

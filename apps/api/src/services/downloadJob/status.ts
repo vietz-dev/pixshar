@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import type { ArchiveQuality } from "@prisma/client";
 import { emitDownloadStatus, PG_NOTIFY_CHANNEL } from "../../lib/eventBus.js";
@@ -9,6 +10,16 @@ import { emitDownloadStatus, PG_NOTIFY_CHANNEL } from "../../lib/eventBus.js";
 export type Quality = ArchiveQuality; // "DISPLAY" | "ORIGINAL"
 export const DEFAULT_QUALITY: Quality = "ORIGINAL";
 export const ALL_QUALITIES: Quality[] = ["DISPLAY", "ORIGINAL"];
+
+// `?quality=` on every archive endpoint, admin and guest. One schema, so the two
+// route files cannot drift apart on which variants exist. Validated, never
+// coerced: several of these endpoints mutate (release reclaims the bytes), so a
+// typo'd variant must be a 400 — silently falling back to a default would act on
+// the WRONG archive. Omitting it means each surface's own default (ORIGINAL for
+// admin, the historical single archive; DISPLAY/Kompakt for guests).
+export const qualityQuerySchema = z.object({
+  quality: z.enum(ALL_QUALITIES as [Quality, ...Quality[]]).optional(),
+});
 
 // Compound-unique selector for the (event, variant) job.
 export function jobWhere(eventId: string, quality: Quality) {

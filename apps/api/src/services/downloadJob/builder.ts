@@ -6,6 +6,7 @@ import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import type { Photo } from "@prisma/client";
 import { planArchiveParts, zipEntryBytes, type PlannedEntry } from "../archivePlanner.js";
 import { DEFAULT_QUALITY, jobWhere, membershipSig, notifyDownloadStatus, type Quality } from "./status.js";
+import { expirePartsForMissingPhotos } from "./deletion.js";
 
 // The S3 source key a variant zips for a given photo.
 function sourceKey(photo: Photo, quality: Quality): string {
@@ -79,6 +80,14 @@ const buildZip = (eventId: string, quality: Quality) =>
         schedule: Schedule.exponential("1 second"),
       })
     );
+
+    // A photo deleted DURING this build was not in the snapshot's delete sweep —
+    // its entries were not committed yet, so there was nothing for it to expire —
+    // but it may well have been zipped into a part this build just committed.
+    // Reclaim those parts through the ordinary deletion path before anyone is
+    // told the archive is ready. Runs on the cancelled/superseded path too: those
+    // leave their already-committed parts behind, deleted photos and all.
+    yield* Effect.promise(() => expirePartsForMissingPhotos(eventId).catch(() => 0));
 
     if (!result) {
       console.log(`[BuildZip] event=${eventId} cancelled/superseded, skipping markReady`);

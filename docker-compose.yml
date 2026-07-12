@@ -99,6 +99,11 @@ services:
       dockerfile: apps/api/Dockerfile
     command: >
       /bin/sh -c "cd /app/apps/api && bun run start:worker"
+    # The worker is the ONLY writer of the idle-reaper's expiry counters and of
+    # builds_total{trigger="append"}; Prometheus scrapes them in-network, but
+    # publishing the port lets the test suite assert they are actually exposed.
+    ports:
+      - "4000:4000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://pixshar:pixshar@postgres:5432/pixshar?schema=public

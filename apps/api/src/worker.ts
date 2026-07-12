@@ -3,8 +3,12 @@ import { initDatabase } from "./lib/prisma.js";
 import { startBoss } from "./lib/pgboss.js";
 import { photoResizeHandler } from "./jobs/photoResize.js";
 import { startDebouncePoller, startZipReaper, startExpiryReaper } from "./services/downloadJob.js";
-import { register } from "prom-client";
-import { resizeQueueInflight } from "./lib/metrics.js";
+// The Pixshar registry, NOT prom-client's global one: every pixshar_* metric is
+// registered on the custom Registry in lib/metrics.ts. Serving the global
+// register here would expose an empty exposition and silently drop everything
+// this process is the ONLY writer of — the idle reaper's expiry counters and the
+// append build counter.
+import { register, resizeQueueInflight } from "./lib/metrics.js";
 
 if (import.meta.main) {
   console.log("[Worker] starting image-processor");

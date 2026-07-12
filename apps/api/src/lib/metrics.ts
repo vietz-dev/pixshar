@@ -146,9 +146,14 @@ export const photoDownloadsTotal = new Counter({
   registers: [register],
 });
 
+// One increment per archive part a guest actually pulls — counted in the
+// part-redirect handler, the only place bytes leave S3 (PIXSHAR-3). Opening the
+// download page is a read and counts nothing: it hands out no presigned URL, and
+// counting page loads (or SSE ticks) measured neither presigns nor downloads.
 export const archiveDownloadsTotal = new Counter({
   name: "pixshar_archive_downloads_total",
-  help: "Archive ZIP download presigned URLs generated",
+  help: "Archive ZIP parts downloaded by guests (part-redirect hits)",
+  labelNames: ["quality"] as const,
   registers: [register],
 });
 

@@ -183,12 +183,24 @@ export async function waitUntilProcessed(
  * Uploads one admin photo to an event and waits until it is PROCESSED (so both
  * its display and original S3 objects exist). Returns the created photo id.
  * Each call uses distinct bytes so the fileHash is unique per event.
+ *
+ * `padBytes` appends filler AFTER the PNG's IEND chunk: decoders ignore trailing
+ * bytes, so the image still resizes to a 1×1 display/thumb while its ORIGINAL S3
+ * object is arbitrarily large. That is the only lever a test has on how long an
+ * ORIGINAL archive build stays in BUILDING (the build's duration is bytes
+ * streamed, not photo count) — which is what makes the mid-build race testable.
  */
 let photoSeed = 0;
-export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): Promise<string> {
+export async function uploadAndProcessPhoto(
+  cookie: string,
+  event: TestEvent,
+  padBytes = 0
+): Promise<string> {
   // Make the bytes unique so the dedup constraint (eventId, fileHash) never trips.
   const base = bluePng();
-  const bytes = Buffer.concat([base, Buffer.from(`pixshar-${Date.now()}-${photoSeed++}`)]);
+  const unique = Buffer.from(`pixshar-${Date.now()}-${photoSeed++}`);
+  const pad = padBytes > 0 ? Buffer.alloc(padBytes, photoSeed % 251) : Buffer.alloc(0);
+  const bytes = Buffer.concat([base, unique, pad]);
   const fileHash = createHash("sha256").update(bytes).digest("hex");
 
   const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, cookie, {

@@ -20,16 +20,23 @@ const ALIVE_STATUSES: readonly DownloadJobStatus[] = ["READY", "DEBOUNCING", "QU
 // cannot stack builds.
 const BUILD_PENDING: readonly DownloadJobStatus[] = ["DEBOUNCING", "QUEUED", "BUILDING"];
 
+/**
+ * Returns true only when THIS call moved the job out of READY and into
+ * DEBOUNCING — i.e. when it began a new build cycle. Two photos finishing at the
+ * same instant both read READY, but only one wins the CAS below, and only that
+ * one has started a cycle. The caller counts the build off this return value, so
+ * one append cycle is counted exactly once.
+ */
 export async function triggerDebounce(
   eventId: string,
   quality: Quality = DEFAULT_QUALITY
-): Promise<void> {
+): Promise<boolean> {
   const now = Date.now();
   const debounceUntil = new Date(now + env.DOWNLOAD_DEBOUNCE_SECONDS * 1000);
   const debounceStartedAt = new Date(now);
   console.log(`[Debounce] event=${eventId} quality=${quality} debounceUntil=${debounceUntil.toISOString()}`);
 
-  await prisma.$transaction(async (tx) => {
+  const startedCycle = await prisma.$transaction(async (tx) => {
     // Upsert DownloadJob with state-machine transitions. `debounceStartedAt` is
     // set only when *entering* DEBOUNCING (never on extend) so checkDebounceTimers
     // can enforce a max-wait ceiling and the zip still builds during bulk uploads.
@@ -42,7 +49,7 @@ export async function triggerDebounce(
         data: { eventId, quality, status: "DEBOUNCING", debounceUntil, debounceStartedAt },
       });
       console.log(`[Debounce] event=${eventId} quality=${quality} created new DEBOUNCING job`);
-      return;
+      return false;
     }
 
     switch (existing.status) {
@@ -53,7 +60,7 @@ export async function triggerDebounce(
           data: { debounceUntil, processedPhotos: 0 },
         });
         console.log(`[Debounce] event=${eventId} reset DEBOUNCING timer`);
-        break;
+        return false;
       }
       case "QUEUED": {
         await tx.downloadJob.update({
@@ -61,23 +68,32 @@ export async function triggerDebounce(
           data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, queuedAt: null, processedPhotos: 0 },
         });
         console.log(`[Debounce] event=${eventId} QUEUED -> DEBOUNCING`);
-        break;
+        return false;
       }
       case "BUILDING": {
         // Do NOT interrupt active build
         console.log(`[Debounce] event=${eventId} BUILDING in progress, skipping`);
-        break;
+        return false;
       }
       case "READY": {
         // Incremental model: existing parts are immutable and stay downloadable.
         // We only re-enter DEBOUNCING to schedule a reconcile that appends the
         // newly-arrived photos as NEW parts — never wipe what's already built.
-        await tx.downloadJob.update({
-          where: { id: existing.id },
+        //
+        // updateMany, not update: under READ COMMITTED Postgres re-checks the
+        // WHERE after taking the row lock, so of two concurrent transactions that
+        // both READ "READY" exactly one gets count === 1. That is the CAS the
+        // append counter keys on.
+        const res = await tx.downloadJob.updateMany({
+          where: { id: existing.id, status: "READY" },
           data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, processedPhotos: 0 },
         });
+        if (res.count !== 1) {
+          console.log(`[Debounce] event=${eventId} lost READY -> DEBOUNCING race, cycle already started`);
+          return false;
+        }
         console.log(`[Debounce] event=${eventId} READY -> DEBOUNCING (append pending)`);
-        break;
+        return true;
       }
       case "FAILED":
       case "CANCELLED": {
@@ -86,12 +102,15 @@ export async function triggerDebounce(
           data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, failureReason: null, processedPhotos: 0 },
         });
         console.log(`[Debounce] event=${eventId} ${existing.status} -> DEBOUNCING`);
-        break;
+        return false;
       }
+      default:
+        return false;
     }
   });
 
   notifyDownloadStatus(eventId, quality).catch(() => {});
+  return startedCycle;
 }
 
 // Fan-out trigger: a processed photo is appended to every variant that is ALIVE
@@ -121,8 +140,11 @@ export async function triggerDebounceAllVariants(eventId: string): Promise<void>
     }
     // READY → DEBOUNCING starts a new build cycle; the other alive states are
     // already inside one, so counting them again would count one build twice.
-    if (job.status === "READY") archiveBuildsTotal.inc({ quality, trigger: "append" });
-    await triggerDebounce(eventId, quality).catch(() => {});
+    // The transition itself decides, not the status we read a moment ago: two
+    // photos finishing concurrently both see READY, but only the one that wins
+    // the CAS inside triggerDebounce actually starts the cycle.
+    const startedCycle = await triggerDebounce(eventId, quality).catch(() => false);
+    if (startedCycle) archiveBuildsTotal.inc({ quality, trigger: "append" });
   }
 }
 
@@ -182,17 +204,31 @@ export async function requestBuild(
   }
 
   if (job.status === "READY") {
-    // Complete = every part still holds its object. Only a deletion can leave a
-    // READY job with EXPIRED (object-less) parts; those must be rebuilt.
-    const missingParts = await prisma.downloadArchivePart.count({
-      where: { jobId: job.id, status: "EXPIRED" },
-    });
-    if (missingParts === 0) {
+    // A READY job is only *current* when every part still holds its object AND
+    // every processed photo sits in some part. A photo deletion is the one thing
+    // that can break either half, and it queues no build (PIXSHAR-6) — so this,
+    // the next request, is what repairs it:
+    //
+    //   reclaimed — the parts that held the photo went EXPIRED (object-less).
+    //   emptied   — the deletion removed the LAST member of a part, so the part
+    //               row is gone. For a single-part archive that leaves READY with
+    //               zero parts, which reads as "NONE" to the guest: the page shows
+    //               "Archiv erstellen" and this call MUST honour it. Counting only
+    //               EXPIRED parts found nothing here and no-op'd, leaving the
+    //               button dead until an unrelated upload happened to unstick it.
+    const [reclaimedParts, partCount, photoCount] = await Promise.all([
+      prisma.downloadArchivePart.count({ where: { jobId: job.id, status: "EXPIRED" } }),
+      prisma.downloadArchivePart.count({ where: { jobId: job.id } }),
+      prisma.photo.count({ where: { eventId, status: "PROCESSED" } }),
+    ]);
+    const emptied = partCount === 0 && photoCount > 0;
+    if (reclaimedParts === 0 && !emptied) {
       console.log(`[RequestBuild] event=${eventId} quality=${quality} no-op (status=READY)`);
       return false;
     }
     console.log(
-      `[RequestBuild] event=${eventId} quality=${quality} READY but ${missingParts} part(s) reclaimed — rebuilding`
+      `[RequestBuild] event=${eventId} quality=${quality} READY but incomplete ` +
+        `(reclaimed=${reclaimedParts} emptied=${emptied}) — rebuilding`
     );
   }
 

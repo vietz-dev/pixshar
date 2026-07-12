@@ -25,6 +25,7 @@ import {
   buildDownloadPayload,
   registerPartDownload,
   requestBuild,
+  qualityQuerySchema,
 } from "../services/downloadJob.js";
 import {
   galleryUnlocksTotal,
@@ -41,13 +42,10 @@ const unlockSchema = z.object({
 });
 
 // Archive part link: /:slug/download/part/:index?quality=. Part indices are
-// 1-based; the variant defaults to the guest default (Kompakt).
+// 1-based; the variant (shared qualityQuerySchema) defaults to the guest default
+// (Kompakt) when ?quality= is omitted.
 const partParamSchema = z.object({
   index: z.coerce.number().int().positive(),
-});
-// ?quality= on the archive endpoints — omitted means the guest default (Kompakt).
-const qualityQuerySchema = z.object({
-  quality: z.enum(["DISPLAY", "ORIGINAL"]).optional(),
 });
 
 // Public endpoint — returns only event name/description so the gate page can
@@ -189,10 +187,9 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
 
   // Both-variants payload: Kompakt (default) + Original in one round trip, each
   // serving whatever parts are already built (partial availability). A read —
-  // it creates no job and starts no build; the guest asks for a missing archive
-  // explicitly via POST /:slug/download/request.
+  // it creates no job, starts no build and signs no URL, so it counts nothing:
+  // the download is counted where it happens, in the part-redirect handler.
   const payload = await buildBothVariantsPayload(event.id, event.slug);
-  if (payload.status === "READY") archiveDownloadsTotal.inc();
 
   return c.json(payload);
 });
@@ -257,6 +254,9 @@ app.get(
       ARCHIVE_PART_PRESIGN_SECONDS,
       ticket.contentDisposition
     );
+    // The one place an archive's bytes are actually handed out — so the one place
+    // a download can honestly be counted.
+    archiveDownloadsTotal.inc({ quality });
     return c.redirect(url, 302);
   }
 );
@@ -270,12 +270,10 @@ app.get("/:slug/download/stream", requireGallerySession, async (c) => {
     // per-variant "still building" banner. Any variant's status change
     // re-emits the whole payload so both tabs stay live.
     const initial = await buildBothVariantsPayload(event.id, event.slug);
-    if (initial.status === "READY") archiveDownloadsTotal.inc();
     await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 
     const unsubscribe = onDownloadStatus(event.id, async () => {
       const payload = await buildBothVariantsPayload(event.id, event.slug);
-      if (payload.status === "READY") archiveDownloadsTotal.inc();
       await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
     });
 

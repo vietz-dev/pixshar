@@ -7,28 +7,31 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { buildNow, rebuildAll, cancelJob, releaseArchive, expirePartsForDeletedPhotos, buildAdminDownloadStatus } from "../services/downloadJob.js";
+import {
+  buildNow,
+  rebuildAll,
+  cancelJob,
+  releaseArchive,
+  expirePartsForDeletedPhotos,
+  buildAdminDownloadStatus,
+  qualityQuerySchema,
+  type Quality,
+} from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";
 import { encryptPassword, decryptPassword } from "../lib/crypto.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
+import { photoDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
-// Admin download endpoints act on one variant, selected by ?quality=. Validated,
-// never coerced: several of these endpoints mutate (release reclaims the bytes),
-// so a typo'd variant must be a 400 — silently falling back to a default would
-// act on the WRONG archive. Omitting ?quality= still means ORIGINAL (the
-// historical single archive), so pre-variant callers are unchanged; the
-// guest-facing default variant is DISPLAY (Kompakt).
-type Quality = "DISPLAY" | "ORIGINAL";
+// Admin download endpoints act on one variant, selected by ?quality= (the shared
+// schema — see downloadJob/status.ts). Omitting it means ORIGINAL, the historical
+// single archive, so pre-variant callers are unchanged; the guest-facing default
+// variant is DISPLAY (Kompakt).
 const ADMIN_DEFAULT_QUALITY: Quality = "ORIGINAL";
-const qualityQuerySchema = z.object({
-  quality: z.enum(["DISPLAY", "ORIGINAL"]).optional(),
-});
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),

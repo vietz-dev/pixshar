@@ -30,6 +30,7 @@ export {
   type Quality,
   DEFAULT_QUALITY,
   ALL_QUALITIES,
+  qualityQuerySchema,
   statusMessage,
   pushDownloadStatus,
   notifyDownloadStatus,
@@ -82,4 +83,7 @@ export {
   startExpiryReaper,
 } from "./downloadJob/reaper.js";
 
-export { expirePartsForDeletedPhotos } from "./downloadJob/deletion.js";
+export {
+  expirePartsForDeletedPhotos,
+  expirePartsForMissingPhotos,
+} from "./downloadJob/deletion.js";

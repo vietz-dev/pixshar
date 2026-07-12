@@ -116,3 +116,46 @@ export async function expirePartsForDeletedPhotos(
 
   return affected.length;
 }
+
+/**
+ * Close the mid-build window from the other side (PIXSHAR-6).
+ *
+ * The builder snapshots the event's photos (loadPhotos) and only commits the
+ * part rows and their membership minutes later. `DownloadArchivePartEntry.photoId`
+ * is a bare String with no FK to `Photo`, so nothing rejects an entry for a photo
+ * that was deleted in between — and expirePartsForDeletedPhotos, running inside
+ * that delete request, found no entries to expire because they did not exist
+ * yet. The part then commits READY with the deleted photo's bytes inside it, and
+ * under the lazy model no later build ever revisits it: the photo stays
+ * downloadable indefinitely, which is precisely what "not retrievable from any
+ * archive object from the moment the delete returns" forbids.
+ *
+ * So every build ends by checking its own output: any part still referencing a
+ * photo that no longer exists is put through the ORDINARY deletion path above —
+ * object reclaimed, membership pruned, part left EXPIRED for the next request to
+ * rebuild. One code path owns archive-part reclamation, not two.
+ *
+ * Costs two indexed queries per build when (as usual) nothing was deleted.
+ */
+export async function expirePartsForMissingPhotos(eventId: string): Promise<number> {
+  const referenced = await prisma.downloadArchivePartEntry.findMany({
+    where: { part: { job: { eventId } } },
+    select: { photoId: true },
+    distinct: ["photoId"],
+  });
+  if (referenced.length === 0) return 0;
+
+  const photoIds = referenced.map((e) => e.photoId);
+  const alive = await prisma.photo.findMany({
+    where: { id: { in: photoIds } },
+    select: { id: true },
+  });
+  const aliveIds = new Set(alive.map((p) => p.id));
+  const missing = photoIds.filter((id) => !aliveIds.has(id));
+  if (missing.length === 0) return 0;
+
+  console.warn(
+    `[ArchiveDeletion] event=${eventId} ${missing.length} membership entr(ies) outlived their photo — expiring their parts`
+  );
+  return expirePartsForDeletedPhotos(eventId, missing);
+}
