@@ -4,7 +4,7 @@ title: KEDA-based worker autoscaling for hosted SaaS
 description: Future concept for scaling photo-resize and ZIP-builder workers to zero on Kubernetes using KEDA queue-depth triggers.
 tags: [concept, future, keda, kubernetes, scaling, saas, worker, zip]
 status: future — not yet implemented
-timestamp: 2026-07-05T00:00:00Z
+timestamp: 2026-07-12T00:00:00Z
 ---
 
 # Concept
@@ -96,7 +96,9 @@ transient ZIPs. The infrastructure overhead is absorbed into the margin.
       (currently implemented as hand-rolled `DownloadJob` state machine — verify compatibility)
 - [ ] KEDA installed in the hosted K8s cluster
 - [ ] Postgres scaler configured (`SELECT COUNT(*) FROM ... WHERE status = 'PENDING'`)
-- [ ] S3 lifecycle rules for ZIP TTL configured per-bucket/prefix
+- [ ] ~~S3 lifecycle rules for ZIP TTL~~ — superseded: ZIP idle-expiry shipped as an app-side
+      reaper, not S3 lifecycle rules (S3 expiry is age-based, not access-based; see
+      [Archiv-Lebenszeit](/decisions/archive-lifetime.md))
 - [ ] UI: "Building ZIP…" progress screen with SSE or polling (already partially present
       via the archive SSE stream — review for reuse)
 - [ ] `DELETE originals after processing` flag per tier in Event/tenant config
@@ -105,5 +107,5 @@ transient ZIPs. The infrastructure overhead is absorbed into the margin.
 
 [1] [Durable queue decision](/decisions/durable-queue.md)
 [2] [Archive generation architecture](/architecture/archive-generation.md)
-[3] [ZIP TTL Storage concept](/concepts/zip-ttl-storage.md)
+[3] [Archiv-Lebenszeit decision](/decisions/archive-lifetime.md)
 [4] [KEDA Postgres scaler docs](https://keda.sh/docs/latest/scalers/postgresql/)
