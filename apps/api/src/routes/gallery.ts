@@ -18,7 +18,12 @@ import {
 } from "../lib/uploadInit.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
-import { buildBothVariantsPayload } from "../services/downloadJob.js";
+import {
+  ARCHIVE_PART_PRESIGN_SECONDS,
+  GUEST_DEFAULT_QUALITY,
+  buildBothVariantsPayload,
+  registerPartDownload,
+} from "../services/downloadJob.js";
 import {
   galleryUnlocksTotal,
   photoDownloadsTotal,
@@ -31,6 +36,15 @@ const secret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
 const unlockSchema = z.object({
   password: z.string().min(1).max(128),
+});
+
+// Archive part link: /:slug/download/part/:index?quality=. Part indices are
+// 1-based; the variant defaults to the guest default (Kompakt).
+const partParamSchema = z.object({
+  index: z.coerce.number().int().positive(),
+});
+const partQuerySchema = z.object({
+  quality: z.enum(["DISPLAY", "ORIGINAL"]).optional(),
 });
 
 // Public endpoint — returns only event name/description so the gate page can
@@ -178,6 +192,41 @@ app.get("/:slug/download", requireGallerySession, async (c) => {
 
   return c.json(payload);
 });
+
+// The measured download. Every part link on the guest page points here rather
+// than at S3 directly: this endpoint stamps the (event, variant) job's idle
+// clock and only then 302s to a freshly presigned S3 GET. The bytes still never
+// pass through the API — see .knowledge/decisions/presigned-urls.md.
+app.get(
+  "/:slug/download/part/:index",
+  requireGallerySession,
+  zValidator("param", partParamSchema),
+  zValidator("query", partQuerySchema),
+  async (c) => {
+    // Rate limit: 60 part downloads per minute per gallery
+    const rateKey = getRateLimitKey(c, `download-part:${c.req.param("slug")}`);
+    if (!checkRateLimit(rateKey, 60, 60_000)) {
+      return c.json({ error: "Too many requests. Please try again later." }, 429);
+    }
+
+    const event = c.get("galleryEvent");
+    const { index } = c.req.valid("param");
+    const quality = c.req.valid("query").quality ?? GUEST_DEFAULT_QUALITY;
+
+    const ticket = await registerPartDownload(event.id, event.slug, quality, index);
+    if (!ticket) {
+      return c.json({ error: "Archive part not found" }, 404);
+    }
+
+    const url = await getPresignedUrl(
+      ticket.key,
+      "get",
+      ARCHIVE_PART_PRESIGN_SECONDS,
+      ticket.contentDisposition
+    );
+    return c.redirect(url, 302);
+  }
+);
 
 app.get("/:slug/download/stream", requireGallerySession, async (c) => {
   const event = c.get("galleryEvent");

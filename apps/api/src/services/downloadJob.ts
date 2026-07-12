@@ -14,7 +14,7 @@
 //   admin    — §3: buildNow, rebuildAll, cancelJob.
 //   payload  — DownloadPart/DownloadPayload/BothVariantsPayload,
 //              buildDownloadPayload, buildBothVariantsPayload,
-//              getDownloadJobStatus.
+//              registerPartDownload, getDownloadJobStatus.
 //   builder  — §4/§5: runBuildZip and the build/streaming pipeline.
 //   expiry   — reserved, empty; home for the idle-expiry ticket.
 
@@ -47,9 +47,12 @@ export {
   type DownloadPart,
   type DownloadPayload,
   type BothVariantsPayload,
+  type PartDownloadTicket,
+  ARCHIVE_PART_PRESIGN_SECONDS,
   buildDownloadPayload,
   GUEST_DEFAULT_QUALITY,
   buildBothVariantsPayload,
+  registerPartDownload,
   getDownloadJobStatus,
 } from "./downloadJob/payload.js";
 

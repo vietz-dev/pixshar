@@ -11,6 +11,7 @@
  *  - POST /api/events/:id/download/cancel — cancels a queued/building job
  *  - GET /api/events/:id/download/status — admin status endpoint shape
  *  - Admin auth guard on all admin download endpoints
+ *  - GET /api/gallery/:slug/download/part/:index — 302 to S3, stamps the idle clock
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
@@ -37,6 +38,16 @@ interface BothVariantsBody {
   defaultQuality: string;
   status: string; // back-compat: default variant spread at top level
   variants: { DISPLAY: VariantPayload; ORIGINAL: VariantPayload };
+}
+
+/** The (event, variant) job's idle clock, read through the admin status endpoint. */
+async function lastDownloadedAt(
+  cookie: string,
+  eventId: string,
+  quality: "DISPLAY" | "ORIGINAL"
+): Promise<string | null> {
+  const res = await authedFetch(`/api/events/${eventId}/download/status?quality=${quality}`, cookie);
+  return ((await res.json()) as { lastDownloadedAt: string | null }).lastDownloadedAt;
 }
 
 async function pollAdminStatus(
@@ -287,11 +298,12 @@ describe("Gallery archive download", () => {
         if (original.parts && original.parts.length > 0) {
           const part = original.parts[0];
           expect(typeof part.index).toBe("number");
-          expect(typeof part.url).toBe("string");
-          expect(part.url).toMatch(/^https?:\/\//);
           expect(typeof part.sizeBytes).toBe("number");
-          // URL must carry Content-Disposition with the event slug
-          expect(part.url).toMatch(/response-content-disposition/i);
+          // Part URLs point at the API's part-redirect endpoint (which stamps the
+          // idle clock), not straight at a presigned S3 URL.
+          expect(part.url).toBe(
+            `/api/gallery/${emptyEvent.slug}/download/part/${part.index}?quality=ORIGINAL`
+          );
         }
       } finally {
         await deleteEvent(adminCookie, emptyEvent.id);
@@ -405,9 +417,18 @@ describe("Gallery archive download", () => {
         const body = (await res.json()) as BothVariantsBody;
         expect(body.variants.DISPLAY.status).toBe("READY");
         expect(body.variants.DISPLAY.parts.length).toBeGreaterThan(0);
-        expect(body.variants.DISPLAY.parts[0].url).toMatch(/^https?:\/\//);
-        // Kompakt download filename carries the "-kompakt" segment.
-        expect(body.variants.DISPLAY.parts[0].url).toMatch(/kompakt/i);
+        const kompaktPart = body.variants.DISPLAY.parts[0];
+        expect(kompaktPart.url).toBe(
+          `/api/gallery/${fanEvent.slug}/download/part/${kompaktPart.index}?quality=DISPLAY`
+        );
+        // Following the redirect yields the Kompakt archive — its filename carries
+        // the "-kompakt" segment.
+        const redirect = await fetch(`${API}${kompaktPart.url}`, {
+          headers: { Cookie: fanCookie },
+          redirect: "manual",
+        });
+        expect(redirect.status).toBe(302);
+        expect(redirect.headers.get("location")).toMatch(/kompakt/i);
       } finally {
         await deleteEvent(adminCookie, fanEvent.id);
       }
@@ -462,6 +483,140 @@ describe("Gallery archive download", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { quality: string };
       expect(body.quality).toBe("DISPLAY");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Part-redirect endpoint — measuring the real download (PIXSHAR-3)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("GET /api/gallery/:slug/download/part/:index", () => {
+    let partEvent: TestEvent;
+    let partCookie: string;
+
+    // One event with a photo and BOTH variants built — every assertion below
+    // reads from it, since building an archive is the expensive part.
+    beforeAll(async () => {
+      partEvent = await createEvent(adminCookie, { password: "part-pass" });
+      partCookie = await unlockGallery(partEvent.slug, "part-pass");
+      await uploadAndProcessPhoto(adminCookie, partEvent);
+
+      for (const q of ["DISPLAY", "ORIGINAL"] as const) {
+        await authedFetch(`/api/events/${partEvent.id}/download/build-now?quality=${q}`, adminCookie, {
+          method: "POST",
+        });
+      }
+      for (const q of ["DISPLAY", "ORIGINAL"] as const) {
+        const s = await pollAdminStatus(adminCookie, partEvent.id, q, (v) => v === "READY" || v === "FAILED", 90_000);
+        if (s !== "READY") throw new Error(`${q} archive not READY (got ${s})`);
+      }
+    }, 240_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, partEvent.id);
+    });
+
+    it("Then it returns 401 without a gallery session", async () => {
+      const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download/part/1?quality=DISPLAY`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("Then it returns 401 with a gallery cookie for a different gallery", async () => {
+      const other = await createEvent(adminCookie, { password: "other-part-pass" });
+      const otherCookie = await unlockGallery(other.slug, "other-part-pass");
+      try {
+        const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download/part/1?quality=DISPLAY`, {
+          headers: { Cookie: otherCookie },
+          redirect: "manual",
+        });
+        expect(res.status).toBe(401);
+      } finally {
+        await deleteEvent(adminCookie, other.id);
+      }
+    });
+
+    it("Then the download payload's part URLs point at this endpoint, not at S3", async () => {
+      const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download`, {
+        headers: { Cookie: partCookie },
+      });
+      const body = (await res.json()) as BothVariantsBody;
+      for (const q of ["DISPLAY", "ORIGINAL"] as const) {
+        const parts = body.variants[q].parts;
+        expect(parts.length).toBeGreaterThan(0);
+        for (const p of parts) {
+          expect(p.url).toBe(`/api/gallery/${partEvent.slug}/download/part/${p.index}?quality=${q}`);
+        }
+      }
+    });
+
+    it("Then it answers 302 with an S3 Location that downloads a valid ZIP", async () => {
+      const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download/part/1?quality=ORIGINAL`, {
+        headers: { Cookie: partCookie },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const location = res.headers.get("location");
+      expect(location).toBeTruthy();
+      // A presigned S3 GET — the bytes never pass through the API.
+      expect(location).toMatch(/^https?:\/\//);
+      expect(location).toMatch(/X-Amz-Signature/i);
+      // Single part → plain slug filename (no "-part-N-of-M" suffix).
+      expect(decodeURIComponent(location!)).toContain(`filename="${partEvent.slug}.zip"`);
+
+      const zip = await fetch(location!);
+      expect(zip.status).toBe(200);
+      const bytes = Buffer.from(await zip.arrayBuffer());
+      expect(bytes.length).toBeGreaterThan(0);
+      expect(bytes.subarray(0, 2).toString("ascii")).toBe("PK"); // ZIP local file header
+    });
+
+    it("Then it stamps lastDownloadedAt, while GET /download alone does not", async () => {
+      const before = await lastDownloadedAt(adminCookie, partEvent.id, "DISPLAY");
+
+      await new Promise((r) => setTimeout(r, 20));
+      const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download/part/1?quality=DISPLAY`, {
+        headers: { Cookie: partCookie },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      const afterPart = await lastDownloadedAt(adminCookie, partEvent.id, "DISPLAY");
+      expect(afterPart).toBeTruthy();
+      expect(new Date(afterPart!).getTime()).toBeGreaterThan(
+        before ? new Date(before).getTime() : 0
+      );
+
+      // Opening the download page is a read — it must not touch the idle clock.
+      await new Promise((r) => setTimeout(r, 20));
+      await fetch(`${API}/api/gallery/${partEvent.slug}/download`, { headers: { Cookie: partCookie } });
+      const afterPage = await lastDownloadedAt(adminCookie, partEvent.id, "DISPLAY");
+      expect(afterPage).toBe(afterPart);
+    });
+
+    it("Then stamping is per variant — a Kompakt part does not refresh Original's clock", async () => {
+      const originalBefore = await lastDownloadedAt(adminCookie, partEvent.id, "ORIGINAL");
+
+      await new Promise((r) => setTimeout(r, 20));
+      const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download/part/1?quality=DISPLAY`, {
+        headers: { Cookie: partCookie },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+
+      expect(await lastDownloadedAt(adminCookie, partEvent.id, "ORIGINAL")).toBe(originalBefore);
+    });
+
+    it("Then a part index with no object returns 404", async () => {
+      const res = await fetch(`${API}/api/gallery/${partEvent.slug}/download/part/99?quality=DISPLAY`, {
+        headers: { Cookie: partCookie },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(404);
+      expect(res.headers.get("location")).toBeNull();
+      expect((await res.json()) as { error: string }).toHaveProperty("error");
     });
   });
 });

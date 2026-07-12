@@ -220,6 +220,7 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
       partCount: 0,
       debounceUntil: null,
       failureReason: null,
+      lastDownloadedAt: null,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -236,6 +237,9 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
     partCount: job.partCount,
     debounceUntil: job.debounceUntil,
     failureReason: job.failureReason,
+    // The idle clock — stamped only by the guest part-redirect endpoint, never
+    // by opening the download page.
+    lastDownloadedAt: job.lastDownloadedAt,
     updatedAt: job.updatedAt,
   });
 });
