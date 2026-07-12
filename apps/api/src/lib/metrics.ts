@@ -84,6 +84,23 @@ export const archiveDownloadsTotal = new Counter({
   registers: [register],
 });
 
+// Idle expiry (PIXSHAR-4). Written by expireArchive — both by the periodic
+// reaper (worker process) and by the admin "release archive" endpoint (API
+// process); each process exposes its own /metrics, Prometheus sums them.
+export const archiveExpiredTotal = new Counter({
+  name: "pixshar_archive_expired_total",
+  help: "Archives expired: ZIP objects reclaimed from S3, membership kept",
+  labelNames: ["quality"] as const,
+  registers: [register],
+});
+
+export const archiveBytesReclaimedTotal = new Counter({
+  name: "pixshar_archive_bytes_reclaimed_total",
+  help: "Bytes freed from S3 by archive expiry",
+  labelNames: ["quality"] as const,
+  registers: [register],
+});
+
 export const photoUploadsInitiatedTotal = new Counter({
   name: "pixshar_photo_uploads_initiated_total",
   help: "Photo upload presigned PUT URLs issued (new files only, not resumes)",

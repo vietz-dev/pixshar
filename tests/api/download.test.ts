@@ -12,6 +12,7 @@
  *  - GET /api/events/:id/download/status — admin status endpoint shape
  *  - Admin auth guard on all admin download endpoints
  *  - GET /api/gallery/:slug/download/part/:index — 302 to S3, stamps the idle clock
+ *  - POST /api/events/:id/download/release — expireArchive over HTTP (idle-reaper effect path)
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
@@ -48,6 +49,27 @@ async function lastDownloadedAt(
 ): Promise<string | null> {
   const res = await authedFetch(`/api/events/${eventId}/download/status?quality=${quality}`, cookie);
   return ((await res.json()) as { lastDownloadedAt: string | null }).lastDownloadedAt;
+}
+
+/** The guest download payload for one variant. */
+async function variantPayload(
+  cookie: string,
+  slug: string,
+  quality: "DISPLAY" | "ORIGINAL"
+): Promise<VariantPayload> {
+  const res = await fetch(`${API}/api/gallery/${slug}/download`, { headers: { Cookie: cookie } });
+  const body = (await res.json()) as BothVariantsBody;
+  return body.variants[quality];
+}
+
+/** The admin-visible job status for one variant. */
+async function adminStatus(
+  cookie: string,
+  eventId: string,
+  quality: "DISPLAY" | "ORIGINAL"
+): Promise<string> {
+  const res = await authedFetch(`/api/events/${eventId}/download/status?quality=${quality}`, cookie);
+  return ((await res.json()) as { status: string }).status;
 }
 
 async function pollAdminStatus(
@@ -617,6 +639,158 @@ describe("Gallery archive download", () => {
       expect(res.status).toBe(404);
       expect(res.headers.get("location")).toBeNull();
       expect((await res.json()) as { error: string }).toHaveProperty("error");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Idle expiry — "Archiv freigeben" is the reaper's effect path (PIXSHAR-4)
+  //
+  // The time-based sweep decision is the pure isExpired (unit-tested in
+  // archiveExpiry.test.ts). What is exercised here is the *effect*: the same
+  // expireArchive() the reaper runs, driven over HTTP so no clock has to be
+  // faked — objects gone, job EXPIRED, membership intact, rebuild identical.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("POST /api/events/:id/download/release", () => {
+    let relEvent: TestEvent;
+    let relCookie: string;
+    // ORIGINAL's parts as first built — the identities a rebuild must reproduce.
+    let originalPartsBefore: Array<{ index: number; membershipSig: string }>;
+
+    beforeAll(async () => {
+      relEvent = await createEvent(adminCookie, { password: "release-pass" });
+      relCookie = await unlockGallery(relEvent.slug, "release-pass");
+      await uploadAndProcessPhoto(adminCookie, relEvent);
+
+      for (const q of ["DISPLAY", "ORIGINAL"] as const) {
+        await authedFetch(`/api/events/${relEvent.id}/download/build-now?quality=${q}`, adminCookie, {
+          method: "POST",
+        });
+      }
+      for (const q of ["DISPLAY", "ORIGINAL"] as const) {
+        const s = await pollAdminStatus(adminCookie, relEvent.id, q, (v) => v === "READY" || v === "FAILED", 90_000);
+        if (s !== "READY") throw new Error(`${q} archive not READY (got ${s})`);
+      }
+
+      const original = await variantPayload(relCookie, relEvent.slug, "ORIGINAL");
+      originalPartsBefore = original.parts.map((p) => ({ index: p.index, membershipSig: p.membershipSig }));
+      if (originalPartsBefore.length === 0) throw new Error("ORIGINAL archive built with no parts");
+    }, 240_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, relEvent.id);
+    });
+
+    it("Then it returns 401 without an admin session, and expires nothing", async () => {
+      const res = await fetch(`${API}/api/events/${relEvent.id}/download/release?quality=ORIGINAL`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(401);
+      expect(await adminStatus(adminCookie, relEvent.id, "ORIGINAL")).toBe("READY");
+    });
+
+    it("Then releasing ORIGINAL expires it: job EXPIRED, no downloadable parts, part URL 404s", async () => {
+      const res = await authedFetch(
+        `/api/events/${relEvent.id}/download/release?quality=ORIGINAL`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()) as { success: boolean; released: boolean }).toMatchObject({
+        success: true,
+        released: true,
+      });
+
+      expect(await adminStatus(adminCookie, relEvent.id, "ORIGINAL")).toBe("EXPIRED");
+
+      // The payload no longer offers any ORIGINAL part…
+      const original = await variantPayload(relCookie, relEvent.slug, "ORIGINAL");
+      expect(original.parts).toHaveLength(0);
+
+      // …and the part URL a guest may still hold resolves to no object.
+      const gone = await fetch(
+        `${API}/api/gallery/${relEvent.slug}/download/part/${originalPartsBefore[0].index}?quality=ORIGINAL`,
+        { headers: { Cookie: relCookie }, redirect: "manual" }
+      );
+      expect(gone.status).toBe(404);
+      expect(gone.headers.get("location")).toBeNull();
+    });
+
+    it("Then expiry is per variant — releasing Original leaves Kompakt's objects alone", async () => {
+      expect(await adminStatus(adminCookie, relEvent.id, "DISPLAY")).toBe("READY");
+
+      const display = await variantPayload(relCookie, relEvent.slug, "DISPLAY");
+      expect(display.status).toBe("READY");
+      expect(display.parts.length).toBeGreaterThan(0);
+
+      const redirect = await fetch(`${API}${display.parts[0].url}`, {
+        headers: { Cookie: relCookie },
+        redirect: "manual",
+      });
+      expect(redirect.status).toBe(302);
+      const location = redirect.headers.get("location");
+      expect(location).toMatch(/X-Amz-Signature/i);
+      const zip = await fetch(location!);
+      expect(zip.status).toBe(200);
+    });
+
+    it("Then a rebuild reproduces the same partIndex and membershipSig (the membership survived)", async () => {
+      const res = await authedFetch(
+        `/api/events/${relEvent.id}/download/rebuild-all?quality=ORIGINAL`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(res.status).toBe(200);
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        relEvent.id,
+        "ORIGINAL",
+        (s) => s === "READY" || s === "FAILED",
+        90_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = (await variantPayload(relCookie, relEvent.slug, "ORIGINAL")).parts.map((p) => ({
+        index: p.index,
+        membershipSig: p.membershipSig,
+      }));
+      // Identical part identities → a guest's per-part "downloaded" ticks survive.
+      expect(rebuilt).toEqual(originalPartsBefore);
+
+      const back = await fetch(
+        `${API}/api/gallery/${relEvent.slug}/download/part/${originalPartsBefore[0].index}?quality=ORIGINAL`,
+        { headers: { Cookie: relCookie }, redirect: "manual" }
+      );
+      expect(back.status).toBe(302);
+    }, 120_000);
+
+    it("Then two concurrent releases expire the archive exactly once (CAS claim holds)", async () => {
+      const [a, b] = await Promise.all([
+        authedFetch(`/api/events/${relEvent.id}/download/release?quality=DISPLAY`, adminCookie, { method: "POST" }),
+        authedFetch(`/api/events/${relEvent.id}/download/release?quality=DISPLAY`, adminCookie, { method: "POST" }),
+      ]);
+      expect(a.status).toBe(200);
+      expect(b.status).toBe(200);
+
+      const results = (await Promise.all([a.json(), b.json()])) as Array<{ released: boolean }>;
+      // Exactly one caller claimed the job; the loser is a no-op, not a second delete.
+      expect(results.filter((r) => r.released)).toHaveLength(1);
+
+      expect(await adminStatus(adminCookie, relEvent.id, "DISPLAY")).toBe("EXPIRED");
+      expect((await variantPayload(relCookie, relEvent.slug, "DISPLAY")).parts).toHaveLength(0);
+    });
+
+    it("Then the expiry counters are exposed on /metrics", async () => {
+      const text = await (await fetch(`${API}/metrics`)).text();
+
+      const expired = /^pixshar_archive_expired_total\{quality="ORIGINAL"\} (\d+)/m.exec(text);
+      expect(expired).toBeTruthy();
+      expect(Number(expired![1])).toBeGreaterThan(0);
+
+      const reclaimed = /^pixshar_archive_bytes_reclaimed_total\{quality="ORIGINAL"\} (\d+)/m.exec(text);
+      expect(reclaimed).toBeTruthy();
+      expect(Number(reclaimed![1])).toBeGreaterThan(0);
     });
   });
 });

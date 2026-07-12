@@ -5,8 +5,9 @@
 // DownloadArchivePart rows (the membership) stay, so a later request can
 // rebuild the same parts with the same partIndex + membershipSig.
 //
-// This module holds the *pure decision*. The effectful reaper / release path
-// (ticket 3) lands here too and calls isExpired.
+// This module holds the *pure decision*. It must stay free of DB/S3/env imports
+// so it can be unit-tested without a running stack — the effect that acts on it
+// (expireArchive) and the periodic reaper live in reaper.ts.
 import type { DownloadJobStatus } from "@prisma/client";
 
 // Structurally satisfied by a DownloadJob row; kept minimal so the decision

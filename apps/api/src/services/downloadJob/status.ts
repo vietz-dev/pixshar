@@ -24,6 +24,7 @@ export function statusMessage(status: string): string {
     case "READY": return "Archive ready for download.";
     case "FAILED": return "Archive build failed.";
     case "CANCELLED": return "Archive build was cancelled.";
+    case "EXPIRED": return "Archive expired — its files were reclaimed and can be rebuilt on request.";
     default: return "Unknown status.";
   }
 }

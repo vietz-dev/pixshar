@@ -279,8 +279,12 @@ const streamZipPartsToS3 = (
     const assignedIds = new Set<string>();
     for (const part of existingParts) for (const e of part.entries) assignedIds.add(e.photoId);
 
-    // ---- Work A: STALE parts to rebuild from stored membership -----------
-    const staleParts = existingParts.filter((p) => p.status === "STALE");
+    // ---- Work A: parts to rebuild from stored membership -----------------
+    // STALE: a photo inside it was deleted (or the admin forced a rebuild).
+    // EXPIRED: its bytes were reclaimed by the idle reaper — the membership is
+    // exactly what survived for this moment, so rebuild it in place (same
+    // partIndex, same membershipSig, generation + 1).
+    const staleParts = existingParts.filter((p) => p.status === "STALE" || p.status === "EXPIRED");
 
     // ---- Work B: unassigned processed photos → new parts -----------------
     const newPhotos = photos.filter((p) => !assignedIds.has(p.id)); // createdAt order preserved

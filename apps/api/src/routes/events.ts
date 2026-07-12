@@ -7,7 +7,7 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { buildNow, rebuildAll, cancelJob, triggerReconcileAllVariants, statusMessage } from "../services/downloadJob.js";
+import { buildNow, rebuildAll, cancelJob, releaseArchive, triggerReconcileAllVariants, statusMessage } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
@@ -329,6 +329,28 @@ app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
   }
   await rebuildAll(id, parseQuality(c));
   return c.json({ success: true });
+});
+
+// Release the archive: reclaim this variant's S3 objects now instead of waiting
+// for the idle reaper. Runs the same expireArchive() the reaper runs — the
+// membership survives, so the next request rebuilds the identical parts.
+// `released: false` means there were no bytes to reclaim (not READY).
+app.post("/:id/download/release", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) {
+    return c.json({ error: "Event not found" }, 404);
+  }
+  if (event.createdById !== user.id) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  try {
+    const released = await releaseArchive(id, parseQuality(c));
+    return c.json({ success: true, released });
+  } catch {
+    return c.json({ error: "Failed to release archive" }, 500);
+  }
 });
 
 app.post("/:id/download/cancel", requireAdmin, async (c) => {

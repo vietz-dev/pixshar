@@ -16,7 +16,11 @@
 //              buildDownloadPayload, buildBothVariantsPayload,
 //              registerPartDownload, getDownloadJobStatus.
 //   builder  — §4/§5: runBuildZip and the build/streaming pipeline.
-//   expiry   — reserved, empty; home for the idle-expiry ticket.
+//   expiry   — the pure idle-expiry decision (isExpired). No DB/S3/env imports,
+//              so it is unit-testable without a running stack.
+//   reaper   — the effect side of expiry: expireArchive (S3 reclaim → EXPIRED,
+//              membership preserved), the admin release path and the periodic
+//              sweep that drives them.
 
 export {
   type Quality,
@@ -57,3 +61,13 @@ export {
 } from "./downloadJob/payload.js";
 
 export { runBuildZip } from "./downloadJob/builder.js";
+
+export { type ExpiryCandidate, isExpired } from "./downloadJob/expiry.js";
+
+export {
+  type ExpirableJob,
+  expireArchive,
+  releaseArchive,
+  sweepExpiredArchives,
+  startExpiryReaper,
+} from "./downloadJob/reaper.js";

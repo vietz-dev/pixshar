@@ -1,3 +1,4 @@
+import type { DownloadJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { DEFAULT_QUALITY, jobWhere, statusMessage, type Quality } from "./status.js";
 import { ensureJob } from "./triggers.js";
@@ -22,6 +23,15 @@ export const ARCHIVE_PART_PRESIGN_SECONDS = 15 * 60;
 // (the membership is the durable thing) but their object is gone.
 export function partHasObject(part: { key: string | null; status: string }): boolean {
   return Boolean(part.key) && part.status !== "EXPIRED";
+}
+
+// An EXPIRED job's objects are gone, or are being deleted right now. Expiry
+// claims the job (READY → EXPIRED) *before* it touches S3 and flips the part
+// rows only *after* the objects are gone; this gate is what makes that window
+// invisible — a part is never offered while its bytes are being reclaimed, and
+// a crash mid-expiry can never leave a guest clicking a dead S3 link.
+function jobHoldsObjects(job: { status: DownloadJobStatus }): boolean {
+  return job.status !== "EXPIRED";
 }
 
 // The guest's part link. It points at the API, not at S3: the redirect endpoint
@@ -97,7 +107,7 @@ export async function buildDownloadPayload(
   const building = jobActive || anyStale;
 
   // Only parts with a committed S3 object are offered for download.
-  const downloadable = job.parts.filter(partHasObject);
+  const downloadable = jobHoldsObjects(job) ? job.parts.filter(partHasObject) : [];
   const n = downloadable.length;
 
   if (n === 0) {
@@ -193,7 +203,7 @@ export async function registerPartDownload(
     where: jobWhere(eventId, quality),
     include: { parts: { orderBy: { partIndex: "asc" } } },
   });
-  if (!job) return null;
+  if (!job || !jobHoldsObjects(job)) return null;
 
   // Part count is over the downloadable parts, exactly as the payload counts
   // them — so the "-part-N-of-M" filename a guest gets matches what the page shows.

@@ -2,7 +2,7 @@ import { env } from "./lib/env.js";
 import { initDatabase } from "./lib/prisma.js";
 import { startBoss } from "./lib/pgboss.js";
 import { photoResizeHandler } from "./jobs/photoResize.js";
-import { startDebouncePoller, startZipReaper } from "./services/downloadJob.js";
+import { startDebouncePoller, startZipReaper, startExpiryReaper } from "./services/downloadJob.js";
 import { register } from "prom-client";
 import { resizeQueueInflight } from "./lib/metrics.js";
 
@@ -31,6 +31,10 @@ if (import.meta.main) {
   // Archive build remains DB-polling based; poller now runs here instead of API.
   startDebouncePoller();
   startZipReaper();
+  // Idle expiry: reclaims the S3 bytes of archives nobody downloaded within the
+  // TTL. Safe to run in every replica — each archive is CAS-claimed before its
+  // objects are touched. Does not start at all when the TTL is 0.
+  startExpiryReaper();
 
   Bun.serve({
     port: env.WORKER_METRICS_PORT,
