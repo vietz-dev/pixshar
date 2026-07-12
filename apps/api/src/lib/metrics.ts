@@ -60,6 +60,74 @@ export const resizeQueueInflight = new Gauge({
   registers: [register],
 });
 
+// Archive lifecycle (PIXSHAR-9). expiryCount/rebuildCount live on DownloadJob,
+// not in process memory: expiry and rebuild are rare per-event events whose
+// whole value is their history across weeks, and an in-process counter would
+// reset on every pod restart/rollout — erasing exactly the history the
+// operator is tuning DOWNLOAD_ARCHIVE_TTL_DAYS against. So these two gauges
+// mirror the DB counters at scrape time, same pattern as photosByStatus:
+// aggregate query inside collect(), reset() before set(). Restricted to
+// DownloadJobs touched in the last 30 days so the `event` label cardinality is
+// bounded by recent activity, not by every event ever hosted.
+const RECENT_ARCHIVE_ACTIVITY_DAYS = 30;
+
+export const archiveExpiries = new Gauge({
+  name: "pixshar_archive_expiries",
+  help: "Cumulative archive expiries per event and variant (mirrors DownloadJob.expiryCount)",
+  labelNames: ["event", "quality"] as const,
+  registers: [register],
+  async collect() {
+    const cutoff = new Date(Date.now() - RECENT_ARCHIVE_ACTIVITY_DAYS * 24 * 60 * 60 * 1000);
+    const rows = await prisma.downloadJob.findMany({
+      where: { updatedAt: { gte: cutoff } },
+      select: { quality: true, expiryCount: true, event: { select: { slug: true } } },
+    });
+    this.reset();
+    for (const row of rows) {
+      this.set({ event: row.event.slug, quality: row.quality }, row.expiryCount);
+    }
+  },
+});
+
+export const archiveRebuilds = new Gauge({
+  name: "pixshar_archive_rebuilds",
+  help: "Cumulative archive rebuilds per event and variant (mirrors DownloadJob.rebuildCount)",
+  labelNames: ["event", "quality"] as const,
+  registers: [register],
+  async collect() {
+    const cutoff = new Date(Date.now() - RECENT_ARCHIVE_ACTIVITY_DAYS * 24 * 60 * 60 * 1000);
+    const rows = await prisma.downloadJob.findMany({
+      where: { updatedAt: { gte: cutoff } },
+      select: { quality: true, rebuildCount: true, event: { select: { slug: true } } },
+    });
+    this.reset();
+    for (const row of rows) {
+      this.set({ event: row.event.slug, quality: row.quality }, row.rebuildCount);
+    }
+  },
+});
+
+export const archiveLiveBytes = new Gauge({
+  name: "pixshar_archive_live_bytes",
+  help: "Bytes currently held in S3 by READY archive parts, by variant — the savings curve",
+  labelNames: ["quality"] as const,
+  registers: [register],
+  async collect() {
+    const rows = await prisma.downloadArchivePart.findMany({
+      where: { status: "READY" },
+      select: { sizeBytes: true, job: { select: { quality: true } } },
+    });
+    const sums = new Map<string, number>();
+    for (const row of rows) {
+      sums.set(row.job.quality, (sums.get(row.job.quality) ?? 0) + Number(row.sizeBytes));
+    }
+    this.reset();
+    for (const [quality, bytes] of sums) {
+      this.set({ quality }, bytes);
+    }
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Counters
 // ---------------------------------------------------------------------------
@@ -177,13 +245,13 @@ export const archiveBuildDuration = new Histogram({
 // How long an expired archive stayed gone before someone asked for it back.
 // This is the metric that tells the operator whether DOWNLOAD_ARCHIVE_TTL_DAYS
 // is cutting into live usage: a pile of observations in the low buckets means
-// the TTL is expiring archives guests still want. Buckets span minutes to a
-// month, since the TTL itself is measured in days.
+// the TTL is expiring archives guests still want. Buckets are 1h/6h/1d/3d/7d/
+// 14d/30d, since the TTL itself is measured in days.
 export const archiveExpiryToRebuildSeconds = new Histogram({
   name: "pixshar_archive_expiry_to_rebuild_seconds",
   help: "Seconds between an archive expiring and a request rebuilding it",
   labelNames: ["quality"] as const,
-  buckets: [60, 600, 3600, 21600, 86400, 259200, 604800, 2592000],
+  buckets: [3600, 21600, 86400, 259200, 604800, 1209600, 2592000],
   registers: [register],
 });
 

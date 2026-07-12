@@ -1469,4 +1469,114 @@ describe("Gallery archive download", () => {
       expect(kompakt.status).toBe("NONE");
     }, 20_000);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Archive lifecycle metrics on /metrics (PIXSHAR-9)
+  //
+  // The TTL default is a guess; these seven series are what an operator needs
+  // to tune it. pixshar_archive_expiries/rebuilds are DB-backed gauges (mirror
+  // DownloadJob.expiryCount/rebuildCount) so they survive a pod restart — the
+  // other five already had coverage from earlier tickets (build/release), this
+  // block is the one place all seven are asserted together for a single event.
+  // ─────────────────────────────────────────────────────────────────────────
+  describe("Archive lifecycle metrics", () => {
+    let metricsEvent: TestEvent;
+    let metricsCookie: string;
+
+    beforeAll(async () => {
+      metricsEvent = await createEvent(adminCookie, { password: "metrics-pass" });
+      metricsCookie = await unlockGallery(metricsEvent.slug, "metrics-pass");
+      await uploadAndProcessPhoto(adminCookie, metricsEvent);
+    }, 120_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, metricsEvent.id);
+    });
+
+    it("Then all seven archive-lifecycle metrics are registered with the documented name and type", async () => {
+      const text = await (await fetch(`${API}/metrics`)).text();
+      const typed = (name: string, type: string) =>
+        expect(text).toMatch(new RegExp(`^# TYPE ${name} ${type}$`, "m"));
+
+      typed("pixshar_archive_expiries", "gauge");
+      typed("pixshar_archive_rebuilds", "gauge");
+      typed("pixshar_archive_live_bytes", "gauge");
+      typed("pixshar_archive_bytes_reclaimed_total", "counter");
+      typed("pixshar_archive_expired_total", "counter");
+      typed("pixshar_archive_builds_total", "counter");
+      typed("pixshar_archive_expiry_to_rebuild_seconds", "histogram");
+    });
+
+    it("Then an event with no archive activity contributes no pixshar_archive_expiries/rebuilds series", async () => {
+      const untouched = await createEvent(adminCookie, { password: "untouched-pass" });
+      try {
+        // Never requested — no DownloadJob row for it, so it can't leak into the
+        // per-event gauges even before the 30-day recency filter is considered.
+        const text = await (await fetch(`${API}/metrics`)).text();
+        expect(text).not.toContain(`pixshar_archive_expiries{event="${untouched.slug}"`);
+        expect(text).not.toContain(`pixshar_archive_rebuilds{event="${untouched.slug}"`);
+      } finally {
+        await deleteEvent(adminCookie, untouched.id);
+      }
+    });
+
+    it("Then building, releasing and rebuilding ORIGINAL exposes the full series for this event's slug and quality", async () => {
+      // 1. Build — first_build trigger, live bytes appear.
+      await requestAndAwaitArchive(adminCookie, metricsCookie, metricsEvent, "ORIGINAL");
+
+      const firstBuild = await metricValue("pixshar_archive_builds_total", {
+        quality: "ORIGINAL",
+        trigger: "first_build",
+      });
+      expect(firstBuild).toBeGreaterThan(0);
+
+      const liveBytesAfterBuild = await metricValue("pixshar_archive_live_bytes", { quality: "ORIGINAL" });
+      expect(liveBytesAfterBuild).toBeGreaterThan(0);
+
+      // 2. Release — expiry counters + the per-event expiries gauge.
+      const released = await authedFetch(
+        `/api/events/${metricsEvent.id}/download/release?quality=ORIGINAL`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(released.status).toBe(200);
+      expect(await adminStatus(adminCookie, metricsEvent.id, "ORIGINAL")).toBe("EXPIRED");
+
+      const expiredTotal = await metricValue("pixshar_archive_expired_total", { quality: "ORIGINAL" });
+      expect(expiredTotal).toBeGreaterThan(0);
+
+      const reclaimed = await metricValue("pixshar_archive_bytes_reclaimed_total", { quality: "ORIGINAL" });
+      expect(reclaimed).toBeGreaterThan(0);
+
+      const expiries = await metricValue("pixshar_archive_expiries", {
+        event: metricsEvent.slug,
+        quality: "ORIGINAL",
+      });
+      expect(expiries).toBeGreaterThanOrEqual(1);
+
+      // 3. Rebuild — on_demand_rebuild trigger, the per-event rebuilds gauge and
+      //    the expiry→rebuild histogram both get an observation for this event.
+      await requestAndAwaitArchive(adminCookie, metricsCookie, metricsEvent, "ORIGINAL");
+
+      const rebuildBuilds = await metricValue("pixshar_archive_builds_total", {
+        quality: "ORIGINAL",
+        trigger: "on_demand_rebuild",
+      });
+      expect(rebuildBuilds).toBeGreaterThan(0);
+
+      const rebuilds = await metricValue("pixshar_archive_rebuilds", {
+        event: metricsEvent.slug,
+        quality: "ORIGINAL",
+      });
+      expect(rebuilds).toBeGreaterThanOrEqual(1);
+
+      const histogramCount = await metricValue("pixshar_archive_expiry_to_rebuild_seconds_count", {
+        quality: "ORIGINAL",
+      });
+      expect(histogramCount).toBeGreaterThan(0);
+
+      const liveBytesAfterRebuild = await metricValue("pixshar_archive_live_bytes", { quality: "ORIGINAL" });
+      expect(liveBytesAfterRebuild).toBeGreaterThan(0);
+    }, 240_000);
+  });
 });
