@@ -9,7 +9,7 @@
 //              pushDownloadStatus/notifyDownloadStatus). Leaf: imports none
 //              of the other downloadJob modules.
 //   triggers — §1/§1a/§1b: triggerDebounce(AllVariants), requestBuild (the only
-//              path that creates an archive), triggerReconcile(AllVariants).
+//              path that creates an archive), triggerReconcile.
 //   poller   — §2/§2b: startDebouncePoller, reapStaleBuilding, startZipReaper.
 //   admin    — §3: buildNow, rebuildAll, cancelJob, buildAdminDownloadStatus
 //              (the shared admin status shape behind GET .../status and its
@@ -41,7 +41,6 @@ export {
   triggerDebounce,
   triggerDebounceAllVariants,
   triggerReconcile,
-  triggerReconcileAllVariants,
 } from "./downloadJob/triggers.js";
 
 export {

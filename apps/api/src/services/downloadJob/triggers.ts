@@ -280,14 +280,3 @@ export async function triggerReconcile(
   }
   notifyDownloadStatus(eventId, quality).catch(() => {});
 }
-
-// Fan-out reconcile: after a photo deletion the affected parts of BOTH variants
-// were marked STALE, so schedule a rebuild for each.
-export async function triggerReconcileAllVariants(
-  eventId: string,
-  opts: { immediate?: boolean } = {}
-): Promise<void> {
-  for (const q of ALL_QUALITIES) {
-    await triggerReconcile(eventId, q, opts).catch(() => {});
-  }
-}

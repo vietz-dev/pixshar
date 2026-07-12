@@ -719,6 +719,17 @@ describe("Gallery archive download", () => {
     let relCookie: string;
     // ORIGINAL's parts as first built — the identities a rebuild must reproduce.
     let originalPartsBefore: Array<{ index: number; membershipSig: string }>;
+    // A presigned S3 URL for ORIGINAL's part 1, minted BEFORE the release: it
+    // stays signable for 15 minutes, so a 404 on it afterwards is the object
+    // itself being gone, not the link having lapsed.
+    let originalPart1Object: string;
+    // pixshar_archive_live_bytes counts the bytes claimed by part ROWS whose
+    // status is READY (metrics.ts) — the one window the API opens on the part
+    // rows themselves. Snapshotted before any release, together with this
+    // archive's own byte total, so the invariant test can prove the rows
+    // stopped claiming those bytes.
+    let liveBytesBefore: number;
+    let originalBytesBefore: number;
 
     beforeAll(async () => {
       relEvent = await createEvent(adminCookie, { password: "release-pass" });
@@ -737,6 +748,22 @@ describe("Gallery archive download", () => {
       const original = await variantPayload(relCookie, relEvent.slug, "ORIGINAL");
       originalPartsBefore = original.parts.map((p) => ({ index: p.index, membershipSig: p.membershipSig }));
       if (originalPartsBefore.length === 0) throw new Error("ORIGINAL archive built with no parts");
+
+      const redirect = await fetch(
+        `${API}/api/gallery/${relEvent.slug}/download/part/${originalPartsBefore[0].index}?quality=ORIGINAL`,
+        { headers: { Cookie: relCookie }, redirect: "manual" }
+      );
+      const location = redirect.headers.get("location");
+      if (redirect.status !== 302 || !location) throw new Error("ORIGINAL part 1 has no object before the release");
+      originalPart1Object = location;
+
+      const statusRes = await authedFetch(
+        `/api/events/${relEvent.id}/download/status?quality=ORIGINAL`,
+        adminCookie
+      );
+      originalBytesBefore = ((await statusRes.json()) as { totalSizeBytes: number }).totalSizeBytes;
+      if (originalBytesBefore <= 0) throw new Error("ORIGINAL archive holds no bytes before the release");
+      liveBytesBefore = await metricValue("pixshar_archive_live_bytes", { quality: "ORIGINAL" });
     }, 240_000);
 
     afterAll(async () => {
@@ -776,6 +803,70 @@ describe("Gallery archive download", () => {
       );
       expect(gone.status).toBe(404);
       expect(gone.headers.get("location")).toBeNull();
+    });
+
+    it("Then no part row is left READY while its object is gone (the reclaim invariant)", async () => {
+      // The object really is deleted — this link was signed before the release
+      // and is still valid, so the 404 is S3's, not the API's.
+      expect((await fetch(originalPart1Object)).status).toBe(404);
+
+      // …and not one part ROW still claims to hold those bytes: the live-bytes
+      // gauge sums exactly the parts whose status is READY, and it fell by this
+      // archive's whole size. That is the invariant the reaper's ordering exists
+      // for — the rows go EXPIRED in the same transaction as the job claim,
+      // BEFORE S3 is touched, so no crash and no failed delete can leave a READY
+      // part pointing at a deleted object: the state that would 302 a guest into
+      // a NoSuchKey and that the builder would never repair (its work list only
+      // picks up STALE/EXPIRED parts).
+      const liveBytesAfter = await metricValue("pixshar_archive_live_bytes", { quality: "ORIGINAL" });
+      expect(liveBytesAfter).toBe(liveBytesBefore - originalBytesBefore);
+
+      // The membership itself survived — it is what the rebuild replays.
+      const rebuildable = await authedFetch(
+        `/api/events/${relEvent.id}/download/status?quality=ORIGINAL`,
+        adminCookie
+      );
+      const body = (await rebuildable.json()) as { status: string; partCount: number; totalSizeBytes: number };
+      expect(body.status).toBe("EXPIRED");
+      expect(body.partCount).toBe(0);
+      expect(body.totalSizeBytes).toBe(0);
+    });
+
+    it("Then a bogus ?quality= is a 400 and releases nothing", async () => {
+      // DISPLAY still holds its bytes at this point — a mis-typed variant must
+      // not be silently coerced to the ORIGINAL default (a release is
+      // destructive), and must not touch anything at all.
+      expect(await adminStatus(adminCookie, relEvent.id, "DISPLAY")).toBe("READY");
+      const displayBefore = await variantPayload(relCookie, relEvent.slug, "DISPLAY");
+      const liveBefore = await metricValue("pixshar_archive_live_bytes", { quality: "DISPLAY" });
+
+      for (const bogus of ["DISPLAYY", "bogus", "display", ""]) {
+        const res = await authedFetch(
+          `/api/events/${relEvent.id}/download/release?quality=${bogus}`,
+          adminCookie,
+          { method: "POST" }
+        );
+        expect(res.status).toBe(400);
+      }
+
+      // Nothing was released: DISPLAY still holds every part it had, and the
+      // bytes no READY row would still be counting had a release slipped through.
+      expect(await adminStatus(adminCookie, relEvent.id, "DISPLAY")).toBe("READY");
+      expect((await variantPayload(relCookie, relEvent.slug, "DISPLAY")).parts).toEqual(displayBefore.parts);
+      expect(await metricValue("pixshar_archive_live_bytes", { quality: "DISPLAY" })).toBe(liveBefore);
+
+      // The read + the other mutating admin download endpoints reject it too.
+      for (const path of [
+        `/api/events/${relEvent.id}/download/status?quality=bogus`,
+        `/api/events/${relEvent.id}/download/build-now?quality=bogus`,
+        `/api/events/${relEvent.id}/download/rebuild-all?quality=bogus`,
+        `/api/events/${relEvent.id}/download/cancel?quality=bogus`,
+      ]) {
+        const method = path.includes("/status") ? "GET" : "POST";
+        const res = await authedFetch(path, adminCookie, { method });
+        expect(res.status).toBe(400);
+      }
+      expect(await adminStatus(adminCookie, relEvent.id, "DISPLAY")).toBe("READY");
     });
 
     it("Then expiry is per variant — releasing Original leaves Kompakt's objects alone", async () => {
@@ -1299,6 +1390,70 @@ describe("Gallery archive download", () => {
         expect(await partObjectUrl(q, 1)).toBeNull();
       }
     }, 30_000);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // A single-part archive whose only part a deletion emptied of bytes is
+  // *partially available*, not "never built": the job is still READY and its
+  // membership is intact, so the payload must say so (and offer the repair)
+  // instead of reporting NONE.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Single-part archive after a photo deletion", () => {
+    let oneEvent: TestEvent;
+    let oneCookie: string;
+
+    beforeAll(async () => {
+      oneEvent = await createEvent(adminCookie, { password: "one-part-pass" });
+      oneCookie = await unlockGallery(oneEvent.slug, "one-part-pass");
+      // Two photos, one part: deleting one leaves the part alive (its membership
+      // is pruned, not emptied) but object-less.
+      const photoA = await uploadAndProcessPhoto(adminCookie, oneEvent);
+      await uploadAndProcessPhoto(adminCookie, oneEvent);
+      await requestAndAwaitArchive(adminCookie, oneCookie, oneEvent, "DISPLAY");
+
+      const built = await variantPayload(oneCookie, oneEvent.slug, "DISPLAY");
+      if (built.parts.length !== 1) throw new Error(`expected 1 part, got ${built.parts.length}`);
+
+      const res = await authedFetch(`/api/events/${oneEvent.id}/photos/${photoA}`, adminCookie, {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(200);
+    }, 300_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, oneEvent.id);
+    });
+
+    it("Then the payload reports the part as unavailable — not the archive as never built", async () => {
+      const payload = await variantPayload(oneCookie, oneEvent.slug, "DISPLAY");
+
+      expect(payload.status).not.toBe("NONE"); // it WAS built; its bytes were reclaimed
+      expect(payload.parts).toHaveLength(1); // the part is listed…
+      expect(payload.parts[0].url).toBeNull(); // …with no object behind it
+      expect(payload.partCount).toBe(0); // nothing is downloadable right now
+      expect(payload.totalSizeBytes).toBe(0);
+      expect(payload.building).toBe(false); // the deletion queued no build
+    });
+
+    it("Then requesting it rebuilds the part from the pruned membership", async () => {
+      const requested = await requestArchive(oneCookie, oneEvent.slug, "DISPLAY");
+      expect(requested.queued).toBe(true);
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        oneEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        120_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = await variantPayload(oneCookie, oneEvent.slug, "DISPLAY");
+      expect(rebuilt.parts).toHaveLength(1);
+      expect(rebuilt.parts[0].url).toBe(`/api/gallery/${oneEvent.slug}/download/part/1?quality=DISPLAY`);
+      expect(rebuilt.partCount).toBe(1);
+    }, 180_000);
   });
 
   // ─────────────────────────────────────────────────────────────────────────

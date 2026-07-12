@@ -18,13 +18,17 @@ import { photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
-// Admin download endpoints act on one variant, selected by ?quality=. Defaults
-// to ORIGINAL (the historical single archive) so pre-variant callers are
-// unchanged; the guest-facing default variant is DISPLAY (Kompakt).
+// Admin download endpoints act on one variant, selected by ?quality=. Validated,
+// never coerced: several of these endpoints mutate (release reclaims the bytes),
+// so a typo'd variant must be a 400 — silently falling back to a default would
+// act on the WRONG archive. Omitting ?quality= still means ORIGINAL (the
+// historical single archive), so pre-variant callers are unchanged; the
+// guest-facing default variant is DISPLAY (Kompakt).
 type Quality = "DISPLAY" | "ORIGINAL";
-function parseQuality(c: { req: { query: (k: string) => string | undefined } }): Quality {
-  return c.req.query("quality") === "DISPLAY" ? "DISPLAY" : "ORIGINAL";
-}
+const ADMIN_DEFAULT_QUALITY: Quality = "ORIGINAL";
+const qualityQuerySchema = z.object({
+  quality: z.enum(["DISPLAY", "ORIGINAL"]).optional(),
+});
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -181,7 +185,7 @@ app.delete("/:id", requireAdmin, async (c) => {
 // Download archive admin endpoints
 // ---------------------------------------------------------------------------
 
-app.get("/:id/download/status", requireAdmin, async (c) => {
+app.get("/:id/download/status", requireAdmin, zValidator("query", qualityQuerySchema), async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
 
@@ -202,11 +206,11 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
   // The idle clock (lastDownloadedAt), readyAt/expiredAt and the derived
   // remaining lifetime (expiresAt) are stamped/computed elsewhere — this
   // endpoint only reads them (see buildAdminDownloadStatus, PIXSHAR-8).
-  const quality = parseQuality(c);
+  const quality = c.req.valid("query").quality ?? ADMIN_DEFAULT_QUALITY;
   return c.json(await buildAdminDownloadStatus(id, quality));
 });
 
-app.get("/:id/download/status/stream", requireAdmin, async (c) => {
+app.get("/:id/download/status/stream", requireAdmin, zValidator("query", qualityQuerySchema), async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
 
@@ -214,7 +218,7 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
   if (!event) return c.json({ error: "Event not found" }, 404);
   if (event.createdById !== user.id) return c.json({ error: "Forbidden" }, 403);
 
-  const quality = parseQuality(c);
+  const quality = c.req.valid("query").quality ?? ADMIN_DEFAULT_QUALITY;
 
   return streamSSE(c, async (stream) => {
     const initial = await buildAdminDownloadStatus(id, quality);
@@ -247,7 +251,7 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
 
 // Skip the debounce wait and queue the pending reconcile now. Still routes
 // through the FIFO build queue (respects worker/image-processor load).
-app.post("/:id/download/build-now", requireAdmin, async (c) => {
+app.post("/:id/download/build-now", requireAdmin, zValidator("query", qualityQuerySchema), async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
@@ -257,12 +261,12 @@ app.post("/:id/download/build-now", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await buildNow(id, parseQuality(c));
+  await buildNow(id, c.req.valid("query").quality ?? ADMIN_DEFAULT_QUALITY);
   return c.json({ success: true });
 });
 
 // Rebuild every existing part's ZIP bytes, preserving each part's membership.
-app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
+app.post("/:id/download/rebuild-all", requireAdmin, zValidator("query", qualityQuerySchema), async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
@@ -272,7 +276,7 @@ app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await rebuildAll(id, parseQuality(c));
+  await rebuildAll(id, c.req.valid("query").quality ?? ADMIN_DEFAULT_QUALITY);
   return c.json({ success: true });
 });
 
@@ -280,7 +284,7 @@ app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
 // for the idle reaper. Runs the same expireArchive() the reaper runs — the
 // membership survives, so the next request rebuilds the identical parts.
 // `released: false` means there were no bytes to reclaim (not READY).
-app.post("/:id/download/release", requireAdmin, async (c) => {
+app.post("/:id/download/release", requireAdmin, zValidator("query", qualityQuerySchema), async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
@@ -291,14 +295,14 @@ app.post("/:id/download/release", requireAdmin, async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
   try {
-    const released = await releaseArchive(id, parseQuality(c));
+    const released = await releaseArchive(id, c.req.valid("query").quality ?? ADMIN_DEFAULT_QUALITY);
     return c.json({ success: true, released });
   } catch {
     return c.json({ error: "Failed to release archive" }, 500);
   }
 });
 
-app.post("/:id/download/cancel", requireAdmin, async (c) => {
+app.post("/:id/download/cancel", requireAdmin, zValidator("query", qualityQuerySchema), async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
   const event = await prisma.event.findUnique({ where: { id } });
@@ -308,7 +312,7 @@ app.post("/:id/download/cancel", requireAdmin, async (c) => {
   if (event.createdById !== user.id) {
     return c.json({ error: "Forbidden" }, 403);
   }
-  await cancelJob(id, parseQuality(c));
+  await cancelJob(id, c.req.valid("query").quality ?? ADMIN_DEFAULT_QUALITY);
   return c.json({ success: true });
 });
 

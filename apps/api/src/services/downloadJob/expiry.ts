@@ -21,19 +21,33 @@ export type ExpiryCandidate = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Is this archive idle past its TTL and therefore reclaimable?
+ * When will this archive's bytes be reclaimed if nobody downloads it? `null`
+ * means never: expiry is disabled (`ttlDays = 0`, the permanent-archive
+ * behaviour), the job holds no bytes to reclaim (only a READY job does), or its
+ * idle clock never started.
  *
  * The idle clock starts at the last download and falls back to the build
- * (`readyAt`) for an archive nobody ever downloaded. `ttlDays = 0` disables
- * expiry entirely, preserving the permanent-archive behaviour. Only a READY job
- * holds ZIP bytes on S3, so only a READY job can expire.
+ * (`readyAt`) for an archive nobody ever downloaded.
+ *
+ * This is THE definition of the TTL clock: `isExpired` is derived from it, and
+ * the admin panel's remaining-lifetime countdown reads it (payload.ts). Neither
+ * may re-derive the arithmetic, or the reaper and the countdown could disagree.
+ * `ttlDays` stays a parameter so this module needs no env import.
+ */
+export function archiveExpiresAt(job: ExpiryCandidate, ttlDays: number): Date | null {
+  if (ttlDays <= 0) return null;
+  if (job.status !== "READY") return null;
+  const idleSince = job.lastDownloadedAt ?? job.readyAt;
+  if (!idleSince) return null;
+  return new Date(idleSince.getTime() + ttlDays * DAY_MS);
+}
+
+/**
+ * Is this archive idle past its TTL and therefore reclaimable?
  *
  * The boundary is strict: idle for *exactly* the TTL is not yet expired.
  */
 export function isExpired(job: ExpiryCandidate, now: Date, ttlDays: number): boolean {
-  if (ttlDays <= 0) return false;
-  if (job.status !== "READY") return false;
-  const idleSince = job.lastDownloadedAt ?? job.readyAt;
-  if (!idleSince) return false;
-  return now.getTime() - idleSince.getTime() > ttlDays * DAY_MS;
+  const expiresAt = archiveExpiresAt(job, ttlDays);
+  return expiresAt !== null && now.getTime() > expiresAt.getTime();
 }

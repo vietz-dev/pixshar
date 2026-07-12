@@ -32,84 +32,98 @@ export type ExpirableJob = {
  * ticks stay valid. Returns false when another replica (or an earlier call)
  * already claimed the job.
  *
- * The order of the three steps is the correctness rule:
+ * ROWS FIRST, THEN OBJECTS — the same rule deletion.ts follows:
  *
- *  1. CAS-claim the job READY → EXPIRED (`updateMany WHERE status = 'READY'`).
- *     Postgres decides the winner, so two concurrent sweeps expire the archive
- *     exactly once and only the winner deletes anything. From this moment the
- *     job is never again a READY job pointing at objects we are about to
- *     delete, and the payload/redirect endpoints stop offering its parts (they
- *     gate on the job being EXPIRED, not just on the part rows).
- *  2. Delete the objects.
- *  3. Only then flip the part rows to EXPIRED.
+ *  1. In ONE transaction: CAS-claim the job READY → EXPIRED
+ *     (`updateMany WHERE status = 'READY'`, so Postgres picks the single winner
+ *     among concurrent sweeps) AND flip every part row to EXPIRED. The keys are
+ *     read inside the same transaction, before the flip, because that is what
+ *     tells us which objects were live.
+ *  2. Only then delete the objects.
  *
- * A crash between 2 and 3 leaves an EXPIRED job whose parts still carry their
- * (now dead) keys — harmless: nothing is offered to a guest, and the next
- * rebuild overwrites them at generation + 1. The reverse order would risk the
- * opposite, and worse, state: parts still advertised while their bytes are
- * already gone.
+ * The invariant this buys: a part row is never READY while its object is gone.
+ * Every crash point (and an S3 delete that exhausts its retries) leaves EXPIRED
+ * rows whose objects may still exist — the harmless direction: nothing is
+ * served from them (both the payload and the redirect endpoint gate on the
+ * row), the builder's work list picks EXPIRED parts up and regenerates them at
+ * generation + 1, and its orphan sweep reclaims the leftover bytes. The reverse
+ * order (delete, then flip) risks the state PIXSHAR-4 forbids: a READY job
+ * whose READY parts point at deleted objects, which the builder would never
+ * rebuild and a guest would be 302'd straight into a NoSuchKey.
  */
 export const expireArchive = (job: ExpirableJob) =>
   Effect.gen(function* () {
-    const claimed = yield* claimForExpiry(job.id);
-    if (!claimed) return false; // another replica got there first
+    const claim = yield* claimForExpiry(job.id);
+    if (!claim) return false; // another replica got there first
 
-    const parts = yield* Effect.tryPromise({
-      try: () =>
-        prisma.downloadArchivePart.findMany({
-          where: { jobId: job.id },
-          select: { key: true, sizeBytes: true, status: true },
-        }),
-      catch: (e) => new Error(`Load parts for expiry failed: ${e}`),
-    });
-
-    const live = parts.filter((p) => p.key && p.status !== "EXPIRED");
-    const keys = live.map((p) => p.key);
-    const freedBytes = live.reduce((sum, p) => sum + Number(p.sizeBytes), 0);
-
-    if (keys.length > 0) {
-      yield* Effect.tryPromise({
-        try: () => deleteS3Objects(keys),
+    let freedBytes = 0;
+    if (claim.keys.length > 0) {
+      const deleted = yield* Effect.tryPromise({
+        try: () => deleteS3Objects(claim.keys),
         catch: (e) => new Error(`Archive object delete failed: ${e}`),
-      }).pipe(Effect.retry({ times: 3, schedule: Schedule.exponential("500 millis") }));
+      }).pipe(
+        Effect.retry({ times: 3, schedule: Schedule.exponential("500 millis") }),
+        Effect.as(true),
+        // The rows are already EXPIRED, so the archive IS expired whatever S3
+        // says — the bytes are simply reclaimed later, by the rebuild's orphan
+        // sweep. Failing here instead would leave the job counted as expired
+        // and never retried (the sweep only looks at READY jobs).
+        Effect.catchAll((e) =>
+          Effect.sync(() => {
+            console.error(
+              `[ArchiveReaper] event=${job.eventId} quality=${job.quality} object delete failed: ${e}`
+            );
+            return false;
+          })
+        )
+      );
+      if (deleted) freedBytes = claim.freedBytes;
     }
-
-    yield* Effect.tryPromise({
-      try: () =>
-        prisma.downloadArchivePart.updateMany({
-          where: { jobId: job.id },
-          data: { status: "EXPIRED" },
-        }),
-      catch: (e) => new Error(`Mark parts expired failed: ${e}`),
-    });
 
     archiveExpiredTotal.inc({ quality: job.quality });
     if (freedBytes > 0) archiveBytesReclaimedTotal.inc({ quality: job.quality }, freedBytes);
     console.log(
-      `[ArchiveReaper] expired event=${job.eventId} quality=${job.quality} parts=${keys.length} freed=${freedBytes}B`
+      `[ArchiveReaper] expired event=${job.eventId} quality=${job.quality} parts=${claim.keys.length} freed=${freedBytes}B`
     );
     yield* Effect.promise(() => notifyDownloadStatus(job.eventId, job.quality).catch(() => {}));
     return true;
   });
 
-// The claim. Count-checked so exactly one caller may proceed to the delete.
+// The claim: job CAS + part rows, atomically. Returns the objects that were
+// live at that instant (null when another caller won the CAS), which is the
+// only moment at which they can be read — after the flip every row says EXPIRED.
 const claimForExpiry = (jobId: string) =>
   Effect.tryPromise({
-    try: async () => {
-      const res = await prisma.downloadJob.updateMany({
-        where: { id: jobId, status: "READY" },
-        data: {
-          status: "EXPIRED",
-          expiredAt: new Date(),
-          expiryCount: { increment: 1 },
-          // The idle clock of the *next* incarnation must start at its own
-          // readyAt. Keeping a download date that predates the expiry would
-          // make the reaper expire the rebuilt archive on its very next sweep.
-          lastDownloadedAt: null,
-        },
-      });
-      return res.count === 1;
-    },
+    try: () =>
+      prisma.$transaction(async (tx) => {
+        const res = await tx.downloadJob.updateMany({
+          where: { id: jobId, status: "READY" },
+          data: {
+            status: "EXPIRED",
+            expiredAt: new Date(),
+            expiryCount: { increment: 1 },
+            // The idle clock of the *next* incarnation must start at its own
+            // readyAt. Keeping a download date that predates the expiry would
+            // make the reaper expire the rebuilt archive on its very next sweep.
+            lastDownloadedAt: null,
+          },
+        });
+        if (res.count !== 1) return null;
+
+        const live = await tx.downloadArchivePart.findMany({
+          where: { jobId, status: { not: "EXPIRED" } },
+          select: { key: true, sizeBytes: true },
+        });
+        await tx.downloadArchivePart.updateMany({
+          where: { jobId },
+          data: { status: "EXPIRED" },
+        });
+
+        return {
+          keys: live.map((p) => p.key).filter((k): k is string => Boolean(k)),
+          freedBytes: live.reduce((sum, p) => sum + Number(p.sizeBytes), 0),
+        };
+      }),
     catch: (e) => new Error(`Expiry claim failed: ${e}`),
   });
 
@@ -162,8 +176,9 @@ export async function sweepExpiredArchives(): Promise<number> {
     const done = await Effect.runPromise(
       expireArchive(job).pipe(
         Effect.catchAll((e) => {
-          // The job is already EXPIRED (the claim landed); its objects are not.
-          // Nothing is served from them, and the next rebuild replaces them.
+          // Only the claim transaction can fail here (a failed object delete is
+          // handled inside expireArchive). It is all-or-nothing, so the job is
+          // still READY and the next sweep simply tries again.
           console.error(
             `[ArchiveReaper] expire failed event=${job.eventId} quality=${job.quality}: ${e}`
           );

@@ -2,6 +2,7 @@ import type { DownloadJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { env } from "../../lib/env.js";
 import { DEFAULT_QUALITY, jobWhere, statusMessage, type Quality } from "./status.js";
+import { archiveExpiresAt } from "./expiry.js";
 
 export interface DownloadPart {
   index: number;
@@ -26,10 +27,10 @@ export function partHasObject(part: { key: string | null; status: string }): boo
 }
 
 // An EXPIRED job's objects are gone, or are being deleted right now. Expiry
-// claims the job (READY → EXPIRED) *before* it touches S3 and flips the part
-// rows only *after* the objects are gone; this gate is what makes that window
-// invisible — a part is never offered while its bytes are being reclaimed, and
-// a crash mid-expiry can never leave a guest clicking a dead S3 link.
+// claims the job (READY → EXPIRED) and flips its part rows to EXPIRED in one
+// transaction *before* it touches S3, so this gate is redundant belt-and-braces
+// — but it makes the invariant hold for the whole job in one check: nothing is
+// offered from the moment the reclaim starts.
 function jobHoldsObjects(job: { status: DownloadJobStatus }): boolean {
   return job.status !== "EXPIRED";
 }
@@ -115,7 +116,14 @@ export async function buildDownloadPayload(
   const downloadable = offered.filter(partHasObject);
   const n = downloadable.length;
 
-  if (n === 0) {
+  // A READY job whose parts ALL lost their object (a photo deletion emptied the
+  // only part of a single-part archive of its bytes) is partially available —
+  // the membership is intact and the next request rebuilds it. Listing those
+  // parts with a null url says exactly that; collapsing them into "NONE" would
+  // tell the guest the archive was never built.
+  const partiallyAvailable = job.status === "READY" && offered.length > 0;
+
+  if (n === 0 && !partiallyAvailable) {
     // EXPIRED is checked first: an EXPIRED job never holds objects (see
     // jobHoldsObjects above), so n is always 0 here — without this branch the
     // guest payload collapsed EXPIRED into "NONE" ("never built"), which is a
@@ -160,7 +168,10 @@ export async function buildDownloadPayload(
     totalSizeBytes: downloadable.reduce((sum, p) => sum + Number(p.sizeBytes), 0),
     photoCount: job.parts.reduce((sum, p) => sum + p.photoCount, 0),
     building,
-    message: building ? "Some parts are still being prepared." : statusMessage("READY"),
+    message:
+      building ? "Some parts are still being prepared."
+      : n === 0 ? "The archive's files were reclaimed — request a rebuild."
+      : statusMessage("READY"),
     debounceUntil: job.debounceUntil?.toISOString() ?? null,
     processedPhotos: job.processedPhotos,
     uploadProgress: job.uploadProgress,
@@ -256,17 +267,11 @@ export async function getDownloadJobStatus(
   const totalSizeBytes = downloadableParts.reduce((sum, p) => sum + Number(p.sizeBytes), 0);
 
   // The remaining-lifetime countdown the admin panel shows next to a READY
-  // variant ("läuft in 3 Tagen ab, wenn niemand lädt"). Mirrors isExpired's
-  // idle clock (idleSince = lastDownloadedAt ?? readyAt) without importing
-  // expiry.ts, which stays free of env by design. TTL = 0 means "never
-  // expires" — the panel must not claim a date then — and only a READY job
-  // holds bytes to begin with.
-  const ttlDays = env.DOWNLOAD_ARCHIVE_TTL_DAYS;
-  const idleSince = job.lastDownloadedAt ?? job.readyAt;
-  const expiresAt =
-    job.status === "READY" && ttlDays > 0 && idleSince
-      ? new Date(idleSince.getTime() + ttlDays * 24 * 60 * 60 * 1000)
-      : null;
+  // variant ("läuft in 3 Tagen ab, wenn niemand lädt") — the reaper's own idle
+  // clock (expiry.ts owns it; the TTL comes in as a parameter, which is how
+  // that module stays env-free). null when nothing will be reclaimed: expiry
+  // disabled, or the job holds no bytes.
+  const expiresAt = archiveExpiresAt(job, env.DOWNLOAD_ARCHIVE_TTL_DAYS);
 
   return {
     id: job.id,
