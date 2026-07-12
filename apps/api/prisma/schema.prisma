@@ -120,6 +120,10 @@ enum DownloadJobStatus {
   READY
   FAILED
   CANCELLED
+  // The archive is a cache, not an artifact: EXPIRED means the ZIP objects were
+  // reclaimed from S3 while the job + its parts (the membership) stay intact, so
+  // a later request rebuilds the same parts with the same partIndex.
+  EXPIRED
 }
 
 // Which source objects a download archive zips.
@@ -152,6 +156,15 @@ model DownloadJob {
   debounceStartedAt DateTime?
   heartbeatAt       DateTime?
   failureReason     String?
+  // Idle clock for expiry: idleSince = COALESCE(lastDownloadedAt, readyAt).
+  // readyAt is stamped on every → READY transition so an archive nobody ever
+  // downloads still has a starting point for the clock.
+  lastDownloadedAt  DateTime?
+  readyAt           DateTime?
+  expiredAt         DateTime?
+  // Counters live in the DB (not in-process) so they survive restarts/rollouts.
+  expiryCount       Int               @default(0)
+  rebuildCount      Int               @default(0)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -168,9 +181,10 @@ model DownloadArchivePart {
   partIndex Int // 1-based, stable identity — never renumbered, gaps allowed
   key       String
   sizeBytes BigInt   @default(0)
-  // READY | BUILDING | STALE. A part is immutable once READY; it is only ever
-  // rebuilt in place (same partIndex) when a photo inside it is deleted (STALE)
-  // or when the admin forces a full rebuild.
+  // READY | BUILDING | STALE | EXPIRED. A part is immutable once READY; it is
+  // only ever rebuilt in place (same partIndex) when a photo inside it is
+  // deleted (STALE) or when the admin forces a full rebuild. EXPIRED means the
+  // row and its membership are intact but the S3 object is gone.
   status    String   @default("READY")
   // Hash of the sorted photoId list in this part. Drives client-side download
   // tracking (localStorage): it changes only when the part's photo set changes

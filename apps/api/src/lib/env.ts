@@ -48,6 +48,13 @@ const schema = z.object({
   // Max size of a single archive part. Guests download parts individually, so
   // an interrupted download only loses one part, not the whole gallery. 2 GiB.
   DOWNLOAD_MAX_PART_BYTES: z.string().transform(Number).default("2147483648"),
+  // Idle expiry: an archive not downloaded for this many days has its S3 objects
+  // reclaimed (the membership rows survive, so it can be rebuilt identically).
+  // 0 disables expiry entirely — archives then live forever, as they used to.
+  DOWNLOAD_ARCHIVE_TTL_DAYS: z.string().transform(Number).default("5"),
+  // How often the expiry sweep looks for idle archives. 1 hour: the TTL is
+  // measured in days, so sweeping more often only costs queries.
+  DOWNLOAD_ARCHIVE_SWEEP_SECONDS: z.string().transform(Number).default("3600"),
 });
 
 export const env = schema.parse(process.env);

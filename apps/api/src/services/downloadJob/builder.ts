@@ -184,6 +184,9 @@ const markReady = (jobId: string, partCount: number, totalSizeBytes: number) =>
           processedPhotos: 0,
           uploadProgress: 100,
           heartbeatAt: new Date(),
+          // Starts the idle clock, so an archive nobody ever downloads still
+          // has a COALESCE(lastDownloadedAt, readyAt) for the expiry decision.
+          readyAt: new Date(),
         },
       }).then((r) => r.count),
     catch: (e) => new Error(`Mark ready failed: ${e}`),

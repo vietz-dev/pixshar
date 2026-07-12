@@ -1,135 +1,173 @@
 ---
 type: Concept
-title: ZIP TTL — lazy archive generation with S3 expiry
-description: Future concept for reducing storage costs in hosted SaaS by expiring ZIP archives after inactivity and rebuilding on demand.
-tags: [concept, future, zip, ttl, storage, saas, archive, cost]
-status: future — not yet implemented
-timestamp: 2026-07-05T00:00:00Z
+title: Archiv-Lebenszeit — Lazy-Build und Idle-Expiry
+description: Archive sind ein Cache, kein Artefakt — sie entstehen nur auf Anforderung, leben solange sie geladen werden, und werden nach TTL-Ablauf von S3 gelöscht. Membership überlebt, Bytes nicht.
+tags: [concept, specced, zip, ttl, storage, archive, cost, monitoring]
+status: specced — Tickets PIXSHAR-1 … PIXSHAR-9, noch nicht implementiert
+timestamp: 2026-07-12T00:00:00Z
 ---
 
-# Concept
+# Konzept
 
-In a self-hosted deployment archives are built once and kept indefinitely — this is correct
-because the operator controls costs directly. In a hosted multi-tenant SaaS context, storing
-archives permanently is expensive because JPEG ZIPs barely compress (ratio ~1:1), so the
-archive doubles the effective storage footprint of every event.
+Ein Archiv ist ein **Cache, kein Artefakt**. Dauerhaft ist die **Membership** — welches Foto in
+welchem Part liegt. Die ZIP-Bytes sind wegwerfbar: sie entstehen nur, wenn jemand sie anfordert,
+und verschwinden wieder, wenn sie eine Zeit lang niemand geladen hat.
 
-The proposed solution: **archives are ephemeral**. S3 lifecycle rules expire them after a TTL.
-On the next download request after expiry the system rebuilds them transparently.
+Heute baut jedes Event **beide** Varianten (Kompakt + Original) eager 60 s nach dem letzten Upload
+— unabhängig davon, ob je ein Gast die Downloadseite öffnet. Einmal gebaut, liegen die Parts bis zur
+Event-Löschung auf S3. ZIPs von JPEGs komprimieren praktisch nicht (store mode, ~1:1), also
+verdoppeln die Archive den Speicherbedarf eines Events. Die Rechnung wächst monoton mit jedem je
+gehosteten Event, während die tatsächliche Download-Aktivität sich auf die ersten Tage nach dem
+Event konzentriert.
 
-This concept is not yet implemented. It is recorded here so the current architecture is not
-accidentally simplified or broken before this is built.
+# Die Regeln
 
-# Why ZIPs Are Expensive
+**Entstehen — lazy.** Foto-Uploads bauen nichts mehr. Eine Variante entsteht erst, wenn jemand sie
+explizit anfordert: der Gast über einen „Archiv erstellen"-Button auf dem jeweiligen Tab
+(`POST /api/gallery/:slug/download/request?quality=`), der Admin über „Jetzt bauen" (Pre-Warm, bevor
+er den Link teilt). Ein Original-Archiv, das nie jemand will, wird **nie gebaut**. Das Öffnen der
+Downloadseite ist ein Lesevorgang und löst keinen Build aus — der heutige `ensureJob`-Seiteneffekt
+auf dem GET entfällt.
 
-JPEG files are already compressed. A ZIP of 10 GB of photos occupies ~9.8 GB on S3 — near-zero
-gain. For the current multi-part model (see [Archive Generation](/architecture/archive-generation.md)):
+**Leben — eager aktuell halten.** Solange eine Variante `READY` ist, hängen neue Uploads wie bisher
+per Debounce neue Parts an. Ist sie `EXPIRED` oder existiert sie nicht, passiert bei einem Upload
+nichts — ein abgelaufenes Archiv wird durch Uploads **nie** wiederbelebt. Merksatz: *lazy beim
+Erschaffen, eager beim Aktuellhalten.*
 
-| Artifact | Approx. size for 10 GB uploaded |
+**Messen — der echte Download.** Die Part-Links zeigen auf
+`GET /api/gallery/:slug/download/part/:index?quality=`, das `lastDownloadedAt` auf dem Job stempelt
+und mit **302** auf eine frisch signierte S3-URL antwortet. Die Bytes fließen weiterhin direkt aus
+S3 (die [Presigned-URL-Entscheidung](/decisions/presigned-urls.md) bleibt unangetastet). Ohne diesen
+Umweg wüsste die API nur, dass die *Seite geöffnet* wurde — nicht, ob je ein Byte floss. Die
+Presign-Gültigkeit sinkt auf 15 min: S3 prüft die Signatur beim Request-Start, ein laufender
+Multi-GB-Transfer bricht also nicht ab.
+
+**Sterben — idle, nicht alt.** Ein App-Reaper räumt Jobs ab, deren
+`idleSince = COALESCE(lastDownloadedAt, readyAt)` älter als `DOWNLOAD_ARCHIVE_TTL_DAYS` ist
+(Default **5**; `0` = nie ablaufen, altes Verhalten): S3-Objekte löschen, Job und Parts auf
+`EXPIRED`, **Membership-Zeilen bleiben stehen**. Granularität ist die ganze Variante — Kompakt kann
+leben, während Original verfällt.
+
+**Wiederkommen.** Die nächste Anforderung baut aus der erhaltenen Membership dieselben Parts wieder
+(gleicher `partIndex`, gleiche `membershipSig`, `generation + 1`) und hängt zwischenzeitlich
+hochgeladene Fotos als neue Parts an. Die grünen Häkchen des zurückkehrenden Gasts überleben — genau
+dafür wird die Membership aufgehoben. Parts werden einzeln committet, der Gast kann Teil 1 laden,
+während Teil 4 noch baut.
+
+# Warum kein S3-Lifecycle
+
+Das ursprüngliche Konzept sah **S3-Lifecycle-Regeln** auf dem Prefix `{eventId}/archive/` vor. Das
+ist widerlegt: S3-Expiry ist **altersbasiert**, nicht zugriffsbasiert. Eine Lifecycle-Regel würde ein
+Archiv, das täglich heruntergeladen wird, nach N Tagen trotzdem löschen — genau das Gegenteil der
+Anforderung. Nur ein anwendungseigener Reaper kann „seit N Tagen nicht geladen" ausdrücken, hält DB
+und Bucket per Konstruktion konsistent und verhält sich auf AWS und MinIO identisch, ohne
+Operator-Konfiguration.
+
+Reihenfolge im Reaper: **erst Objekte löschen, dann Status kippen.** Ein Absturz dazwischen
+hinterlässt einen EXPIRED-Job ohne Objekte (harmlos — die nächste Anforderung baut neu), niemals
+einen READY-Job, der auf gelöschte Objekte zeigt (der Gäste mit 404 abwiese). Der Claim läuft per
+CAS (`updateMany WHERE status = 'READY'`), damit zwei Replicas nie doppelt löschen — dasselbe Muster
+wie beim bestehenden Stale-BUILDING-Reaper.
+
+# Löschen bleibt sofort wirksam
+
+Heute markiert das Löschen eines Fotos die betroffenen Parts `STALE`, während das **alte S3-Objekt
+weiter ausgeliefert wird** (mit dem gelöschten Foto darin), bis der Reconcile es ~60 s später
+ersetzt. Unter dem Lazy-Modell wird kein Build mehr angestoßen — dieses Fenster würde also
+**unbegrenzt** offen bleiben.
+
+Deshalb: beim Löschen eines Fotos verlieren die betroffenen Parts **sofort** ihr S3-Objekt und gehen
+auf `EXPIRED`; die Membership wird um das gelöschte Foto bereinigt. Kein Build wird angestoßen; die
+nächste Anforderung baut neu. Dies ist der einzige Pfad, der eine **teilweise verfügbare** Variante
+erzeugt — die Payload trägt das bereits (`DownloadPart.url` ist nullable). Das ist eine
+Korrektheits-, keine Kostenregel.
+
+# Datenmodell
+
+`DownloadJob` bekommt:
+
+| Feld | Zweck |
 |---|---|
-| Originals (Premium) | 10 GB |
-| Display variants (1920 px) | ~4 GB |
-| Thumbnails (400 px) | ~0.4 GB |
-| ZIP parts — permanent | ~10 GB |
-| **Total (current)** | **~24 GB** |
+| `lastDownloadedAt` | Idle-Uhr; gestempelt vom Part-Redirect-Endpoint |
+| `readyAt` | Startpunkt der Uhr für ein nie geladenes Archiv |
+| `expiredAt` | speist das Ablauf→Rebuild-Histogram |
+| `expiryCount` | wie oft der Reaper dieses (Event, Variante) getroffen hat |
+| `rebuildCount` | wie oft neu gebaut wurde |
 
-With TTL expiry and lazy rebuild, ZIP parts only exist during the active download window
-(typically the first 1–2 weeks after an event). Outside that window they cost nothing.
+`DownloadJobStatus` bekommt `EXPIRED`; `DownloadArchivePart.status` (heute freier String) ebenso —
+Zeile und Membership intakt, Objekt weg. **Keine neue Tabelle.**
+[`DownloadArchivePart`](/data-model/download-jobs.md) und `DownloadArchivePartEntry` werden zum
+dauerhaften Kern des Features.
 
-# Proposed TTL Behaviour
+Zustandsmaschine:
 
-1. **S3 lifecycle rule** targets the prefix `{eventId}/archive/` with an expiry of N days
-   (default 14, configurable per tier). AWS/MinIO deletes expired objects automatically.
-2. **DB state diverges from S3**: after expiry the `DownloadArchivePart` rows still exist but
-   their S3 objects are gone. A new `expiredAt` timestamp or a periodic S3 head-check marks
-   parts as `EXPIRED`.
-3. **Download request hits an EXPIRED archive**: the API treats this exactly like a fresh
-   event with no archive — it triggers a reconcile build and returns the "building" state to
-   the guest UI. The existing SSE progress stream already handles this case.
-4. **Rebuild**: the existing reconcile path runs normally. Because the immutability invariant
-   is defined by `membershipSig` (photo set hash) rather than S3 object existence, the
-   `DownloadArchivePart` rows can be kept or reset depending on chosen strategy (see below).
+```
+DEBOUNCING → QUEUED → BUILDING → READY → EXPIRED
+                 ↑                           │
+                 └────── Anforderung ────────┘
+```
 
-# Two Rebuild Strategies
+`READY → EXPIRED` verursachen: Reaper (idle), Admin-„Freigeben", Foto-Löschung (nur Parts).
+`EXPIRED → QUEUED` verursacht **ausschließlich** eine explizite Anforderung.
 
-## Option A — Reset membership on expiry (simpler)
+# Monitoring
 
-Drop all `DownloadArchivePart` and `DownloadArchivePartEntry` rows when parts expire. A full
-rebuild re-plans parts from scratch. Guests lose their "already downloaded" localStorage ticks.
+Die TTL von 5 Tagen ist eine Schätzung. Sie wird erst justierbar, wenn sichtbar ist, **welches Event
+der Reaper wie oft trifft**, **wie oft je Variante neu gebaut wird** und — entscheidend — **wie
+schnell nach einem Ablauf die nächste Anforderung kommt**.
 
-**Pro**: no special DB migration. Behaves exactly like a fresh event.  
-**Con**: guests who return after TTL must re-download everything. Annoying for large galleries.
-
-## Option B — Keep membership rows, rebuild bytes only (preferred)
-
-Keep the `DownloadArchivePartEntry` rows (photo membership). Mark parts `STALE` on expiry.
-The reconcile path rebuilds each part from its stored membership — same `partIndex`,
-same `membershipSig`, new `generation`. Guests' localStorage ticks survive because the tick
-key is `(partIndex, membershipSig)`.
-
-**Pro**: returning guests see the same part structure; already-downloaded parts stay green.  
-**Con**: requires detecting expiry (periodic reaper or on-request head-check) and marking
-parts `STALE` without a human-triggered rebuild action.
-
-Option B aligns with the existing crash-recovery and deletion-reconcile paths and is the
-intended direction.
-
-# Storage Tier Implications
-
-TTL expiry interacts directly with the Basic/Premium storage tier split (see
-[KEDA Worker Scaling](/decisions/keda-worker-scaling.md)):
-
-| Tier | Originals | ZIP TTL | Expected storage ratio |
+| Metrik | Typ | Labels | Beantwortet |
 |---|---|---|---|
-| Basic | Deleted after resize | 14 days | ~0.5× uploaded (outside download window) |
-| Basic | Deleted after resize | 14 days | ~1.0× uploaded (during download window) |
-| Premium | Kept | 30 days | ~1.5× uploaded (outside download window) |
-| Premium | Kept | 30 days | ~2.5× uploaded (during download window) |
+| `pixshar_archive_expiries` | Gauge (aus DB) | `event`, `quality` | Welches Event trifft der Reaper wie oft |
+| `pixshar_archive_rebuilds` | Gauge (aus DB) | `event`, `quality` | Welches Event wird wie oft neu gebaut |
+| `pixshar_archive_live_bytes` | Gauge | `quality` | Was das Archiv gerade auf S3 kostet |
+| `pixshar_archive_bytes_reclaimed_total` | Counter | `quality` | Wie viel der Reaper freigeräumt hat |
+| `pixshar_archive_expired_total` | Counter | `quality` | Reaper-Treffer gesamt |
+| `pixshar_archive_builds_total` | Counter | `quality`, `trigger` | Gewollte Arbeit vs. Thrash |
+| `pixshar_archive_expiry_to_rebuild_seconds` | Histogram | `quality` | **Ist die TTL zu kurz?** |
 
-Storage quota presented to the user is charged against uploaded bytes only. ZIP parts and
-derived variants are infrastructure overhead absorbed into the margin.
+`trigger` ∈ `first_build | on_demand_rebuild | append | admin`. Das Histogram (Buckets 1 h / 6 h /
+1 d / 3 d / 7 d / 14 d / 30 d) ist die einzige Metrik, die die TTL-Frage direkt beantwortet: ein
+dickes linkes Ende heißt „der Reaper schneidet in aktive Nutzung, TTL erhöhen".
 
-# What Needs to Change
+**Warum die beiden Per-Event-Serien DB-gestützte Gauges sind und keine Prom-Counter:** Ablauf und
+Rebuild sind pro Event *seltene* Ereignisse, deren Wert in der Historie über Wochen liegt.
+In-Process-Counter werden bei jedem Pod-Restart auf 0 zurückgesetzt — sie löschen genau die
+Historie, gegen die justiert werden soll. Die Zählstände leben daher in `DownloadJob`; der Exporter
+spiegelt sie beim Scrape (Muster von `photosByStatus`: Aggregat-Query in `collect()`, `reset()` vor
+`set()`), beschränkt auf Events mit Aktivität in den letzten 30 Tagen — das **deckelt die
+Kardinalität**, statt sie mit jedem je gehosteten Event wachsen zu lassen. Das `event`-Label trägt
+den Slug, damit Grafana lesbar bleibt.
 
-## S3 / MinIO
-- [ ] Configure lifecycle rules per-bucket or per-prefix for `*/archive/*` objects.
-- [ ] For MinIO (self-hosted bundled): MinIO supports lifecycle rules via `mc ilm add`.
-      Document this in the Helm chart values and the operator guide.
-- [ ] Verify that the existing orphan sweep in the archive builder (`deleteOrphanedArchives`)
-      does not race with lifecycle expiry (should be safe — sweep only deletes objects it
-      knows about via DB rows).
+Dashboard: neue Row **„Archive Lifecycle"** auf dem bestehenden Pixshar-Overview — Live-Bytes je
+Variante, freigegebene Bytes im Zeitraum, Reaper-Treffer und Rebuilds pro Stunde, p50/p90 von
+Ablauf→Rebuild, Builds nach Trigger und eine Tabelle **„Top-Events nach Rebuilds"**. Das
+Dashboard-JSON existiert **zweimal** (`monitoring/grafana/dashboards/` für Compose,
+`helm/pixshar/dashboards/` für die ConfigMap) — beide bekommen die Row, sie dürfen nicht
+auseinanderlaufen.
 
-## Database
-- [ ] Add `expiredAt` (nullable timestamp) to `DownloadArchivePart`.
-- [ ] Add an expiry reaper: periodically (e.g. every hour) check S3 head for READY parts
-      that are older than TTL − buffer. Mark stale without triggering an immediate build
-      (let the next download request trigger the rebuild lazily).
-- [ ] Alternatively: on-request head-check — when the download API is called, verify the
-      S3 object exists before returning a presigned URL. On 404, mark STALE and queue a
-      reconcile. Simpler, but adds latency to the first download request after expiry.
+# Rollout
 
-## API / UX
-- [ ] The guest download page already handles the `building` state gracefully. No UI change
-      required for the rebuild flow.
-- [ ] Consider a banner: "Your archive expired and is being rebuilt. This takes a few minutes."
-      to set expectations for returning guests.
+Die Migration setzt `lastDownloadedAt = now()` für jeden bestehenden `READY`-Job. Damit startet die
+Uhr für jedes Bestandsarchiv beim Deploy neu: wer es in den nächsten fünf Tagen nutzt, hält es am
+Leben, der Rest fällt danach weg. Kein laufendes Event verliert sein Archiv von einer Sekunde auf
+die andere.
 
-## Admin
-- [ ] Expose TTL configuration as a per-event or per-tier setting in the admin UI (future).
-- [ ] The existing `POST /api/events/:id/download/rebuild-all` already serves as a manual
-      "force rebuild after expiry" escape hatch.
+# Nicht in dieser Iteration
 
-# Non-Goals
-
-- Streaming ZIPs on-demand without S3 storage: considered but rejected for large galleries
-  (10 GB+ streams tie up a long-lived HTTP connection, are not resumable, and break the
-  multi-part UX). Pre-built parts with lazy rebuild is the right trade-off.
-- Per-guest TTL: TTL operates at the event level, not per guest. All guests share the same
-  archive parts.
+- **TTL pro Event oder pro Preisstufe** und ein „dauerhaft bereithalten"-Pin am Event. Erst eine
+  globale TTL; die Metriken zeigen, ob feinere Steuerung überhaupt gebraucht wird.
+- **S3-Lifecycle als Waisen-Backstop** (großzügige altersbasierte Regel zusätzlich zum Reaper) —
+  denkbar, aber vorerst zwei Löschpfade zu viel.
+- **E-Mail-Benachrichtigung**, wenn ein angeforderter Build fertig ist.
+- **Repacking/Defragmentieren** der Parts beim Rebuild — die Membership-Erhaltung ist der Zweck.
+- **Löschen der Original-/Display-Quellobjekte** (Basic/Premium-Tier, siehe
+  [KEDA Worker Scaling](/concepts/keda-worker-scaling.md)) und jede Billing-Logik.
 
 # Citations
 
 [1] [Archive generation architecture](/architecture/archive-generation.md)
 [2] [Multi-part archive decision](/decisions/multi-part-archive.md)
-[3] [KEDA worker scaling concept](/concepts/keda-worker-scaling.md)
+[3] [Download-Varianten](/decisions/download-variants.md)
 [4] [Download Jobs data model](/data-model/download-jobs.md)
+[5] [Presigned URLs](/decisions/presigned-urls.md)

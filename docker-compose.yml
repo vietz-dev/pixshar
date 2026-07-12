@@ -78,6 +78,10 @@ services:
       - API_PORT=3001
       - API_URL=http://localhost:3001
       - WEB_URL=http://localhost:3000
+      # Idle expiry: archives not downloaded for N days are reclaimed. 0 = never.
+      # The API needs the same value as the worker (it surfaces/triggers expiry).
+      - DOWNLOAD_ARCHIVE_TTL_DAYS=5
+      - DOWNLOAD_ARCHIVE_SWEEP_SECONDS=3600
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -124,6 +128,9 @@ services:
       - DOWNLOAD_MAX_WAIT_SECONDS=120
       - DOWNLOAD_BUILD_LEASE_SECONDS=300
       - DOWNLOAD_MAX_PART_BYTES=2147483648
+      # Idle expiry: archives not downloaded for N days are reclaimed. 0 = never.
+      - DOWNLOAD_ARCHIVE_TTL_DAYS=5
+      - DOWNLOAD_ARCHIVE_SWEEP_SECONDS=3600
     depends_on:
       postgres:
         condition: service_healthy
