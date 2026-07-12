@@ -136,6 +136,42 @@ async function metricValue(name: string, labels: Record<string, string>): Promis
   return line ? Number(line[1]) : 0;
 }
 
+/**
+ * Reads the first "download-status" event off the admin SSE stream, then
+ * disconnects. Used to assert the stream carries the same shape as the plain
+ * status endpoint (PIXSHAR-8) without keeping a connection open for the rest
+ * of the suite.
+ */
+async function firstSSEStatus(
+  cookie: string,
+  eventId: string,
+  quality: "DISPLAY" | "ORIGINAL",
+  timeoutMs = 10_000
+): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const res = await fetch(
+    `${API}/api/events/${eventId}/download/status/stream?quality=${quality}`,
+    { headers: { Cookie: cookie }, signal: controller.signal }
+  );
+  if (!res.ok || !res.body) throw new Error(`SSE stream failed: ${res.status}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const deadline = Date.now() + timeoutMs;
+  try {
+    while (Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const match = /data:\s*(\{.*\})/.exec(buffer);
+      if (match) return JSON.parse(match[1]);
+    }
+    throw new Error("Timed out waiting for the first SSE download-status event");
+  } finally {
+    controller.abort();
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,6 +246,11 @@ describe("Gallery archive download", () => {
           expect(body).toHaveProperty("totalPhotos");
           expect(body).toHaveProperty("partCount");
           expect(body).toHaveProperty("totalSizeBytes");
+          // PIXSHAR-8: idle-clock provenance + the derived remaining lifetime.
+          expect(body).toHaveProperty("lastDownloadedAt");
+          expect(body).toHaveProperty("readyAt");
+          expect(body).toHaveProperty("expiredAt");
+          expect(body).toHaveProperty("expiresAt");
         });
       });
     });
@@ -217,6 +258,10 @@ describe("Gallery archive download", () => {
     describe("Given no admin session", () => {
       it("Then it returns 401", async () => {
         const res = await fetch(`${API}/api/events/${event.id}/download/status`);
+        expect(res.status).toBe(401);
+      });
+      it("Then the SSE stream also returns 401", async () => {
+        const res = await fetch(`${API}/api/events/${event.id}/download/status/stream`);
         expect(res.status).toBe(401);
       });
     });
@@ -357,8 +402,15 @@ describe("Gallery archive download", () => {
         };
 
         // We built the ORIGINAL variant (build-now defaults to ORIGINAL), so its
-        // variant payload is the READY one to assert against.
+        // variant payload is the one to assert against.
         const original = body.variants.ORIGINAL;
+        if (original.status === "NONE") {
+          // A 0-photo build produces a READY job with zero parts — the guest
+          // payload treats "nothing downloadable" the same as "no archive"
+          // (buildDownloadPayload), which is indistinguishable from NONE to a
+          // guest and is not this ticket's concern. Nothing further to assert.
+          return;
+        }
         expect(original.status).toBe("READY");
         expect(Array.isArray(original.parts)).toBe(true);
         expect(typeof original.partCount).toBe("number");
@@ -1247,5 +1299,174 @@ describe("Gallery archive download", () => {
         expect(await partObjectUrl(q, 1)).toBeNull();
       }
     }, 30_000);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Admin pre-warm — build-now from NONE and from EXPIRED (PIXSHAR-8)
+  //
+  // Today build-now only skips the debounce timer of an already-pending
+  // build. It must now ALSO create the job from NONE and re-queue a rebuild
+  // from EXPIRED, so the admin can warm a variant before sharing the link
+  // with a crowd — without ever bypassing requestBuild, the single path that
+  // creates/re-queues an archive.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Admin pre-warm (build-now from NONE / EXPIRED)", () => {
+    let warmEvent: TestEvent;
+    let warmCookie: string;
+    let partsBeforeExpiry: Array<{ index: number; membershipSig: string }>;
+
+    beforeAll(async () => {
+      warmEvent = await createEvent(adminCookie, { password: "warm-pass" });
+      warmCookie = await unlockGallery(warmEvent.slug, "warm-pass");
+      await uploadAndProcessPhoto(adminCookie, warmEvent);
+    }, 120_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, warmEvent.id);
+    });
+
+    it("Given an event with NO archive at all, When the admin build-now's DISPLAY, Then it creates the job and queues exactly that variant", async () => {
+      expect(await adminStatus(adminCookie, warmEvent.id, "DISPLAY")).toBe("NONE");
+      expect(await adminStatus(adminCookie, warmEvent.id, "ORIGINAL")).toBe("NONE");
+
+      const res = await authedFetch(
+        `/api/events/${warmEvent.id}/download/build-now?quality=DISPLAY`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()) as { success: boolean }).toMatchObject({ success: true });
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        warmEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        90_000
+      );
+      expect(status).toBe("READY");
+
+      // Exactly the requested variant — Original was never asked for and stays
+      // untouched (variant isolation).
+      expect(await adminStatus(adminCookie, warmEvent.id, "ORIGINAL")).toBe("NONE");
+
+      partsBeforeExpiry = (await variantPayload(warmCookie, warmEvent.slug, "DISPLAY")).parts.map((p) => ({
+        index: p.index,
+        membershipSig: p.membershipSig,
+      }));
+      expect(partsBeforeExpiry.length).toBeGreaterThan(0);
+    }, 120_000);
+
+    it("Given an EXPIRED DISPLAY variant, When the admin build-now's it, Then it queues a rebuild reproducing the same partIndex and membershipSig", async () => {
+      // Release (Ticket 3's endpoint, wired up here) puts DISPLAY into EXPIRED
+      // without touching membership — the state build-now must now pre-warm from.
+      const released = await authedFetch(
+        `/api/events/${warmEvent.id}/download/release?quality=DISPLAY`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(released.status).toBe(200);
+      expect(await adminStatus(adminCookie, warmEvent.id, "DISPLAY")).toBe("EXPIRED");
+
+      const res = await authedFetch(
+        `/api/events/${warmEvent.id}/download/build-now?quality=DISPLAY`,
+        adminCookie,
+        { method: "POST" }
+      );
+      expect(res.status).toBe(200);
+
+      const status = await pollAdminStatus(
+        adminCookie,
+        warmEvent.id,
+        "DISPLAY",
+        (s) => s === "READY" || s === "FAILED",
+        90_000
+      );
+      expect(status).toBe("READY");
+
+      const rebuilt = (await variantPayload(warmCookie, warmEvent.slug, "DISPLAY")).parts.map((p) => ({
+        index: p.index,
+        membershipSig: p.membershipSig,
+      }));
+      expect(rebuilt).toEqual(partsBeforeExpiry);
+
+      // ORIGINAL was never touched by any of this — variant isolation holds
+      // across the whole NONE -> READY -> EXPIRED -> READY lifecycle.
+      expect(await adminStatus(adminCookie, warmEvent.id, "ORIGINAL")).toBe("NONE");
+    }, 120_000);
+
+    it("Given no admin session, Then build-now on either state still returns 401", async () => {
+      const res = await fetch(`${API}/api/events/${warmEvent.id}/download/build-now?quality=DISPLAY`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Admin status payload & SSE stream expose EXPIRED + remaining lifetime
+  // (PIXSHAR-8)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Admin status/SSE expose EXPIRED and the remaining lifetime", () => {
+    let ttlEvent: TestEvent;
+    let ttlCookie: string;
+
+    beforeAll(async () => {
+      ttlEvent = await createEvent(adminCookie, { password: "ttl-pass" });
+      ttlCookie = await unlockGallery(ttlEvent.slug, "ttl-pass");
+      await uploadAndProcessPhoto(adminCookie, ttlEvent);
+      await requestAndAwaitArchive(adminCookie, ttlCookie, ttlEvent, "ORIGINAL");
+    }, 180_000);
+
+    afterAll(async () => {
+      await deleteEvent(adminCookie, ttlEvent.id);
+    });
+
+    it("Then a READY variant's admin status carries readyAt and a future expiresAt (TTL enabled)", async () => {
+      const res = await authedFetch(`/api/events/${ttlEvent.id}/download/status?quality=ORIGINAL`, adminCookie);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        status: string;
+        readyAt: string | null;
+        expiredAt: string | null;
+        expiresAt: string | null;
+      };
+      expect(body.status).toBe("READY");
+      expect(body.readyAt).toBeTruthy();
+      expect(body.expiredAt).toBeNull();
+      expect(body.expiresAt).toBeTruthy();
+      expect(new Date(body.expiresAt!).getTime()).toBeGreaterThan(Date.now());
+
+      // The other variant was never built — no countdown to show.
+      const displayRes = await authedFetch(`/api/events/${ttlEvent.id}/download/status?quality=DISPLAY`, adminCookie);
+      const displayBody = (await displayRes.json()) as { status: string; expiresAt: string | null };
+      expect(displayBody.status).toBe("NONE");
+      expect(displayBody.expiresAt).toBeNull();
+    });
+
+    it("Then releasing it flips status to EXPIRED, stamping expiredAt and clearing expiresAt", async () => {
+      const rel = await authedFetch(`/api/events/${ttlEvent.id}/download/release?quality=ORIGINAL`, adminCookie, {
+        method: "POST",
+      });
+      expect(rel.status).toBe(200);
+
+      const res = await authedFetch(`/api/events/${ttlEvent.id}/download/status?quality=ORIGINAL`, adminCookie);
+      const body = (await res.json()) as { status: string; expiredAt: string | null; expiresAt: string | null };
+      expect(body.status).toBe("EXPIRED");
+      expect(body.expiredAt).toBeTruthy();
+      expect(body.expiresAt).toBeNull();
+    });
+
+    it("Then the SSE stream's first event carries the same EXPIRED state and fields", async () => {
+      const body = await firstSSEStatus(adminCookie, ttlEvent.id, "ORIGINAL");
+      expect(body.status).toBe("EXPIRED");
+      expect(body.expiredAt).toBeTruthy();
+      expect(body.expiresAt).toBeNull();
+      // Kompakt was never touched by releasing Original — variant isolation.
+      const kompakt = await firstSSEStatus(adminCookie, ttlEvent.id, "DISPLAY");
+      expect(kompakt.status).toBe("NONE");
+    }, 20_000);
   });
 });

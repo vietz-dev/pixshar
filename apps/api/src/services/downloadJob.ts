@@ -11,7 +11,9 @@
 //   triggers — §1/§1a/§1b: triggerDebounce(AllVariants), requestBuild (the only
 //              path that creates an archive), triggerReconcile(AllVariants).
 //   poller   — §2/§2b: startDebouncePoller, reapStaleBuilding, startZipReaper.
-//   admin    — §3: buildNow, rebuildAll, cancelJob.
+//   admin    — §3: buildNow, rebuildAll, cancelJob, buildAdminDownloadStatus
+//              (the shared admin status shape behind GET .../status and its
+//              SSE stream — EXPIRED + remaining lifetime, PIXSHAR-8).
 //   payload  — DownloadPart/DownloadPayload/BothVariantsPayload,
 //              buildDownloadPayload, buildBothVariantsPayload,
 //              registerPartDownload, getDownloadJobStatus.
@@ -48,7 +50,13 @@ export {
   startZipReaper,
 } from "./downloadJob/poller.js";
 
-export { buildNow, rebuildAll, cancelJob } from "./downloadJob/admin.js";
+export {
+  buildNow,
+  rebuildAll,
+  cancelJob,
+  type AdminDownloadStatus,
+  buildAdminDownloadStatus,
+} from "./downloadJob/admin.js";
 
 export {
   type DownloadPart,

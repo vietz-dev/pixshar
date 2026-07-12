@@ -261,11 +261,18 @@
       "statusReady": "Ready",
       "statusFailed": "Failed",
       "statusCancelled": "Cancelled",
+      "statusExpired": "Expired",
       "heading": "Download archives",
       "variantKompakt": "Compact",
       "variantOriginal": "Original",
       "variantKompaktHint": "Compressed images — small & fast",
-      "variantOriginalHint": "Full-resolution originals"
+      "variantOriginalHint": "Full-resolution originals",
+      "releaseButton": "Release archive",
+      "releasingButton": "Releasing…",
+      "releaseConfirm": "Release the archive now? Its files are removed from S3, the membership is kept and it can be rebuilt any time.",
+      "expiresInDays": "expires in {days, plural, =0 {less than a day} =1 {a day} other {# days}} if nobody downloads it",
+      "expiresNever": "never expires",
+      "expiredHint": "Membership kept — click \"Build now\" to rebuild the same parts"
     }
   },
   "lightbox": {

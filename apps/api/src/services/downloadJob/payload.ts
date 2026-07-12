@@ -1,5 +1,6 @@
 import type { DownloadJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
+import { env } from "../../lib/env.js";
 import { DEFAULT_QUALITY, jobWhere, statusMessage, type Quality } from "./status.js";
 
 export interface DownloadPart {
@@ -239,6 +240,29 @@ export async function getDownloadJobStatus(
   });
   if (!job) return null;
 
+  // Honest counts (PIXSHAR-8): DownloadJob.partCount/totalSizeBytes are NOT
+  // decremented by a photo deletion (PIXSHAR-6), so a partially-expired
+  // variant would still report its pre-deletion numbers. Derive both from the
+  // parts that actually hold an S3 object right now — the same rule
+  // buildDownloadPayload uses for the guest payload.
+  const holdsObjects = jobHoldsObjects(job);
+  const downloadableParts = holdsObjects ? job.parts.filter(partHasObject) : [];
+  const partCount = downloadableParts.length;
+  const totalSizeBytes = downloadableParts.reduce((sum, p) => sum + Number(p.sizeBytes), 0);
+
+  // The remaining-lifetime countdown the admin panel shows next to a READY
+  // variant ("läuft in 3 Tagen ab, wenn niemand lädt"). Mirrors isExpired's
+  // idle clock (idleSince = lastDownloadedAt ?? readyAt) without importing
+  // expiry.ts, which stays free of env by design. TTL = 0 means "never
+  // expires" — the panel must not claim a date then — and only a READY job
+  // holds bytes to begin with.
+  const ttlDays = env.DOWNLOAD_ARCHIVE_TTL_DAYS;
+  const idleSince = job.lastDownloadedAt ?? job.readyAt;
+  const expiresAt =
+    job.status === "READY" && ttlDays > 0 && idleSince
+      ? new Date(idleSince.getTime() + ttlDays * 24 * 60 * 60 * 1000)
+      : null;
+
   return {
     id: job.id,
     quality: job.quality,
@@ -246,8 +270,8 @@ export async function getDownloadJobStatus(
     photoCount: job.photoCount,
     processedPhotos: job.processedPhotos,
     uploadProgress: job.uploadProgress,
-    totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
-    partCount: job.partCount,
+    totalSizeBytes,
+    partCount,
     parts: job.parts.map((p) => ({
       partIndex: p.partIndex,
       key: p.key,
@@ -259,6 +283,11 @@ export async function getDownloadJobStatus(
     })),
     debounceUntil: job.debounceUntil,
     failureReason: job.failureReason,
+    // Idle-clock provenance + the derived countdown (PIXSHAR-8).
+    lastDownloadedAt: job.lastDownloadedAt,
+    readyAt: job.readyAt,
+    expiredAt: job.expiredAt,
+    expiresAt,
     updatedAt: job.updatedAt,
   };
 }

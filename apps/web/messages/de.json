@@ -261,11 +261,18 @@
       "statusReady": "Bereit",
       "statusFailed": "Fehlgeschlagen",
       "statusCancelled": "Abgebrochen",
+      "statusExpired": "Abgelaufen",
       "heading": "Download-Archive",
       "variantKompakt": "Kompakt",
       "variantOriginal": "Original",
       "variantKompaktHint": "Komprimierte Bilder — klein & schnell",
-      "variantOriginalHint": "Originale in voller Auflösung"
+      "variantOriginalHint": "Originale in voller Auflösung",
+      "releaseButton": "Archiv freigeben",
+      "releasingButton": "Wird freigegeben…",
+      "releaseConfirm": "Archiv jetzt freigeben? Die Dateien werden von S3 entfernt, die Zusammensetzung bleibt erhalten und kann jederzeit neu gebaut werden.",
+      "expiresInDays": "läuft in {days, plural, =0 {weniger als einem Tag} =1 {einem Tag} other {# Tagen}} ab, wenn niemand lädt",
+      "expiresNever": "läuft nie ab",
+      "expiredHint": "Membership erhalten — ein Klick auf „Jetzt bauen“ baut die gleichen Teile neu"
     }
   },
   "lightbox": {

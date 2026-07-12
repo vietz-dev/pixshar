@@ -7,7 +7,7 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { buildNow, rebuildAll, cancelJob, releaseArchive, expirePartsForDeletedPhotos, statusMessage } from "../services/downloadJob.js";
+import { buildNow, rebuildAll, cancelJob, releaseArchive, expirePartsForDeletedPhotos, buildAdminDownloadStatus } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
@@ -199,49 +199,11 @@ app.get("/:id/download/status", requireAdmin, async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
 
+  // The idle clock (lastDownloadedAt), readyAt/expiredAt and the derived
+  // remaining lifetime (expiresAt) are stamped/computed elsewhere — this
+  // endpoint only reads them (see buildAdminDownloadStatus, PIXSHAR-8).
   const quality = parseQuality(c);
-  const job = await prisma.downloadJob.findUnique({
-    where: { eventId_quality: { eventId: id, quality } },
-  });
-  const totalPhotos = await prisma.photo.count({
-    where: { eventId: id, status: "PROCESSED" },
-  });
-
-  if (!job) {
-    return c.json({
-      quality,
-      status: "NONE",
-      message: "No archive created yet.",
-      processedPhotos: 0,
-      photoCount: 0,
-      uploadProgress: 0,
-      totalPhotos,
-      totalSizeBytes: null,
-      partCount: 0,
-      debounceUntil: null,
-      failureReason: null,
-      lastDownloadedAt: null,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  return c.json({
-    quality: job.quality,
-    status: job.status,
-    message: statusMessage(job.status),
-    photoCount: job.photoCount,
-    processedPhotos: job.processedPhotos,
-    uploadProgress: job.uploadProgress,
-    totalPhotos,
-    totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
-    partCount: job.partCount,
-    debounceUntil: job.debounceUntil,
-    failureReason: job.failureReason,
-    // The idle clock — stamped only by the guest part-redirect endpoint, never
-    // by opening the download page.
-    lastDownloadedAt: job.lastDownloadedAt,
-    updatedAt: job.updatedAt,
-  });
+  return c.json(await buildAdminDownloadStatus(id, quality));
 });
 
 app.get("/:id/download/status/stream", requireAdmin, async (c) => {
@@ -255,35 +217,18 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
   const quality = parseQuality(c);
 
   return streamSSE(c, async (stream) => {
-    const job = await prisma.downloadJob.findUnique({
-      where: { eventId_quality: { eventId: id, quality } },
-    });
-    const totalPhotos = await prisma.photo.count({ where: { eventId: id, status: "PROCESSED" } });
-
-    const initial = job
-      ? {
-          quality: job.quality,
-          status: job.status,
-          message: statusMessage(job.status),
-          photoCount: job.photoCount,
-          processedPhotos: job.processedPhotos,
-          uploadProgress: job.uploadProgress,
-          totalPhotos,
-          totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
-          partCount: job.partCount,
-          debounceUntil: job.debounceUntil?.toISOString() ?? null,
-          failureReason: job.failureReason,
-          updatedAt: job.updatedAt.toISOString(),
-        }
-      : { quality, status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, totalSizeBytes: null, partCount: 0, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
-
+    const initial = await buildAdminDownloadStatus(id, quality);
     await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 
     // Both variants emit on the same per-event bus key; forward only this
-    // stream's variant so each admin panel gets an independent feed.
+    // stream's variant so each admin panel gets an independent feed. The
+    // notification is just a trigger — re-derive the full admin shape (not
+    // the raw pushDownloadStatus payload) so every tick carries the same
+    // EXPIRED/remaining-lifetime fields as the initial snapshot (PIXSHAR-8).
     const unsubscribe = onDownloadStatus(id, async (payload) => {
       if (payload.quality !== quality) return;
-      await stream.writeSSE({ data: JSON.stringify(payload), event: "download-status" });
+      const fresh = await buildAdminDownloadStatus(id, quality);
+      await stream.writeSSE({ data: JSON.stringify(fresh), event: "download-status" });
     });
 
     const keepAlive = setInterval(() => {
