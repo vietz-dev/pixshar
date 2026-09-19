@@ -10,7 +10,13 @@ interface LazyImageProps {
   style?: React.CSSProperties;
 }
 
-export default function LazyImage({ src, placeholderDataUrl, alt, objectFit = "cover", style }: LazyImageProps) {
+export default function LazyImage({
+  src,
+  placeholderDataUrl,
+  alt,
+  objectFit = "cover",
+  style,
+}: LazyImageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -25,7 +31,7 @@ export default function LazyImage({ src, placeholderDataUrl, alt, objectFit = "c
           observer.disconnect();
         }
       },
-      { rootMargin: "200px" }
+      { rootMargin: "200px" },
     );
     observer.observe(el);
     return () => observer.disconnect();

@@ -70,7 +70,9 @@ test.describe("Event management", () => {
         await apiDeleteEvent(adminCookie, eventId);
       });
 
-      test("Then the event appears on the dashboard with its name and photo count", async ({ page }) => {
+      test("Then the event appears on the dashboard with its name and photo count", async ({
+        page,
+      }) => {
         await loginAsAdmin(page);
         await expect(page.getByText("Dashboard Test Event")).toBeVisible({ timeout: 10_000 });
         await expect(page.getByText(/photos/i).first()).toBeVisible();
@@ -125,7 +127,9 @@ test.describe("Event management", () => {
         eventId = ev.id;
       });
 
-      test("Then the event is removed and they are redirected to the dashboard", async ({ page }) => {
+      test("Then the event is removed and they are redirected to the dashboard", async ({
+        page,
+      }) => {
         await loginAsAdmin(page);
         await page.goto(`${WEB}/admin/events/${eventId}`);
         await expect(page.getByText(eventName)).toBeVisible({ timeout: 8_000 });

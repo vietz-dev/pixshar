@@ -23,7 +23,7 @@ describe("planArchiveParts", () => {
   it("Given photos fitting one part, When planning, Then it returns a single part in order", () => {
     const parts = planArchiveParts(
       [entry("a", 5 * MiB), entry("b", 5 * MiB), entry("c", 5 * MiB)],
-      2048 * MiB
+      2048 * MiB,
     );
     expect(parts).toHaveLength(1);
     expect(parts[0].items).toEqual(["a", "b", "c"]);
@@ -32,8 +32,14 @@ describe("planArchiveParts", () => {
   it("Given photos exceeding the limit, When planning, Then it rolls to new parts below the cap", () => {
     // 100 MiB limit → effective max is 90 MiB (10% margin) → 2×40 MiB per part
     const parts = planArchiveParts(
-      [entry("a", 40 * MiB), entry("b", 40 * MiB), entry("c", 40 * MiB), entry("d", 40 * MiB), entry("e", 40 * MiB)],
-      100 * MiB
+      [
+        entry("a", 40 * MiB),
+        entry("b", 40 * MiB),
+        entry("c", 40 * MiB),
+        entry("d", 40 * MiB),
+        entry("e", 40 * MiB),
+      ],
+      100 * MiB,
     );
     expect(parts.map((p) => p.items)).toEqual([["a", "b"], ["c", "d"], ["e"]]);
     for (const part of parts) {
@@ -44,7 +50,7 @@ describe("planArchiveParts", () => {
   it("Given a single photo larger than the limit, When planning, Then it gets its own oversized part", () => {
     const parts = planArchiveParts(
       [entry("small", 10 * MiB), entry("huge", 300 * MiB), entry("small2", 10 * MiB)],
-      100 * MiB
+      100 * MiB,
     );
     expect(parts.map((p) => p.items)).toEqual([["small"], ["huge"], ["small2"]]);
   });

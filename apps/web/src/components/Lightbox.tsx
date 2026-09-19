@@ -21,7 +21,15 @@ interface LightboxProps {
   onDelete?: (photoId: string) => void;
 }
 
-export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDownload, onDelete }: LightboxProps) {
+export default function Lightbox({
+  photos,
+  index,
+  onClose,
+  onNext,
+  onPrev,
+  onDownload,
+  onDelete,
+}: LightboxProps) {
   const t = useTranslations("lightbox");
   const tCommon = useTranslations("common");
   const photo = photos[index];
@@ -57,7 +65,7 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
       else if (e.key === "ArrowRight") onNext();
       else if (e.key === "ArrowLeft") onPrev();
     },
-    [onClose, onNext, onPrev]
+    [onClose, onNext, onPrev],
   );
 
   useEffect(() => {
@@ -84,7 +92,9 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
 
   return (
     <div
-      onClick={() => { if (!swipeHandled.current) onClose(); }}
+      onClick={() => {
+        if (!swipeHandled.current) onClose();
+      }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={{
@@ -119,7 +129,10 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {onDownload && (
             <button
-              onClick={(e) => { e.stopPropagation(); handleDownload(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownload();
+              }}
               disabled={downloading}
               style={{
                 height: 38,
@@ -137,10 +150,23 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
                 transition: "background .15s",
                 opacity: downloading ? 0.6 : 1,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.2)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.1)"; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,.1)";
+              }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -150,7 +176,10 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
           )}
           {onDelete && (
             <button
-              onClick={(e) => { e.stopPropagation(); onDelete(photo.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(photo.id);
+              }}
               style={{
                 height: 38,
                 padding: "0 14px",
@@ -166,10 +195,21 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
                 cursor: "pointer",
                 transition: "background .15s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.2)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,.1)"; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,.1)";
+              }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+              >
                 <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
               </svg>
               {tCommon("delete")}
@@ -191,7 +231,14 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
               transition: "background .15s",
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
           </button>
@@ -200,7 +247,10 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
 
       {/* Prev */}
       <button
-        onClick={(e) => { e.stopPropagation(); onPrev(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onPrev();
+        }}
         style={{
           position: "absolute",
           left: 18,
@@ -218,7 +268,14 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
           zIndex: 2,
         }}
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <path d="m15 18-6-6 6-6" />
         </svg>
       </button>
@@ -270,8 +327,25 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
             />
           </div>
         ) : (
-          <div style={{ maxWidth: "min(88vw, 1180px)", maxHeight: "80vh", minWidth: 400, minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="1.5">
+          <div
+            style={{
+              maxWidth: "min(88vw, 1180px)",
+              maxHeight: "80vh",
+              minWidth: 400,
+              minHeight: 300,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#52525b"
+              strokeWidth="1.5"
+            >
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
               <path d="m21 15-5-5L5 21" />
@@ -315,7 +389,10 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
 
       {/* Next */}
       <button
-        onClick={(e) => { e.stopPropagation(); onNext(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNext();
+        }}
         style={{
           position: "absolute",
           right: 18,
@@ -333,7 +410,14 @@ export default function Lightbox({ photos, index, onClose, onNext, onPrev, onDow
           zIndex: 2,
         }}
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <path d="m9 18 6-6-6-6" />
         </svg>
       </button>

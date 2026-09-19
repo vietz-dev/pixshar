@@ -13,7 +13,7 @@ describe("Authentication", () => {
 
         expect(res.status).toBe(200);
 
-        const body = await res.json() as { user: { email: string } };
+        const body = (await res.json()) as { user: { email: string } };
         expect(body.user.email).toBe(ADMIN_EMAIL);
 
         const cookies = res.headers.getSetCookie();

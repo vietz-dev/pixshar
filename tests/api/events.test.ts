@@ -28,7 +28,7 @@ describe("Event Management", () => {
         const res = await authedFetch("/api/events", adminCookie);
 
         expect(res.status).toBe(200);
-        const body = await res.json() as unknown[];
+        const body = (await res.json()) as unknown[];
         expect(Array.isArray(body)).toBe(true);
       });
     });
@@ -51,7 +51,7 @@ describe("Event Management", () => {
         });
 
         expect(res.status).toBe(201);
-        const event = await res.json() as TestEvent;
+        const event = (await res.json()) as TestEvent;
         expect(event.slug).toBe(slug);
         expect(event.name).toBe("Summer Gala 2026");
         expect(event).toHaveProperty("id");
@@ -102,7 +102,7 @@ describe("Event Management", () => {
         const res = await authedFetch(`/api/events/${event.id}`, adminCookie);
 
         expect(res.status).toBe(200);
-        const body = await res.json() as { photos: unknown[] };
+        const body = (await res.json()) as { photos: unknown[] };
         expect(Array.isArray(body.photos)).toBe(true);
       });
     });

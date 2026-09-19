@@ -24,9 +24,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write       # version PR commit + create GitHub Release/tag
-  pull-requests: write  # open the Version Packages PR
-  packages: write       # push images + Helm chart to ghcr.io
+  contents: write # version PR commit + create GitHub Release/tag
+  pull-requests: write # open the Version Packages PR
+  packages: write # push images + Helm chart to ghcr.io
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

@@ -27,20 +27,28 @@ function jobWhere(eventId: string, quality: Quality) {
 
 export function statusMessage(status: string): string {
   switch (status) {
-    case "NONE": return "No archive created yet.";
-    case "DEBOUNCING": return "Waiting for uploads to settle.";
-    case "QUEUED": return "Queued for building.";
-    case "BUILDING": return "Building archive…";
-    case "READY": return "Archive ready for download.";
-    case "FAILED": return "Archive build failed.";
-    case "CANCELLED": return "Archive build was cancelled.";
-    default: return "Unknown status.";
+    case "NONE":
+      return "No archive created yet.";
+    case "DEBOUNCING":
+      return "Waiting for uploads to settle.";
+    case "QUEUED":
+      return "Queued for building.";
+    case "BUILDING":
+      return "Building archive…";
+    case "READY":
+      return "Archive ready for download.";
+    case "FAILED":
+      return "Archive build failed.";
+    case "CANCELLED":
+      return "Archive build was cancelled.";
+    default:
+      return "Unknown status.";
   }
 }
 
 export async function pushDownloadStatus(
   eventId: string,
-  quality: Quality = DEFAULT_QUALITY
+  quality: Quality = DEFAULT_QUALITY,
 ): Promise<void> {
   const [job, totalPhotos] = await Promise.all([
     prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) }),
@@ -69,14 +77,14 @@ export async function pushDownloadStatus(
 // pushDownloadStatus, never this function, or the two processes would ping-pong.
 export async function notifyDownloadStatus(
   eventId: string,
-  quality: Quality = DEFAULT_QUALITY
+  quality: Quality = DEFAULT_QUALITY,
 ): Promise<void> {
   pushDownloadStatus(eventId, quality).catch(() => {});
   await prisma
     .$executeRawUnsafe(
       `SELECT pg_notify($1, $2)`,
       PG_NOTIFY_CHANNEL,
-      JSON.stringify({ type: "download.status", eventId, quality })
+      JSON.stringify({ type: "download.status", eventId, quality }),
     )
     .catch(() => {});
 }
@@ -84,7 +92,9 @@ export async function notifyDownloadStatus(
 function membershipSig(photoIds: string[]): string {
   // Stable content identity of a part: sha1 over its sorted photoId list. Changes
   // only when the part's photo set changes (a deletion) — never on a pure rebuild.
-  return createHash("sha1").update([...photoIds].sort().join(",")).digest("hex");
+  return createHash("sha1")
+    .update([...photoIds].sort().join(","))
+    .digest("hex");
 }
 
 // ---------------------------------------------------------------------------
@@ -96,10 +106,7 @@ function membershipSig(photoIds: string[]): string {
 // guest download request (or the next photo activity) materializes the job so a
 // worker picks it up — no mass backfill. If the job already exists this is a
 // no-op that leaves its current state untouched.
-export async function ensureJob(
-  eventId: string,
-  quality: Quality
-): Promise<void> {
+export async function ensureJob(eventId: string, quality: Quality): Promise<void> {
   const existing = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
   if (existing) return;
   const now = Date.now();
@@ -122,12 +129,14 @@ export async function ensureJob(
 
 export async function triggerDebounce(
   eventId: string,
-  quality: Quality = DEFAULT_QUALITY
+  quality: Quality = DEFAULT_QUALITY,
 ): Promise<void> {
   const now = Date.now();
   const debounceUntil = new Date(now + env.DOWNLOAD_DEBOUNCE_SECONDS * 1000);
   const debounceStartedAt = new Date(now);
-  console.log(`[Debounce] event=${eventId} quality=${quality} debounceUntil=${debounceUntil.toISOString()}`);
+  console.log(
+    `[Debounce] event=${eventId} quality=${quality} debounceUntil=${debounceUntil.toISOString()}`,
+  );
 
   await prisma.$transaction(async (tx) => {
     // Increment processed photo count once per photo — only on the canonical
@@ -167,7 +176,13 @@ export async function triggerDebounce(
       case "QUEUED": {
         await tx.downloadJob.update({
           where: { id: existing.id },
-          data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, queuedAt: null, processedPhotos: 0 },
+          data: {
+            status: "DEBOUNCING",
+            debounceUntil,
+            debounceStartedAt,
+            queuedAt: null,
+            processedPhotos: 0,
+          },
         });
         console.log(`[Debounce] event=${eventId} QUEUED -> DEBOUNCING`);
         break;
@@ -192,7 +207,13 @@ export async function triggerDebounce(
       case "CANCELLED": {
         await tx.downloadJob.update({
           where: { id: existing.id },
-          data: { status: "DEBOUNCING", debounceUntil, debounceStartedAt, failureReason: null, processedPhotos: 0 },
+          data: {
+            status: "DEBOUNCING",
+            debounceUntil,
+            debounceStartedAt,
+            failureReason: null,
+            processedPhotos: 0,
+          },
         });
         console.log(`[Debounce] event=${eventId} ${existing.status} -> DEBOUNCING`);
         break;
@@ -224,7 +245,7 @@ export async function triggerDebounceAllVariants(eventId: string): Promise<void>
 export async function triggerReconcile(
   eventId: string,
   quality: Quality = DEFAULT_QUALITY,
-  opts: { immediate?: boolean } = {}
+  opts: { immediate?: boolean } = {},
 ): Promise<void> {
   const now = Date.now();
   const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
@@ -233,7 +254,9 @@ export async function triggerReconcile(
   if (job.status === "BUILDING") {
     // Don't disturb the in-flight build. Any parts marked STALE by the caller are
     // picked up by the post-build re-queue check (see buildZip).
-    console.log(`[Reconcile] event=${eventId} quality=${quality} BUILDING in progress, will re-queue after`);
+    console.log(
+      `[Reconcile] event=${eventId} quality=${quality} BUILDING in progress, will re-queue after`,
+    );
     notifyDownloadStatus(eventId, quality).catch(() => {});
     return;
   }
@@ -241,9 +264,17 @@ export async function triggerReconcile(
   if (opts.immediate) {
     await prisma.downloadJob.updateMany({
       where: { eventId, quality, status: { not: "BUILDING" } },
-      data: { status: "QUEUED", queuedAt: new Date(now), debounceUntil: null, failureReason: null, processedPhotos: 0 },
+      data: {
+        status: "QUEUED",
+        queuedAt: new Date(now),
+        debounceUntil: null,
+        failureReason: null,
+        processedPhotos: 0,
+      },
     });
-    console.log(`[Reconcile] event=${eventId} quality=${quality} queued immediately (was ${job.status})`);
+    console.log(
+      `[Reconcile] event=${eventId} quality=${quality} queued immediately (was ${job.status})`,
+    );
   } else {
     await prisma.downloadJob.updateMany({
       where: { eventId, quality, status: { not: "BUILDING" } },
@@ -265,7 +296,7 @@ export async function triggerReconcile(
 // were marked STALE, so schedule a rebuild for each.
 export async function triggerReconcileAllVariants(
   eventId: string,
-  opts: { immediate?: boolean } = {}
+  opts: { immediate?: boolean } = {},
 ): Promise<void> {
   for (const q of ALL_QUALITIES) {
     await triggerReconcile(eventId, q, opts).catch(() => {});
@@ -296,10 +327,7 @@ async function checkDebounceTimers(): Promise<void> {
   const ready = await prisma.downloadJob.findMany({
     where: {
       status: "DEBOUNCING",
-      OR: [
-        { debounceUntil: { lte: now } },
-        { debounceStartedAt: { lte: maxWaitCutoff } },
-      ],
+      OR: [{ debounceUntil: { lte: now } }, { debounceStartedAt: { lte: maxWaitCutoff } }],
     },
     orderBy: { debounceStartedAt: "asc" },
   });
@@ -357,7 +385,7 @@ export function startZipReaper(): void {
   reapStaleBuilding().catch(() => {}); // startup sweep
   setInterval(
     () => reapStaleBuilding().catch(() => {}),
-    (env.DOWNLOAD_BUILD_LEASE_SECONDS * 1000) / 2
+    (env.DOWNLOAD_BUILD_LEASE_SECONDS * 1000) / 2,
   );
 }
 
@@ -370,17 +398,20 @@ export function startZipReaper(): void {
 // through QUEUED → FIFO claim, so it never bypasses the worker/image-processor
 // load management. If nothing is pending (already READY with no new photos), it
 // is a no-op.
-export async function buildNow(
-  eventId: string,
-  quality: Quality = DEFAULT_QUALITY
-): Promise<void> {
+export async function buildNow(eventId: string, quality: Quality = DEFAULT_QUALITY): Promise<void> {
   const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
   if (!job) return; // no job → no pending uploads to build
 
   if (job.status === "DEBOUNCING" || job.status === "FAILED" || job.status === "CANCELLED") {
     await prisma.downloadJob.updateMany({
       where: { eventId, quality, status: job.status },
-      data: { status: "QUEUED", queuedAt: new Date(), debounceUntil: null, failureReason: null, processedPhotos: 0 },
+      data: {
+        status: "QUEUED",
+        queuedAt: new Date(),
+        debounceUntil: null,
+        failureReason: null,
+        processedPhotos: 0,
+      },
     });
     console.log(`[BuildNow] event=${eventId} quality=${quality} ${job.status} -> QUEUED`);
     notifyDownloadStatus(eventId, quality).catch(() => {});
@@ -397,7 +428,7 @@ export async function buildNow(
 // re-download it unless a photo was deleted from that exact part.
 export async function rebuildAll(
   eventId: string,
-  quality: Quality = DEFAULT_QUALITY
+  quality: Quality = DEFAULT_QUALITY,
 ): Promise<void> {
   const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
   if (!job) return;
@@ -416,7 +447,7 @@ export async function rebuildAll(
 // object is still valid) so it isn't stuck showing "updating".
 export async function cancelJob(
   eventId: string,
-  quality: Quality = DEFAULT_QUALITY
+  quality: Quality = DEFAULT_QUALITY,
 ): Promise<void> {
   const job = await prisma.downloadJob.findUnique({ where: jobWhere(eventId, quality) });
   if (!job) return;
@@ -477,7 +508,7 @@ export async function buildDownloadPayload(
   eventId: string,
   slug: string,
   quality: Quality = DEFAULT_QUALITY,
-  expiresIn = 60 * 60
+  expiresIn = 60 * 60,
 ): Promise<DownloadPayload> {
   const job = await prisma.downloadJob.findUnique({
     where: jobWhere(eventId, quality),
@@ -485,10 +516,19 @@ export async function buildDownloadPayload(
   });
 
   if (!job) {
-    return { status: "NONE", parts: [], partCount: 0, totalSizeBytes: 0, photoCount: 0, building: false, message: statusMessage("NONE") };
+    return {
+      status: "NONE",
+      parts: [],
+      partCount: 0,
+      totalSizeBytes: 0,
+      photoCount: 0,
+      building: false,
+      message: statusMessage("NONE"),
+    };
   }
 
-  const jobActive = job.status === "DEBOUNCING" || job.status === "QUEUED" || job.status === "BUILDING";
+  const jobActive =
+    job.status === "DEBOUNCING" || job.status === "QUEUED" || job.status === "BUILDING";
   const anyStale = job.parts.some((p) => p.status === "STALE");
   const building = jobActive || anyStale;
 
@@ -498,10 +538,13 @@ export async function buildDownloadPayload(
 
   if (n === 0) {
     const status: DownloadPayload["status"] =
-      job.status === "FAILED" || job.status === "CANCELLED" ? "FAILED"
-      : job.status === "DEBOUNCING" ? "DEBOUNCING"
-      : job.status === "QUEUED" || job.status === "BUILDING" ? "BUILDING"
-      : "NONE";
+      job.status === "FAILED" || job.status === "CANCELLED"
+        ? "FAILED"
+        : job.status === "DEBOUNCING"
+          ? "DEBOUNCING"
+          : job.status === "QUEUED" || job.status === "BUILDING"
+            ? "BUILDING"
+            : "NONE";
     return {
       status,
       parts: [],
@@ -509,7 +552,15 @@ export async function buildDownloadPayload(
       totalSizeBytes: 0,
       photoCount: job.photoCount,
       building,
-      message: statusMessage(status === "FAILED" ? "FAILED" : status === "DEBOUNCING" ? "DEBOUNCING" : status === "BUILDING" ? "BUILDING" : "NONE"),
+      message: statusMessage(
+        status === "FAILED"
+          ? "FAILED"
+          : status === "DEBOUNCING"
+            ? "DEBOUNCING"
+            : status === "BUILDING"
+              ? "BUILDING"
+              : "NONE",
+      ),
       debounceUntil: job.debounceUntil?.toISOString() ?? null,
       processedPhotos: job.processedPhotos,
       uploadProgress: job.uploadProgress,
@@ -533,9 +584,9 @@ export async function buildDownloadPayload(
         expiresIn,
         n === 1
           ? `attachment; filename="${fileBase}.zip"`
-          : `attachment; filename="${fileBase}-part-${p.partIndex}-of-${n}.zip"`
+          : `attachment; filename="${fileBase}-part-${p.partIndex}-of-${n}.zip"`,
       ),
-    }))
+    })),
   );
 
   return {
@@ -563,7 +614,7 @@ export const GUEST_DEFAULT_QUALITY: Quality = "DISPLAY";
 export async function buildBothVariantsPayload(
   eventId: string,
   slug: string,
-  expiresIn = 60 * 60
+  expiresIn = 60 * 60,
 ): Promise<BothVariantsPayload> {
   // Lazy creation of the Kompakt job on first demand.
   await ensureJob(eventId, "DISPLAY").catch(() => {});
@@ -578,10 +629,7 @@ export async function buildBothVariantsPayload(
   return { ...def, defaultQuality: GUEST_DEFAULT_QUALITY, variants };
 }
 
-export async function getDownloadJobStatus(
-  eventId: string,
-  quality: Quality = DEFAULT_QUALITY
-) {
+export async function getDownloadJobStatus(eventId: string, quality: Quality = DEFAULT_QUALITY) {
   const job = await prisma.downloadJob.findUnique({
     where: jobWhere(eventId, quality),
     include: { parts: { orderBy: { partIndex: "asc" } } },
@@ -630,7 +678,9 @@ export function runBuildZip(eventId: string, quality: Quality = DEFAULT_QUALITY)
   const buildKey = `${eventId}:${quality}`;
   if (enqueuedBuilds.has(buildKey)) return;
   enqueuedBuilds.add(buildKey);
-  console.log(`[BuildZip] enqueued event=${eventId} quality=${quality} (queue depth=${enqueuedBuilds.size})`);
+  console.log(
+    `[BuildZip] enqueued event=${eventId} quality=${quality} (queue depth=${enqueuedBuilds.size})`,
+  );
   buildChain = buildChain.then(async () => {
     try {
       await Effect.runPromise(buildZip(eventId, quality));
@@ -669,7 +719,9 @@ const buildZip = (eventId: string, quality: Quality) =>
           // Incremental model: committed parts are immutable and valid — leave
           // them. The in-flight object was aborted; unassigned photos and any
           // STALE parts are simply handled by the next reconcile.
-          console.log(`[BuildZip] event=${eventId} ${e.message} mid-build, leaving committed parts`);
+          console.log(
+            `[BuildZip] event=${eventId} ${e.message} mid-build, leaving committed parts`,
+          );
           return Effect.succeed(undefined);
         }
         return Effect.fail(e);
@@ -677,7 +729,7 @@ const buildZip = (eventId: string, quality: Quality) =>
       Effect.retry({
         times: 3,
         schedule: Schedule.exponential("1 second"),
-      })
+      }),
     );
 
     if (!result) {
@@ -692,7 +744,7 @@ const buildZip = (eventId: string, quality: Quality) =>
       return;
     }
     console.log(
-      `[BuildZip] event=${eventId} quality=${quality} marked READY (parts=${result.partCount}, totalSize=${result.totalSizeBytes})`
+      `[BuildZip] event=${eventId} quality=${quality} marked READY (parts=${result.partCount}, totalSize=${result.totalSizeBytes})`,
     );
     yield* Effect.promise(() => notifyDownloadStatus(eventId, quality).catch(() => {}));
 
@@ -707,7 +759,9 @@ const buildZip = (eventId: string, quality: Quality) =>
           where: { eventId, quality, status: "READY" },
           data: { status: "QUEUED", queuedAt: new Date(), processedPhotos: 0 },
         });
-        console.log(`[BuildZip] event=${eventId} quality=${quality} ${remainingStale} STALE part(s) remain, re-queued`);
+        console.log(
+          `[BuildZip] event=${eventId} quality=${quality} ${remainingStale} STALE part(s) remain, re-queued`,
+        );
         await notifyDownloadStatus(eventId, quality).catch(() => {});
       }
     });
@@ -723,8 +777,8 @@ const buildZip = (eventId: string, quality: Quality) =>
           yield* markFailed(job.id, String(e));
           yield* Effect.promise(() => notifyDownloadStatus(eventId, quality).catch(() => {}));
         }
-      })
-    )
+      }),
+    ),
   );
 
 // ---------------------------------------------------------------------------
@@ -775,17 +829,19 @@ const markBuilding = (jobId: string, photoCount: number) =>
 const markReady = (jobId: string, partCount: number, totalSizeBytes: number) =>
   Effect.tryPromise({
     try: () =>
-      prisma.downloadJob.updateMany({
-        where: { id: jobId, status: "BUILDING" },
-        data: {
-          status: "READY",
-          partCount,
-          totalSizeBytes: BigInt(totalSizeBytes),
-          processedPhotos: 0,
-          uploadProgress: 100,
-          heartbeatAt: new Date(),
-        },
-      }).then((r) => r.count),
+      prisma.downloadJob
+        .updateMany({
+          where: { id: jobId, status: "BUILDING" },
+          data: {
+            status: "READY",
+            partCount,
+            totalSizeBytes: BigInt(totalSizeBytes),
+            processedPhotos: 0,
+            uploadProgress: 100,
+            heartbeatAt: new Date(),
+          },
+        })
+        .then((r) => r.count),
     catch: (e) => new Error(`Mark ready failed: ${e}`),
   });
 
@@ -806,12 +862,7 @@ const markFailed = (jobId: string, reason: string) =>
 // Reconcile the archive: rebuild STALE parts in place (from their stored
 // membership, minus any deleted photos) and append brand-new parts for photos
 // not yet assigned to any part. Immutable READY parts are left untouched.
-const streamZipPartsToS3 = (
-  eventId: string,
-  quality: Quality,
-  photos: Photo[],
-  jobId: string
-) =>
+const streamZipPartsToS3 = (eventId: string, quality: Quality, photos: Photo[], jobId: string) =>
   Effect.gen(function* () {
     const { ZipArchive } = yield* Effect.tryPromise({
       try: () => import("archiver"),
@@ -848,11 +899,10 @@ const streamZipPartsToS3 = (
     const entryBytesOf = (photo: Photo) =>
       Effect.tryPromise({
         try: async () => {
-          let size: number | null | undefined =
-            quality === "DISPLAY" ? undefined : photo.sizeBytes;
+          let size: number | null | undefined = quality === "DISPLAY" ? undefined : photo.sizeBytes;
           if (size === null || size === undefined) {
             const head = await s3.send(
-              new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: sourceKey(photo, quality) })
+              new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: sourceKey(photo, quality) }),
             );
             size = head.ContentLength ?? 0;
           }
@@ -902,20 +952,28 @@ const streamZipPartsToS3 = (
     }
     for (const planned of plannedNew) {
       maxIndex += 1;
-      work.push({ kind: "append", partIndex: maxIndex, photos: planned.items, estimatedBytes: planned.estimatedBytes });
+      work.push({
+        kind: "append",
+        partIndex: maxIndex,
+        photos: planned.items,
+        estimatedBytes: planned.estimatedBytes,
+      });
     }
 
     const totalWorkPhotos = work.reduce((s, w) => s + w.photos.length, 0);
     const totalEstimatedBytes = work.reduce(
       (s, w) => s + (w.kind === "append" ? w.estimatedBytes : estBytes(w.photos)),
-      0
+      0,
     );
 
     const aggregate = () =>
       Effect.tryPromise({
         try: async () => {
           const live = await prisma.downloadArchivePart.findMany({ where: { jobId } });
-          return { partCount: live.length, totalSizeBytes: live.reduce((s, p) => s + Number(p.sizeBytes), 0) };
+          return {
+            partCount: live.length,
+            totalSizeBytes: live.reduce((s, p) => s + Number(p.sizeBytes), 0),
+          };
         },
         catch: (e) => new Error(`Aggregate failed: ${e}`),
       });
@@ -926,7 +984,7 @@ const streamZipPartsToS3 = (
     }
 
     yield* Console.log(
-      `[ZIP ${eventId}] reconcile: ${staleParts.length} rebuild + ${plannedNew.length} new part(s), ${totalWorkPhotos} photos`
+      `[ZIP ${eventId}] reconcile: ${staleParts.length} rebuild + ${plannedNew.length} new part(s), ${totalWorkPhotos} photos`,
     );
     yield* Effect.tryPromise({
       try: () =>
@@ -945,7 +1003,7 @@ const streamZipPartsToS3 = (
       key: string,
       label: string,
       processedOffset: number,
-      completedBytes: number
+      completedBytes: number,
     ): Promise<{ sizeBytes: number }> => {
       const passThrough = new PassThrough();
 
@@ -953,7 +1011,12 @@ const streamZipPartsToS3 = (
       // stream is held in memory, regardless of gallery size.
       const upload = new Upload({
         client: s3,
-        params: { Bucket: env.S3_BUCKET, Key: key, Body: passThrough, ContentType: "application/zip" },
+        params: {
+          Bucket: env.S3_BUCKET,
+          Key: key,
+          Body: passThrough,
+          ContentType: "application/zip",
+        },
         partSize: 16 * 1024 * 1024,
         queueSize: 2,
       });
@@ -968,7 +1031,10 @@ const streamZipPartsToS3 = (
         if (pct !== lastUploadPct && pct % 10 === 0) {
           lastUploadPct = pct;
           prisma.downloadJob
-            .updateMany({ where: { id: jobId, status: "BUILDING" }, data: { uploadProgress: pct, heartbeatAt: new Date() } })
+            .updateMany({
+              where: { id: jobId, status: "BUILDING" },
+              data: { uploadProgress: pct, heartbeatAt: new Date() },
+            })
             .then(() => notifyDownloadStatus(eventId))
             .catch(() => {});
         }
@@ -987,7 +1053,7 @@ const streamZipPartsToS3 = (
           await checkStillBuilding(jobId);
 
           const { Body } = await s3.send(
-            new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: sourceKey(photo, quality) })
+            new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: sourceKey(photo, quality) }),
           );
           if (!Body) continue;
 
@@ -1025,7 +1091,13 @@ const streamZipPartsToS3 = (
       return { sizeBytes: head.ContentLength ?? 0 };
     };
 
-    const streamPart = (partPhotos: Photo[], key: string, label: string, off: number, done: number) =>
+    const streamPart = (
+      partPhotos: Photo[],
+      key: string,
+      label: string,
+      off: number,
+      done: number,
+    ) =>
       Effect.tryPromise({
         try: () => streamOnePart(partPhotos, key, label, off, done),
         catch: (e) =>
@@ -1052,7 +1124,11 @@ const streamZipPartsToS3 = (
         const newGen = part.generation + 1;
         const key = s3Keys.zipPart(eventId, quality, part.partIndex, newGen);
         const { sizeBytes } = yield* streamPart(
-          w.photos, key, `part ${part.partIndex} (rebuild g${newGen})`, processedOffset, completedBytes
+          w.photos,
+          key,
+          `part ${part.partIndex} (rebuild g${newGen})`,
+          processedOffset,
+          completedBytes,
         );
         const sig = membershipSig(w.photos.map((p) => p.id));
         const oldKey = part.key;
@@ -1065,27 +1141,48 @@ const streamZipPartsToS3 = (
               });
               await tx.downloadArchivePart.update({
                 where: { id: part.id },
-                data: { key, generation: newGen, sizeBytes: BigInt(sizeBytes), photoCount: w.photos.length, membershipSig: sig, status: "READY" },
+                data: {
+                  key,
+                  generation: newGen,
+                  sizeBytes: BigInt(sizeBytes),
+                  photoCount: w.photos.length,
+                  membershipSig: sig,
+                  status: "READY",
+                },
               });
             }),
           catch: (e) => new Error(`Part ${part.partIndex} commit failed: ${e}`),
         });
         // Old generation object no longer referenced — remove it now.
-        if (oldKey && oldKey !== key) yield* Effect.promise(() => deleteS3Object(oldKey).catch(() => {}));
+        if (oldKey && oldKey !== key)
+          yield* Effect.promise(() => deleteS3Object(oldKey).catch(() => {}));
         processedOffset += w.photos.length;
         completedBytes += estBytes(w.photos);
       } else {
         const gen = 1;
         const key = s3Keys.zipPart(eventId, quality, w.partIndex, gen);
         const { sizeBytes } = yield* streamPart(
-          w.photos, key, `part ${w.partIndex} (new)`, processedOffset, completedBytes
+          w.photos,
+          key,
+          `part ${w.partIndex} (new)`,
+          processedOffset,
+          completedBytes,
         );
         const sig = membershipSig(w.photos.map((p) => p.id));
         yield* Effect.tryPromise({
           try: () =>
             prisma.$transaction(async (tx) => {
               const created = await tx.downloadArchivePart.create({
-                data: { jobId, partIndex: w.partIndex, key, generation: gen, sizeBytes: BigInt(sizeBytes), photoCount: w.photos.length, membershipSig: sig, status: "READY" },
+                data: {
+                  jobId,
+                  partIndex: w.partIndex,
+                  key,
+                  generation: gen,
+                  sizeBytes: BigInt(sizeBytes),
+                  photoCount: w.photos.length,
+                  membershipSig: sig,
+                  status: "READY",
+                },
               });
               await tx.downloadArchivePartEntry.createMany({
                 data: w.photos.map((p) => ({ partId: created.id, photoId: p.id })),
@@ -1103,14 +1200,20 @@ const streamZipPartsToS3 = (
     // Scoped to THIS variant's objects so a DISPLAY build never deletes the
     // ORIGINAL variant's parts (both share the {eventId}/archive/ prefix).
     yield* Effect.promise(async () => {
-      const live = await prisma.downloadArchivePart.findMany({ where: { jobId }, select: { key: true } });
+      const live = await prisma.downloadArchivePart.findMany({
+        where: { jobId },
+        select: { key: true },
+      });
       const liveKeys = new Set(live.map((p) => p.key).filter(Boolean));
       const listed = await listS3Prefix(s3Keys.archivePrefix(eventId)).catch(() => [] as string[]);
       const orphans = listed.filter(
-        (k) => s3Keys.archiveKeyQuality(eventId, k) === quality && !liveKeys.has(k)
+        (k) => s3Keys.archiveKeyQuality(eventId, k) === quality && !liveKeys.has(k),
       );
       for (const k of orphans) await deleteS3Object(k).catch(() => {});
-      if (orphans.length) console.log(`[ZIP ${eventId}] quality=${quality} swept ${orphans.length} orphan archive object(s)`);
+      if (orphans.length)
+        console.log(
+          `[ZIP ${eventId}] quality=${quality} swept ${orphans.length} orphan archive object(s)`,
+        );
     });
 
     return yield* aggregate();

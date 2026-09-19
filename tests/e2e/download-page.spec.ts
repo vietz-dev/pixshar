@@ -10,14 +10,7 @@
  *  - Checkbox state persists in localStorage after clicking a part link
  */
 import { test, expect } from "@playwright/test";
-import {
-  WEB,
-  API,
-  apiSignIn,
-  apiCreateEvent,
-  apiDeleteEvent,
-  uniqueSlug,
-} from "./helpers.js";
+import { WEB, API, apiSignIn, apiCreateEvent, apiDeleteEvent, uniqueSlug } from "./helpers.js";
 
 test.describe("Gallery download page", () => {
   let adminCookie: string;
@@ -49,10 +42,9 @@ test.describe("Gallery download page", () => {
 
         // The page fetches /api/gallery/:slug/download, gets 401, and router.replace()s
         // to the gate — expect to land on /gallery/:slug (not /download)
-        await expect(page).toHaveURL(
-          new RegExp(`/gallery/${eventSlug}(?!/download)(?!/view)`),
-          { timeout: 10_000 }
-        );
+        await expect(page).toHaveURL(new RegExp(`/gallery/${eventSlug}(?!/download)(?!/view)`), {
+          timeout: 10_000,
+        });
         // Gate UI visible
         await expect(page.getByRole("button", { name: /unlock/i })).toBeVisible({
           timeout: 8_000,
@@ -65,7 +57,9 @@ test.describe("Gallery download page", () => {
 
   test.describe("Given a guest with a valid gallery session and no archive ready", () => {
     test.describe("When they navigate to the download page", () => {
-      test("Then they see an appropriate 'no archive' message and a back link", async ({ page }) => {
+      test("Then they see an appropriate 'no archive' message and a back link", async ({
+        page,
+      }) => {
         // Unlock the gallery
         await page.context().clearCookies();
         await page.goto(`${WEB}/gallery/${eventSlug}`);
@@ -85,9 +79,7 @@ test.describe("Gallery download page", () => {
         await expect(page.getByTestId("variant-toggle-kompakt")).toBeVisible({
           timeout: 8_000,
         });
-        const msg = page.getByText(
-          /no archive|archive|prepared|preparing|building|queued|part/i
-        );
+        const msg = page.getByText(/no archive|archive|prepared|preparing|building|queued|part/i);
         await expect(msg.first()).toBeVisible({ timeout: 8_000 });
 
         // Back link present
@@ -114,7 +106,7 @@ test.describe("Gallery download page", () => {
         const s = await fetch(`${API}/api/events/${eventId}/download/status`, {
           headers: { Cookie: adminCookie },
         });
-        const b = await s.json() as { status: string };
+        const b = (await s.json()) as { status: string };
         status = b.status;
         if (status === "READY" || status === "FAILED" || status === "CANCELLED") break;
       }
@@ -146,7 +138,9 @@ test.describe("Gallery download page", () => {
   // ── Checkbox state persists ───────────────────────────────────────────────
 
   test.describe("Given a READY archive with at least one part", () => {
-    test("When a part link is clicked, Then the checkbox turns green and persists on reload", async ({ page }) => {
+    test("When a part link is clicked, Then the checkbox turns green and persists on reload", async ({
+      page,
+    }) => {
       // Force-build to ensure READY
       await fetch(`${API}/api/events/${eventId}/download/build-now`, {
         method: "POST",
@@ -159,7 +153,7 @@ test.describe("Gallery download page", () => {
         const s = await fetch(`${API}/api/events/${eventId}/download/status`, {
           headers: { Cookie: adminCookie },
         });
-        const b = await s.json() as { status: string };
+        const b = (await s.json()) as { status: string };
         status = b.status;
         if (status === "READY" || status === "FAILED") break;
       }
@@ -183,7 +177,7 @@ test.describe("Gallery download page", () => {
       const dlRes = await fetch(`${API}/api/gallery/${eventSlug}/download`, {
         headers: { Cookie: galleryCookieStr },
       });
-      const dlBody = await dlRes.json() as { parts?: unknown[] };
+      const dlBody = (await dlRes.json()) as { parts?: unknown[] };
       if (!dlBody.parts || dlBody.parts.length === 0) {
         test.skip(); // eslint-disable-line playwright/no-skipped-test
         return;
@@ -256,7 +250,9 @@ test.describe("Gallery download page", () => {
     }
 
     test.describe("When the page loads", () => {
-      test("Then it defaults to the Kompakt tab (Kompakt is selected, Original is not)", async ({ page }) => {
+      test("Then it defaults to the Kompakt tab (Kompakt is selected, Original is not)", async ({
+        page,
+      }) => {
         await openDownloadPage(page);
 
         const kompakt = page.getByTestId("variant-toggle-kompakt");
@@ -287,9 +283,7 @@ test.describe("Gallery download page", () => {
         await expect(kompakt).toHaveAttribute("aria-selected", "false");
 
         // The variant's own content is shown: either a summary line or parts.
-        const content = page.getByText(
-          /no download|prepared|part|total|byte|KB|MB|GB/i
-        );
+        const content = page.getByText(/no download|prepared|part|total|byte|KB|MB|GB/i);
         await expect(content.first()).toBeVisible({ timeout: 8_000 });
       });
     });
@@ -298,7 +292,9 @@ test.describe("Gallery download page", () => {
       // Keep this robust to timing: we assert the toggle renders and Kompakt is
       // the default, and (if present) that the building banner sits on the
       // active tab. We do NOT depend on catching a specific transient state.
-      test("Then the toggle renders with Kompakt default, and any building banner appears on the active tab", async ({ page }) => {
+      test("Then the toggle renders with Kompakt default, and any building banner appears on the active tab", async ({
+        page,
+      }) => {
         await openDownloadPage(page);
 
         const kompakt = page.getByTestId("variant-toggle-kompakt");

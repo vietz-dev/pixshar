@@ -43,10 +43,7 @@ export function emitPhotoStatus(eventId: string, payload: PhotoStatusPayload): v
   bus.emit(`photo-status:${eventId}`, payload);
 }
 
-export function onPhotoStatus(
-  eventId: string,
-  cb: (p: PhotoStatusPayload) => void
-): () => void {
+export function onPhotoStatus(eventId: string, cb: (p: PhotoStatusPayload) => void): () => void {
   bus.on(`photo-status:${eventId}`, cb);
   return () => bus.off(`photo-status:${eventId}`, cb);
 }
@@ -57,7 +54,7 @@ export function emitDownloadStatus(eventId: string, payload: DownloadStatusPaylo
 
 export function onDownloadStatus(
   eventId: string,
-  cb: (p: DownloadStatusPayload) => void
+  cb: (p: DownloadStatusPayload) => void,
 ): () => void {
   bus.on(`download-status:${eventId}`, cb);
   return () => bus.off(`download-status:${eventId}`, cb);
@@ -69,7 +66,7 @@ export function emitPhotoProcessed(eventId: string, payload: PhotoProcessedPaylo
 
 export function onPhotoProcessed(
   eventId: string,
-  cb: (p: PhotoProcessedPayload) => void
+  cb: (p: PhotoProcessedPayload) => void,
 ): () => void {
   bus.on(`photo-processed:${eventId}`, cb);
   return () => bus.off(`photo-processed:${eventId}`, cb);

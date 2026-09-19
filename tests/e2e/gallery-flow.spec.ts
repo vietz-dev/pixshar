@@ -33,7 +33,9 @@ test.describe("Gallery flow", () => {
 
   test.describe("Given a guest visiting a private gallery URL", () => {
     test.describe("When they load the gallery page without a session", () => {
-      test("Then they see the password gate with the event name and an unlock button", async ({ page }) => {
+      test("Then they see the password gate with the event name and an unlock button", async ({
+        page,
+      }) => {
         await page.context().clearCookies();
         await page.goto(`${WEB}/gallery/${eventSlug}`);
 
@@ -109,7 +111,7 @@ test.describe("Gallery flow", () => {
         await expect(
           page
             .getByText(/your name|photographer/i)
-            .or(page.locator("input[placeholder*='name' i]"))
+            .or(page.locator("input[placeholder*='name' i]")),
         ).toBeVisible({ timeout: 5_000 });
       });
     });

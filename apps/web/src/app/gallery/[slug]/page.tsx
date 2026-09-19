@@ -71,7 +71,15 @@ export default function GalleryGatePage() {
 
   if (loadingEvent) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#a1a1aa",
+        }}
+      >
         <span>…</span>
       </div>
     );
@@ -89,20 +97,81 @@ export default function GalleryGatePage() {
         background: coverGradient,
       }}
     >
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(15,15,18,.32) 0%,rgba(15,15,18,.55) 100%)" }} />
-      <div style={{ position: "relative", width: "100%", maxWidth: 400, textAlign: "center", animation: "pxRise .55s ease both" }}>
-        <div style={{ fontSize: 12, letterSpacing: ".22em", textTransform: "uppercase", color: "rgba(255,255,255,.82)", fontWeight: 500, marginBottom: 14 }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "linear-gradient(180deg,rgba(15,15,18,.32) 0%,rgba(15,15,18,.55) 100%)",
+        }}
+      />
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 400,
+          textAlign: "center",
+          animation: "pxRise .55s ease both",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 12,
+            letterSpacing: ".22em",
+            textTransform: "uppercase",
+            color: "rgba(255,255,255,.82)",
+            fontWeight: 500,
+            marginBottom: 14,
+          }}
+        >
           {t("privateGallery")}
         </div>
-        <h1 style={{ fontFamily: "'Newsreader', serif", fontWeight: 300, fontSize: 46, lineHeight: 1.08, color: "#fff", margin: "0 0 12px", letterSpacing: "-.01em", textShadow: "0 2px 20px rgba(0,0,0,.25)" }}>
+        <h1
+          style={{
+            fontFamily: "'Newsreader', serif",
+            fontWeight: 300,
+            fontSize: 46,
+            lineHeight: 1.08,
+            color: "#fff",
+            margin: "0 0 12px",
+            letterSpacing: "-.01em",
+            textShadow: "0 2px 20px rgba(0,0,0,.25)",
+          }}
+        >
           {event?.name || t("galleryFallback")}
         </h1>
         <div style={{ fontSize: 14, color: "rgba(255,255,255,.85)", marginBottom: 30 }}>
           {event?.description || t("descriptionFallback")}
         </div>
-        <div style={{ background: "rgba(255,255,255,.97)", backdropFilter: "blur(8px)", borderRadius: 16, boxShadow: "0 20px 50px -18px rgba(0,0,0,.5)", padding: "24px 22px", textAlign: "left" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", fontSize: 13.5, fontWeight: 500, color: "#52525b", marginBottom: 16 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div
+          style={{
+            background: "rgba(255,255,255,.97)",
+            backdropFilter: "blur(8px)",
+            borderRadius: 16,
+            boxShadow: "0 20px 50px -18px rgba(0,0,0,.5)",
+            padding: "24px 22px",
+            textAlign: "left",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              justifyContent: "center",
+              fontSize: 13.5,
+              fontWeight: 500,
+              color: "#52525b",
+              marginBottom: 16,
+            }}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <rect x="4" y="11" width="16" height="10" rx="2"></rect>
               <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
             </svg>
@@ -139,7 +208,9 @@ export default function GalleryGatePage() {
               }}
             />
             {error && (
-              <div style={{ fontSize: 12.5, color: "#dc2626", textAlign: "center", marginBottom: 8 }}>
+              <div
+                style={{ fontSize: 12.5, color: "#dc2626", textAlign: "center", marginBottom: 8 }}
+              >
                 {error}
               </div>
             )}
@@ -165,8 +236,20 @@ export default function GalleryGatePage() {
             </button>
           </form>
         </div>
-        <div style={{ marginTop: 22, fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-          <div style={{ width: 13, height: 13, borderRadius: 4, background: "rgba(255,255,255,.85)" }} />
+        <div
+          style={{
+            marginTop: 22,
+            fontSize: 12,
+            color: "rgba(255,255,255,.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          <div
+            style={{ width: 13, height: 13, borderRadius: 4, background: "rgba(255,255,255,.85)" }}
+          />
           {t("poweredBy")}
         </div>
       </div>

@@ -36,7 +36,7 @@ export async function loginAsAdmin(page: Page): Promise<void> {
 export async function loginViaForm(
   page: Page,
   email = ADMIN_EMAIL,
-  password = ADMIN_PASSWORD
+  password = ADMIN_PASSWORD,
 ): Promise<void> {
   await page.goto(`${WEB}/auth/login`);
   await page.locator("input[type='email']").fill(email);
@@ -77,7 +77,7 @@ export async function apiSignIn(): Promise<string> {
 
 export async function apiCreateEvent(
   cookie: string,
-  opts: { name: string; slug: string; password: string }
+  opts: { name: string; slug: string; password: string },
 ): Promise<{ id: string; slug: string }> {
   const res = await fetch(`${API}/api/events`, {
     method: "POST",

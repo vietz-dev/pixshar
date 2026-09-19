@@ -26,16 +26,13 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
   const active = queue.some((q) => q.status === "queued" || q.status === "uploading");
   const allDone = total > 0 && !active && !queue.some((q) => q.status === "error");
 
-  const submitLabel = submitted && allDone
-    ? t("uploaded")
-    : total > 0
-      ? t("uploadCount", { count: total })
-      : t("chooseFirst");
-  const submitBg = nameOk
-    ? submitted && allDone
-      ? "#16a34a"
-      : "#2563eb"
-    : "#a8c1f0";
+  const submitLabel =
+    submitted && allDone
+      ? t("uploaded")
+      : total > 0
+        ? t("uploadCount", { count: total })
+        : t("chooseFirst");
+  const submitBg = nameOk ? (submitted && allDone ? "#16a34a" : "#2563eb") : "#a8c1f0";
   const submitCursor = nameOk ? "pointer" : "not-allowed";
 
   const fileMapRef = useRef<Map<string, File>>(new Map());
@@ -82,18 +79,21 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
                 ? {
                     ...q,
                     status,
-                    progress: progress ?? (status === "done" || status === "skipped" ? 100 : q.progress),
+                    progress:
+                      progress ?? (status === "done" || status === "skipped" ? 100 : q.progress),
                   }
-                : q
-            )
+                : q,
+            ),
           );
         },
       });
     } catch {
       setQueue((prev) =>
         prev.map((q) =>
-          q.status === "queued" || q.status === "uploading" ? { ...q, status: "error" as const, progress: 0 } : q
-        )
+          q.status === "queued" || q.status === "uploading"
+            ? { ...q, status: "error" as const, progress: 0 }
+            : q,
+        ),
       );
     }
   }
@@ -110,7 +110,9 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
 
   function handleRetry() {
     setQueue((prev) =>
-      prev.map((q) => (q.status === "error" ? { ...q, status: "queued" as const, progress: 0 } : q))
+      prev.map((q) =>
+        q.status === "error" ? { ...q, status: "queued" as const, progress: 0 } : q,
+      ),
     );
     setSubmitted(false);
     // Retry after state updates
@@ -145,9 +147,18 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
           animation: "pxLbIn .26s cubic-bezier(.2,.7,.3,1) both",
         }}
       >
-        <div style={{ padding: "20px 22px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div
+          style={{
+            padding: "20px 22px 0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+          }}
+        >
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.01em", margin: 0 }}>{t("title")}</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.01em", margin: 0 }}>
+              {t("title")}
+            </h2>
             <p style={{ fontSize: 13.5, color: "#71717a", margin: "5px 0 0" }}>
               {t("subtitle", { galleryName })}
             </p>
@@ -167,10 +178,21 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
               cursor: "pointer",
               transition: "background .15s",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#e4e4e7"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#e4e4e7";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#f4f4f5";
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
           </button>
@@ -234,8 +256,28 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
               onChange={(e) => addFilesWithMap(e.target.files)}
               style={{ display: "none" }}
             />
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 11px" }}>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: "#eff6ff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 11px",
+              }}
+            >
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#2563eb"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M12 17V3m0 0L7 8m5-5 5 5" />
                 <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
               </svg>
@@ -258,8 +300,28 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
 
           {/* Disclaimer during active upload */}
           {active && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "8px 10px", background: "#eff6ff", borderRadius: 8, border: "1px solid #dbeafe" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 12,
+                padding: "8px 10px",
+                background: "#eff6ff",
+                borderRadius: 8,
+                border: "1px solid #dbeafe",
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#2563eb"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <circle cx="12" cy="12" r="10" />
                 <path d="M12 16v-4M12 8h.01" />
               </svg>
@@ -286,8 +348,12 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
                 transition: "background .15s",
                 cursor: "pointer",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#15803d"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "#16a34a"; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#15803d";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#16a34a";
+              }}
             >
               {tCommon("close")}
             </button>

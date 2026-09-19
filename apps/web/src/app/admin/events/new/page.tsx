@@ -65,20 +65,55 @@ export default function NewEventPage() {
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "30px 28px 48px" }}>
         <button
           onClick={() => router.push("/admin")}
-          style={{ background: "none", border: "none", color: "#71717a", fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 20, cursor: "pointer", transition: "color .15s" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#09090b"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#71717a"; }}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#71717a",
+            fontSize: 13.5,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: 0,
+            marginBottom: 20,
+            cursor: "pointer",
+            transition: "color .15s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "#09090b";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "#71717a";
+          }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="m15 18-6-6 6-6"></path>
           </svg>
           {t("backToEvents")}
         </button>
-        <h1 style={{ fontSize: 25, fontWeight: 600, letterSpacing: "-.025em", margin: "0 0 5px" }}>{t("title")}</h1>
+        <h1 style={{ fontSize: 25, fontWeight: 600, letterSpacing: "-.025em", margin: "0 0 5px" }}>
+          {t("title")}
+        </h1>
         <p style={{ fontSize: 14.5, color: "#71717a", margin: "0 0 26px" }}>{t("subtitle")}</p>
-        <div style={{ background: "#fff", border: "1px solid #e4e4e7", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.05)", padding: "26px 24px" }}>
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #e4e4e7",
+            borderRadius: 14,
+            boxShadow: "0 1px 3px rgba(0,0,0,.05)",
+            padding: "26px 24px",
+          }}
+        >
           <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>{t("nameLabel")}</label>
+            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
+              {t("nameLabel")}
+            </label>
             <input
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
@@ -106,7 +141,9 @@ export default function NewEventPage() {
               }}
             />
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>{t("shareLinkLabel")}</label>
+            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
+              {t("shareLinkLabel")}
+            </label>
             <div
               style={{
                 display: "flex",
@@ -118,7 +155,18 @@ export default function NewEventPage() {
                 background: "#fff",
               }}
             >
-              <span style={{ display: "flex", alignItems: "center", padding: "0 11px", background: "#f4f4f5", color: "#71717a", fontSize: 13, fontFamily: "'Geist Mono', monospace", borderRight: "1px solid #e4e4e7" }}>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "0 11px",
+                  background: "#f4f4f5",
+                  color: "#71717a",
+                  fontSize: 13,
+                  fontFamily: "'Geist Mono', monospace",
+                  borderRight: "1px solid #e4e4e7",
+                }}
+              >
                 pixshar.app/gallery/
               </span>
               <input
@@ -127,13 +175,24 @@ export default function NewEventPage() {
                 placeholder={t("slugPlaceholder")}
                 required
                 pattern="[a-z0-9-]+"
-                style={{ flex: 1, height: 40, padding: "0 12px", border: "none", fontSize: 13, background: "#fff", outline: "none", fontFamily: "'Geist Mono', monospace", color: "#09090b" }}
+                style={{
+                  flex: 1,
+                  height: 40,
+                  padding: "0 12px",
+                  border: "none",
+                  fontSize: 13,
+                  background: "#fff",
+                  outline: "none",
+                  fontFamily: "'Geist Mono', monospace",
+                  color: "#09090b",
+                }}
               />
             </div>
             <p style={{ fontSize: 12.5, color: "#a1a1aa", margin: "0 0 18px" }}>{t("slugHint")}</p>
 
             <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
-              {t("descriptionLabel")} <span style={{ color: "#a1a1aa", fontWeight: 400 }}>{t("optional")}</span>
+              {t("descriptionLabel")}{" "}
+              <span style={{ color: "#a1a1aa", fontWeight: 400 }}>{t("optional")}</span>
             </label>
             <textarea
               value={description}
@@ -163,7 +222,9 @@ export default function NewEventPage() {
               }}
             />
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>{t("passwordLabel")}</label>
+            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
+              {t("passwordLabel")}
+            </label>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -209,8 +270,12 @@ export default function NewEventPage() {
               transition: "background .15s",
               cursor: "pointer",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#f4f4f5";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#fff";
+            }}
           >
             {t("cancelButton")}
           </button>

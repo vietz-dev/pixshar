@@ -1,6 +1,12 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
 import { env } from "./env.js";
 
 export const s3 = new S3Client({
@@ -44,15 +50,16 @@ export async function getPresignedUrl(
   key: string,
   operation: "get" | "put" = "get",
   expiresIn = 3600,
-  contentDisposition?: string
+  contentDisposition?: string,
 ): Promise<string> {
-  const command = operation === "get"
-    ? new GetObjectCommand({
-        Bucket: env.S3_BUCKET,
-        Key: key,
-        ...(contentDisposition ? { ResponseContentDisposition: contentDisposition } : {}),
-      })
-    : new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key });
+  const command =
+    operation === "get"
+      ? new GetObjectCommand({
+          Bucket: env.S3_BUCKET,
+          Key: key,
+          ...(contentDisposition ? { ResponseContentDisposition: contentDisposition } : {}),
+        })
+      : new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key });
   return getSignedUrl(s3Public, command, { expiresIn });
 }
 
@@ -62,7 +69,7 @@ export async function getPresignedUrl(
 export async function getPresignedPutUrl(
   key: string,
   contentType: string,
-  expiresIn = 900
+  expiresIn = 900,
 ): Promise<string> {
   const command = new PutObjectCommand({
     Bucket: env.S3_BUCKET,
@@ -93,7 +100,7 @@ export async function listS3Prefix(prefix: string): Promise<string[]> {
         Bucket: env.S3_BUCKET,
         Prefix: prefix,
         ContinuationToken: continuationToken,
-      })
+      }),
     );
     for (const o of list.Contents ?? []) {
       if (o.Key) keys.push(o.Key);
@@ -113,7 +120,7 @@ export async function deleteS3Prefix(prefix: string): Promise<number> {
         Bucket: env.S3_BUCKET,
         Prefix: prefix,
         ContinuationToken: continuationToken,
-      })
+      }),
     );
     const objects = (list.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
     if (objects.length > 0) {
@@ -121,7 +128,7 @@ export async function deleteS3Prefix(prefix: string): Promise<number> {
         new DeleteObjectsCommand({
           Bucket: env.S3_BUCKET,
           Delete: { Objects: objects },
-        })
+        }),
       );
       deleted += objects.length;
     }
@@ -140,16 +147,13 @@ export const s3Keys = {
     eventId: string,
     quality: "DISPLAY" | "ORIGINAL",
     partIndex: number,
-    generation: number
+    generation: number,
   ) => `${eventId}/archive/${quality}-part-${partIndex}-g${generation}.zip`,
   // Decide which variant owns a listed archive object, so a quality-scoped orphan
   // sweep never deletes the *other* variant's parts. Legacy objects written
   // before the quality dimension used the `gallery-part-` prefix and are ORIGINAL
   // (the old builder zipped originals).
-  archiveKeyQuality: (
-    eventId: string,
-    key: string
-  ): "DISPLAY" | "ORIGINAL" | null => {
+  archiveKeyQuality: (eventId: string, key: string): "DISPLAY" | "ORIGINAL" | null => {
     const prefix = `${eventId}/archive/`;
     if (!key.startsWith(prefix)) return null;
     const rest = key.slice(prefix.length);

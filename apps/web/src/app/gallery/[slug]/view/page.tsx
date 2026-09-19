@@ -95,7 +95,13 @@ export default function GalleryViewPage() {
     if (!galleryLoaded) return;
     const es = new EventSource(`/api/gallery/${slug}/photos/stream`, { withCredentials: true });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as { id: string; thumbUrl: string; displayUrl: string; photographerName: string | null; placeholderDataUrl: string | null };
+      const p = JSON.parse(e.data) as {
+        id: string;
+        thumbUrl: string;
+        displayUrl: string;
+        photographerName: string | null;
+        placeholderDataUrl: string | null;
+      };
       setGallery((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: GalleryPhoto = {
@@ -121,7 +127,7 @@ export default function GalleryViewPage() {
 
   const processedPhotos = useMemo(
     () => (gallery?.photos ?? []).filter((p) => p.status === "PROCESSED"),
-    [gallery]
+    [gallery],
   );
 
   const photographers = useMemo(() => {
@@ -141,22 +147,39 @@ export default function GalleryViewPage() {
   }, [processedPhotos]);
 
   const filteredPhotos = useMemo(
-    () => activePhotographer
-      ? processedPhotos.filter((p) => p.photographerName === activePhotographer)
-      : processedPhotos,
-    [processedPhotos, activePhotographer]
+    () =>
+      activePhotographer
+        ? processedPhotos.filter((p) => p.photographerName === activePhotographer)
+        : processedPhotos,
+    [processedPhotos, activePhotographer],
   );
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#a1a1aa",
+        }}
+      >
         {tCommon("loading")}
       </div>
     );
   }
   if (error) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#dc2626",
+        }}
+      >
         {error}
       </div>
     );
@@ -186,7 +209,13 @@ export default function GalleryViewPage() {
           alignItems: "flex-end",
         }}
       >
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(15,15,18,.05) 0%,rgba(15,15,18,.5) 100%)" }} />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "linear-gradient(180deg,rgba(15,15,18,.05) 0%,rgba(15,15,18,.5) 100%)",
+          }}
+        />
         <div
           style={{
             position: "relative",
@@ -202,7 +231,16 @@ export default function GalleryViewPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: 11.5, letterSpacing: ".2em", textTransform: "uppercase", color: "rgba(255,255,255,.85)", fontWeight: 500, marginBottom: 9 }}>
+            <div
+              style={{
+                fontSize: 11.5,
+                letterSpacing: ".2em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,.85)",
+                fontWeight: 500,
+                marginBottom: 9,
+              }}
+            >
               {t("eventLabel")}
             </div>
             <h1
@@ -241,10 +279,23 @@ export default function GalleryViewPage() {
               transition: "transform .15s",
               cursor: "pointer",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = ""; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "";
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 17V3m0 0L7 8m5-5 5 5"></path>
               <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"></path>
             </svg>
@@ -269,14 +320,33 @@ export default function GalleryViewPage() {
         }}
       >
         {/* Row 1: count + controls */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>{photoCountLabel}</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 14,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>
+            {photoCountLabel}
+          </span>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <DownloadButton slug={slug} />
             {!isMobile && (
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>{t("layout")}</span>
-                <div style={{ display: "flex", gap: 3, background: "#f4f4f5", border: "1px solid #ececee", borderRadius: 9, padding: 3 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 3,
+                    background: "#f4f4f5",
+                    border: "1px solid #ececee",
+                    borderRadius: 9,
+                    padding: 3,
+                  }}
+                >
                   {layoutItems.map((l) => {
                     const active = layout === l.key;
                     return (
@@ -312,20 +382,41 @@ export default function GalleryViewPage() {
 
         {/* Row 2: photographer filter chips */}
         {photographers.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingTop: 9, marginTop: 9, borderTop: "1px solid #f0f0f2" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              paddingTop: 9,
+              marginTop: 9,
+              borderTop: "1px solid #f0f0f2",
+            }}
+          >
             <button
               onClick={() => setActivePhotographer(null)}
               style={{
-                height: 28, padding: "0 11px", borderRadius: 999,
+                height: 28,
+                padding: "0 11px",
+                borderRadius: 999,
                 border: activePhotographer === null ? "none" : "1px solid #e4e4e7",
                 background: activePhotographer === null ? "#18181b" : "#fff",
                 color: activePhotographer === null ? "#fff" : "#52525b",
-                fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                fontSize: 12.5,
+                fontWeight: 500,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
                 transition: "background .15s, color .15s, border .15s",
               }}
             >
               {t("filterAll")}
-              <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+              <span
+                style={{
+                  marginLeft: 5,
+                  opacity: 0.6,
+                  fontSize: 11.5,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {processedPhotos.length}
               </span>
             </button>
@@ -336,16 +427,28 @@ export default function GalleryViewPage() {
                   key={name}
                   onClick={() => setActivePhotographer(active ? null : name)}
                   style={{
-                    height: 28, padding: "0 11px", borderRadius: 999,
+                    height: 28,
+                    padding: "0 11px",
+                    borderRadius: 999,
                     border: active ? "none" : "1px solid #e4e4e7",
                     background: active ? "#18181b" : "#fff",
                     color: active ? "#fff" : "#52525b",
-                    fontSize: 12.5, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
                     transition: "background .15s, color .15s, border .15s",
                   }}
                 >
                   {name}
-                  <span style={{ marginLeft: 5, opacity: 0.6, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                  <span
+                    style={{
+                      marginLeft: 5,
+                      opacity: 0.6,
+                      fontSize: 11.5,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
                     {photographerCounts.get(name)}
                   </span>
                 </button>
@@ -377,13 +480,20 @@ export default function GalleryViewPage() {
       {/* Lightbox */}
       {lbOpen && (
         <Lightbox
-          photos={filteredPhotos.map((p) => ({ id: p.id, url: p.displayUrl, photographerName: p.photographerName, placeholderDataUrl: p.placeholderDataUrl ?? null }))}
+          photos={filteredPhotos.map((p) => ({
+            id: p.id,
+            url: p.displayUrl,
+            photographerName: p.photographerName,
+            placeholderDataUrl: p.placeholderDataUrl ?? null,
+          }))}
           index={lbIndex}
           onClose={() => setLbOpen(false)}
           onNext={() => setLbIndex((i) => (i + 1) % filteredPhotos.length)}
           onPrev={() => setLbIndex((i) => (i - 1 + filteredPhotos.length) % filteredPhotos.length)}
           onDownload={async (photoId) => {
-            const res = await fetch(`/api/gallery/${slug}/photos/${photoId}/download`, { credentials: "include" });
+            const res = await fetch(`/api/gallery/${slug}/photos/${photoId}/download`, {
+              credentials: "include",
+            });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Download failed");
             return data.url;
@@ -396,7 +506,10 @@ export default function GalleryViewPage() {
         <UploadModal
           galleryName={gallery.name}
           slug={slug}
-          onClose={() => { setUploadModalOpen(false); fetchGallery(); }}
+          onClose={() => {
+            setUploadModalOpen(false);
+            fetchGallery();
+          }}
         />
       )}
     </div>

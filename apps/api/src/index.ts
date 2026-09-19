@@ -14,13 +14,15 @@ import { startBoss } from "./lib/pgboss.js";
 import { startPgNotifyListener } from "./lib/pgNotifyListener.js";
 import { httpRequestsTotal, httpRequestDuration } from "./lib/metrics.js";
 
-const app = new Hono({strict: false });
+const app = new Hono({ strict: false });
 
 app.use(logger());
-app.use(cors({
-  origin: env.WEB_URL,
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: env.WEB_URL,
+    credentials: true,
+  }),
+);
 
 // Security headers
 app.use(async (c, next) => {
@@ -36,10 +38,12 @@ app.use(async (c, next) => {
 });
 
 // Max request body size (100MB) — handles both Content-Length and Transfer-Encoding: chunked
-app.use(bodyLimit({
-  maxSize: 100 * 1024 * 1024,
-  onError: (c) => c.json({ error: "Request body too large" }, 413),
-}));
+app.use(
+  bodyLimit({
+    maxSize: 100 * 1024 * 1024,
+    onError: (c) => c.json({ error: "Request body too large" }, 413),
+  }),
+);
 
 // HTTP metrics — skip SSE streams (they stay open indefinitely, skewing histograms)
 app.use(async (c, next) => {
@@ -58,7 +62,7 @@ app.use(async (c, next) => {
 
 const api = app.basePath("/api");
 
-api.route('/auth', auth);
+api.route("/auth", auth);
 api.route("/events", events);
 api.route("/gallery", gallery);
 api.route("/upload", upload);

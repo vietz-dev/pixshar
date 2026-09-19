@@ -26,7 +26,7 @@ export const uploadInitSchema = z.object({
         contentType: z.enum(ALLOWED_MIME_TYPES as [string, ...string[]]),
         size: z.number().int().positive().max(MAX_FILE_SIZE),
         fileHash: z.string().regex(/^[a-f0-9]{64}$/, "fileHash must be 64-char lowercase hex"),
-      })
+      }),
     )
     .min(1),
   photographerName: z.string().max(100).optional(),
@@ -74,7 +74,7 @@ export async function initUpload(opts: {
   if (failed.length) {
     await prisma.photo.deleteMany({ where: { id: { in: failed.map((f) => f.id) } } });
     await Promise.all(
-      failed.filter((f) => f.originalKey).map((f) => deleteS3Object(f.originalKey).catch(() => {}))
+      failed.filter((f) => f.originalKey).map((f) => deleteS3Object(f.originalKey).catch(() => {})),
     );
   }
 
@@ -102,7 +102,7 @@ export async function initUpload(opts: {
     fileHash: string,
     id: string,
     originalKey: string,
-    contentType: string
+    contentType: string,
   ): Promise<UploadInitResult> => ({
     fileHash,
     duplicate: false,
@@ -120,7 +120,9 @@ export async function initUpload(opts: {
     }
     const existingPending = pending.get(f.fileHash);
     if (existingPending && existingPending.originalKey) {
-      results.push(await resume(f.fileHash, existingPending.id, existingPending.originalKey, f.contentType));
+      results.push(
+        await resume(f.fileHash, existingPending.id, existingPending.originalKey, f.contentType),
+      );
       continue;
     }
 
@@ -182,8 +184,8 @@ export async function completeUpload(_eventId: string, photoIds: string[]): Prom
           retryBackoff: true,
           // Wait for S3 object consistency before the worker fetches it.
           startAfter: Math.ceil(env.PROCESS_MIN_AGE_MS / 1000),
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
 }

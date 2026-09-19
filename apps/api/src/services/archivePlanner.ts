@@ -29,7 +29,7 @@ export function zipEntryBytes(fileSizeBytes: number, entryNameLength: number): n
 // limit still gets its own (oversized) part — a file can't be split.
 export function planArchiveParts<T>(
   entries: PlannedEntry<T>[],
-  maxPartBytes: number
+  maxPartBytes: number,
 ): PlannedPart<T>[] {
   const safetyMargin = Math.min(ZIP_PART_SAFETY_MARGIN_BYTES, Math.floor(maxPartBytes * 0.1));
   const effectiveMax = maxPartBytes - safetyMargin;

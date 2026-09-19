@@ -27,7 +27,10 @@ interface PhotoGridProps {
 
 const GAP = 8;
 
-function getLayoutParams(layout: string, containerWidth: number): { cols: number; itemW: number; rowH: number } {
+function getLayoutParams(
+  layout: string,
+  containerWidth: number,
+): { cols: number; itemW: number; rowH: number } {
   if (layout === "uniform") {
     const minW = 150;
     const cols = Math.max(1, Math.floor((containerWidth + GAP) / (minW + GAP)));
@@ -47,7 +50,15 @@ function getLayoutParams(layout: string, containerWidth: number): { cols: number
   return { cols, itemW, rowH: itemW };
 }
 
-export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, selectable, selectedIds, onToggleSelect }: PhotoGridProps) {
+export default function PhotoGrid({
+  photos,
+  layout,
+  onPhotoClick,
+  onDelete,
+  selectable,
+  selectedIds,
+  onToggleSelect,
+}: PhotoGridProps) {
   const t = useTranslations("photoGrid");
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);
@@ -114,7 +125,16 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
         }}
       >
         {isSelected && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M20 6 9 17l-5-5" />
           </svg>
         )}
@@ -125,7 +145,10 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
   const deleteBtn = (photoId: string) => (
     <button
       data-del
-      onClick={(e) => { e.stopPropagation(); onDelete?.(photoId); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onDelete?.(photoId);
+      }}
       style={{
         position: "absolute",
         top: 8,
@@ -145,7 +168,14 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
         zIndex: 2,
       }}
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+      >
         <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
       </svg>
     </button>
@@ -164,8 +194,24 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
       );
     }
     return (
-      <div style={{ width: "100%", height: "100%", background: "#f4f4f5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.5">
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          background: "#f4f4f5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#a1a1aa"
+          strokeWidth="1.5"
+        >
           <rect x="3" y="3" width="18" height="18" rx="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <path d="m21 15-5-5L5 21" />
@@ -174,17 +220,41 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
     );
   };
 
-  const statusBadge = (p: GridPhoto) => (
+  const statusBadge = (p: GridPhoto) =>
     p.status && p.status !== "PROCESSED" ? (
-      <div style={{ position: "absolute", bottom: 6, left: 6, height: 20, padding: "0 8px", borderRadius: 999, background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 11, display: "flex", alignItems: "center" }}>
+      <div
+        style={{
+          position: "absolute",
+          bottom: 6,
+          left: 6,
+          height: 20,
+          padding: "0 8px",
+          borderRadius: 999,
+          background: "rgba(0,0,0,.6)",
+          color: "#fff",
+          fontSize: 11,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         {p.status === "PENDING" ? t("statusProcessing") : t("statusFailed")}
       </div>
-    ) : null
-  );
+    ) : null;
 
   if (photos.length === 0) {
     return (
-      <div ref={containerRef} style={{ textAlign: "center", padding: "40px 20px", border: "1px solid #f4f4f5", borderRadius: 12, background: "#fff", color: "#a1a1aa", fontSize: 13.5 }}>
+      <div
+        ref={containerRef}
+        style={{
+          textAlign: "center",
+          padding: "40px 20px",
+          border: "1px solid #f4f4f5",
+          borderRadius: 12,
+          background: "#fff",
+          color: "#a1a1aa",
+          fontSize: 13.5,
+        }}
+      >
         {t("noPhotos")}
       </div>
     );
@@ -224,7 +294,8 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
                       overflow: "hidden",
                       transition: "transform .2s, box-shadow .2s, filter .2s, outline .12s",
                       position: "relative",
-                      outline: selectable && selectedIds?.has(p.id) ? "2.5px solid #2563eb" : "none",
+                      outline:
+                        selectable && selectedIds?.has(p.id) ? "2.5px solid #2563eb" : "none",
                       outlineOffset: -2,
                     }}
                     onMouseEnter={(e) => {
@@ -247,7 +318,11 @@ export default function PhotoGrid({ photos, layout, onPhotoClick, onDelete, sele
                     }}
                   >
                     <div
-                      onClick={() => selectable && onToggleSelect ? onToggleSelect(p.id) : onPhotoClick(p, globalIndex)}
+                      onClick={() =>
+                        selectable && onToggleSelect
+                          ? onToggleSelect(p.id)
+                          : onPhotoClick(p, globalIndex)
+                      }
                       style={{ width: "100%", height: "100%" }}
                     >
                       {imgOrPlaceholder(p)}

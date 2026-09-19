@@ -8,7 +8,7 @@ describe("Health Check", () => {
         const res = await fetch(`${API}/health`);
         expect(res.status).toBe(200);
 
-        const body = await res.json() as { status: string };
+        const body = (await res.json()) as { status: string };
         expect(body.status).toBe("ok");
       });
     });

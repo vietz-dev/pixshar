@@ -7,14 +7,20 @@ import { s3, deleteS3Object, getPresignedUrl } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { HonoVariables } from "../types.js";
-import { buildNow, rebuildAll, cancelJob, triggerReconcileAllVariants, statusMessage } from "../services/downloadJob.js";
+import {
+  buildNow,
+  rebuildAll,
+  cancelJob,
+  triggerReconcileAllVariants,
+  statusMessage,
+} from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
 import { hashPassword } from "../lib/hash.js";
 import { encryptPassword, decryptPassword } from "../lib/crypto.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
+import { photoDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -28,7 +34,11 @@ function parseQuality(c: { req: { query: (k: string) => string | undefined } }):
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9-]+$/),
   description: z.string().max(1000).optional(),
   password: z.string().min(1).max(128),
 });
@@ -106,38 +116,43 @@ app.get("/:id", requireAdmin, async (c) => {
   }
 
   const photosWithUrls = await Promise.all(
-    event.photos.map(async (photo: typeof event.photos[0]) => ({
+    event.photos.map(async (photo: (typeof event.photos)[0]) => ({
       ...photo,
       thumbUrl: photo.thumbKey ? await getPresignedUrl(photo.thumbKey, "get", 3600) : "",
       displayUrl: photo.displayKey ? await getPresignedUrl(photo.displayKey, "get", 3600) : "",
-    }))
+    })),
   );
 
   const decryptedPassword = event.password ? decryptPassword(event.password) : null;
   return c.json({ ...event, password: decryptedPassword, photos: photosWithUrls });
 });
 
-app.patch("/:id/password", requireAdmin, zValidator("json", z.object({ password: z.string().min(1).max(128) })), async (c) => {
-  const id = c.req.param("id");
-  const user = c.get("user");
-  const { password } = c.req.valid("json");
+app.patch(
+  "/:id/password",
+  requireAdmin,
+  zValidator("json", z.object({ password: z.string().min(1).max(128) })),
+  async (c) => {
+    const id = c.req.param("id");
+    const user = c.get("user");
+    const { password } = c.req.valid("json");
 
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event) {
-    return c.json({ error: "Event not found" }, 404);
-  }
-  if (event.createdById !== user.id) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+    const event = await prisma.event.findUnique({ where: { id } });
+    if (!event) {
+      return c.json({ error: "Event not found" }, 404);
+    }
+    if (event.createdById !== user.id) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
 
-  const passwordHash = await hashPassword(password);
-  await prisma.event.update({
-    where: { id },
-    data: { password: encryptPassword(password), passwordHash },
-  });
+    const passwordHash = await hashPassword(password);
+    await prisma.event.update({
+      where: { id },
+      data: { password: encryptPassword(password), passwordHash },
+    });
 
-  return c.json({ success: true });
-});
+    return c.json({ success: true });
+  },
+);
 
 app.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
@@ -160,7 +175,7 @@ app.delete("/:id", requireAdmin, async (c) => {
       new ListObjectsV2Command({
         Bucket: env.S3_BUCKET,
         Prefix: prefix,
-      })
+      }),
     );
     if (list.Contents) {
       for (const obj of list.Contents) {
@@ -271,7 +286,20 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
           failureReason: job.failureReason,
           updatedAt: job.updatedAt.toISOString(),
         }
-      : { quality, status: "NONE", message: statusMessage("NONE"), photoCount: 0, processedPhotos: 0, uploadProgress: 0, totalPhotos, totalSizeBytes: null, partCount: 0, debounceUntil: null, failureReason: null, updatedAt: new Date().toISOString() };
+      : {
+          quality,
+          status: "NONE",
+          message: statusMessage("NONE"),
+          photoCount: 0,
+          processedPhotos: 0,
+          uploadProgress: 0,
+          totalPhotos,
+          totalSizeBytes: null,
+          partCount: 0,
+          debounceUntil: null,
+          failureReason: null,
+          updatedAt: new Date().toISOString(),
+        };
 
     await stream.writeSSE({ data: JSON.stringify(initial), event: "download-status" });
 
@@ -369,7 +397,7 @@ app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
     photo.originalKey,
     "get",
     60 * 60,
-    `attachment; filename="${filename}"`
+    `attachment; filename="${filename}"`,
   );
   photoDownloadsTotal.inc({ actor: "admin" });
   return c.json({ url });
@@ -414,9 +442,9 @@ app.post("/:id/photos/retry", requireAdmin, async (c) => {
           retryLimit: env.PROCESS_MAX_ATTEMPTS - 1,
           retryDelay: 10,
           retryBackoff: true,
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
   return c.json({ success: true, requeued: res.count });
 });
@@ -429,7 +457,7 @@ app.patch(
     z.object({
       photoIds: z.array(z.string().min(1)).min(1),
       photographerName: z.string().max(100),
-    })
+    }),
   ),
   async (c) => {
     const eventId = c.req.param("id");
@@ -447,7 +475,7 @@ app.patch(
     });
 
     return c.json({ success: true, updated: result.count });
-  }
+  },
 );
 
 app.delete(
@@ -473,18 +501,21 @@ app.delete(
       photos.flatMap((p) =>
         [p.originalKey, p.displayKey, p.thumbKey]
           .filter(Boolean)
-          .map((key) => deleteS3Object(key as string).catch(() => {}))
-      )
+          .map((key) => deleteS3Object(key as string).catch(() => {})),
+      ),
     );
 
     await prisma.photo.deleteMany({
       where: { id: { in: photos.map((p) => p.id) }, eventId },
     });
 
-    await staleArchivePartsForPhotos(eventId, photos.map((p) => p.id));
+    await staleArchivePartsForPhotos(
+      eventId,
+      photos.map((p) => p.id),
+    );
 
     return c.json({ success: true, deleted: photos.length });
-  }
+  },
 );
 
 app.delete("/:id/photos/:photoId", requireAdmin, async (c) => {

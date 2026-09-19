@@ -27,7 +27,6 @@ interface DownloadState {
 
 export default function DownloadButton({ slug }: { slug: string }) {
   const t = useTranslations("download.button");
-  const tView = useTranslations("gallery.view");
   const router = useRouter();
   const [state, setState] = useState<DownloadState | null>(null);
 
@@ -67,7 +66,16 @@ export default function DownloadButton({ slug }: { slug: string }) {
           opacity: 0.7,
         }}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -107,10 +115,23 @@ export default function DownloadButton({ slug }: { slug: string }) {
           cursor: "pointer",
           transition: "background .15s",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "#f4f4f5";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "#fff";
+        }}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -122,7 +143,9 @@ export default function DownloadButton({ slug }: { slug: string }) {
 
   if (state.status === "BUILDING" && state.photoCount && state.photoCount > 0) {
     const isUploading = state.processedPhotos === -1;
-    const pct = isUploading ? (state.uploadProgress ?? 0) : Math.round((state.processedPhotos ?? 0) / state.photoCount * 100);
+    const pct = isUploading
+      ? (state.uploadProgress ?? 0)
+      : Math.round(((state.processedPhotos ?? 0) / state.photoCount) * 100);
     const label = isUploading ? t("uploadingS3", { pct }) : t("buildingPct", { pct });
     return (
       <button
@@ -145,15 +168,34 @@ export default function DownloadButton({ slug }: { slug: string }) {
           overflow: "hidden",
         }}
       >
-        <div style={{
-          position: "absolute",
-          inset: 0,
-          width: `${pct}%`,
-          background: "rgba(37,99,235,.12)",
-          transition: "width .5s ease",
-        }} />
-        <span style={{ position: "relative", zIndex: 1, display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "pxSpin 1s linear infinite" }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: `${pct}%`,
+            background: "rgba(37,99,235,.12)",
+            transition: "width .5s ease",
+          }}
+        />
+        <span
+          style={{
+            position: "relative",
+            zIndex: 1,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            style={{ animation: "pxSpin 1s linear infinite" }}
+          >
             <path d="M21 12a9 9 0 1 1-6.2-8.5"></path>
           </svg>
           {label}
@@ -186,12 +228,30 @@ export default function DownloadButton({ slug }: { slug: string }) {
       }}
     >
       {state.status === "BUILDING" && (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "pxSpin 1s linear infinite" }}>
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          style={{ animation: "pxSpin 1s linear infinite" }}
+        >
           <path d="M21 12a9 9 0 1 1-6.2-8.5"></path>
         </svg>
       )}
       {state.status !== "BUILDING" && (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -202,13 +262,21 @@ export default function DownloadButton({ slug }: { slug: string }) {
   );
 }
 
-function labelFor(t: ReturnType<typeof useTranslations<"download.button">>, status: DownloadStatus): string {
+function labelFor(
+  t: ReturnType<typeof useTranslations<"download.button">>,
+  status: DownloadStatus,
+): string {
   switch (status) {
-    case "NONE": return t("preparing");
-    case "DEBOUNCING": return t("waitingUploads");
-    case "BUILDING": return t("building");
-    case "FAILED": return t("unavailable");
-    default: return t("downloadAll");
+    case "NONE":
+      return t("preparing");
+    case "DEBOUNCING":
+      return t("waitingUploads");
+    case "BUILDING":
+      return t("building");
+    case "FAILED":
+      return t("unavailable");
+    default:
+      return t("downloadAll");
   }
 }
 

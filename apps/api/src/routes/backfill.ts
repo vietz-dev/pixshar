@@ -14,7 +14,7 @@ app.get("/status", requireAdmin, async (c) => {
   return c.json({ total, missing });
 });
 
-app.post("/start", requireAdmin, async (c) => {
+app.post("/start", requireAdmin, async () => {
   const photos = await prisma.photo.findMany({
     where: { status: "PROCESSED", placeholderDataUrl: null, thumbKey: { not: "" } },
     select: { id: true, thumbKey: true },
@@ -38,7 +38,7 @@ app.post("/start", requireAdmin, async (c) => {
           batch.map(async (photo) => {
             try {
               const thumbBuf = await getS3Object(photo.thumbKey);
-              const placeholderDataUrl = await new Bun.Image(thumbBuf).placeholder() as string;
+              const placeholderDataUrl = (await new Bun.Image(thumbBuf).placeholder()) as string;
               await prisma.photo.update({
                 where: { id: photo.id },
                 data: { placeholderDataUrl },
@@ -46,7 +46,7 @@ app.post("/start", requireAdmin, async (c) => {
             } catch {
               // skip photos that fail — don't abort the whole backfill
             }
-          })
+          }),
         );
         processed += batch.length;
         controller.enqueue(encode({ total, processed }));

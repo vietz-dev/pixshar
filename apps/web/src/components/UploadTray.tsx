@@ -22,8 +22,16 @@ interface UploadTrayProps {
 }
 
 export const TINTS = [
-  "#fecaca", "#bfdbfe", "#bbf7d0", "#fde68a", "#ddd6fe",
-  "#fbcfe8", "#99f6e4", "#fed7aa", "#c7d2fe", "#e9d5ff",
+  "#fecaca",
+  "#bfdbfe",
+  "#bbf7d0",
+  "#fde68a",
+  "#ddd6fe",
+  "#fbcfe8",
+  "#99f6e4",
+  "#fed7aa",
+  "#c7d2fe",
+  "#e9d5ff",
 ];
 
 export function randomTint() {
@@ -43,13 +51,28 @@ export default function UploadTray({
   const isSmall = size === "small";
 
   const stats = useMemo(() => {
-    let done = 0, err = 0, up = 0, queued = 0, skipped = 0, processed = 0;
+    let done = 0,
+      err = 0,
+      up = 0,
+      queued = 0,
+      skipped = 0,
+      processed = 0;
     for (const it of queue) {
-      if (it.status === "done") { done++; processed += 100; }
-      else if (it.status === "skipped") { skipped++; processed += 100; }
-      else if (it.status === "error") { err++; processed += 100; }
-      else if (it.status === "uploading") { up++; processed += it.progress; }
-      else { queued++; }
+      if (it.status === "done") {
+        done++;
+        processed += 100;
+      } else if (it.status === "skipped") {
+        skipped++;
+        processed += 100;
+      } else if (it.status === "error") {
+        err++;
+        processed += 100;
+      } else if (it.status === "uploading") {
+        up++;
+        processed += it.progress;
+      } else {
+        queued++;
+      }
     }
     const total = queue.length;
     const active = queued + up > 0;
@@ -88,7 +111,7 @@ export default function UploadTray({
   const CAP = 60;
   const sorted = useMemo(
     () => queue.slice().sort((a, b) => order[a.status] - order[b.status]),
-    [queue]
+    [queue],
   );
   const rows = sorted.slice(0, CAP);
   const overflow = total - rows.length;
@@ -118,11 +141,16 @@ export default function UploadTray({
 
   function statusLabel(status: UploadItem["status"], progress: number): string {
     switch (status) {
-      case "done": return t("statusDone");
-      case "error": return t("statusFailed");
-      case "uploading": return `${Math.round(progress)}%`;
-      case "skipped": return t("statusAlreadyUploaded");
-      default: return t("statusQueued");
+      case "done":
+        return t("statusDone");
+      case "error":
+        return t("statusFailed");
+      case "uploading":
+        return `${Math.round(progress)}%`;
+      case "skipped":
+        return t("statusAlreadyUploaded");
+      default:
+        return t("statusQueued");
     }
   }
 
@@ -140,23 +168,57 @@ export default function UploadTray({
       <div style={{ display: "flex", alignItems: "center", gap, padding: `${padY} ${padX}` }}>
         {/* Ring */}
         <div style={{ position: "relative", width: svgSize, height: svgSize, flexShrink: 0 }}>
-          <svg width={svgSize} height={svgSize} viewBox="0 0 40 40" style={{ transform: "rotate(-90deg)" }}>
+          <svg
+            width={svgSize}
+            height={svgSize}
+            viewBox="0 0 40 40"
+            style={{ transform: "rotate(-90deg)" }}
+          >
             <circle cx="20" cy="20" r="16" fill="none" stroke="#f1f1f3" strokeWidth={strokeW} />
             <circle
-              cx="20" cy="20" r="16" fill="none" stroke={ringColor}
-              strokeWidth={strokeW} strokeLinecap="round"
+              cx="20"
+              cy="20"
+              r="16"
+              fill="none"
+              stroke={ringColor}
+              strokeWidth={strokeW}
+              strokeLinecap="round"
               strokeDasharray={CIRC}
               strokeDashoffset={offset}
               style={{ transition: "stroke-dashoffset .3s ease, stroke .3s ease" }}
             />
           </svg>
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             {active ? (
-              <span style={{ fontSize: ringFont, fontWeight: 600, color: "#3f3f46", fontVariantNumeric: "tabular-nums" }}>
+              <span
+                style={{
+                  fontSize: ringFont,
+                  fontWeight: 600,
+                  color: "#3f3f46",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {pctRounded}%
               </span>
             ) : (
-              <svg width={checkSize} height={checkSize} viewBox="0 0 24 24" fill="none" stroke={ringColor} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width={checkSize}
+                height={checkSize}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={ringColor}
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M20 6 9 17l-5-5" />
               </svg>
             )}
@@ -164,7 +226,9 @@ export default function UploadTray({
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: titleSize, fontWeight: 600, letterSpacing: "-.01em" }}>{title}</div>
+          <div style={{ fontSize: titleSize, fontWeight: 600, letterSpacing: "-.01em" }}>
+            {title}
+          </div>
           <div style={{ fontSize: subSize, color: "#71717a", marginTop: 2 }}>{subtitle}</div>
         </div>
 
@@ -185,11 +249,26 @@ export default function UploadTray({
             transition: "background .15s",
             cursor: "pointer",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f4f4f5";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#fff";
+          }}
         >
           {showDetails ? "↑" : "↓"}
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ transform: showDetails ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            style={{
+              transform: showDetails ? "rotate(180deg)" : "none",
+              transition: "transform .2s",
+            }}
+          >
             <path d="m6 9 6 6 6-6" />
           </svg>
         </button>
@@ -227,8 +306,24 @@ export default function UploadTray({
 
       {/* Error banner */}
       {err > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: errPad, background: "#fef2f2", borderTop: "1px solid #fee2e2" }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            padding: errPad,
+            background: "#fef2f2",
+            borderTop: "1px solid #fee2e2",
+          }}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#dc2626"
+            strokeWidth="2"
+          >
             <circle cx="12" cy="12" r="9" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
@@ -249,8 +344,12 @@ export default function UploadTray({
               transition: "background .15s",
               cursor: "pointer",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#fff5f5"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#fff5f5";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#fff";
+            }}
           >
             {t("retryButton")}
           </button>
@@ -259,35 +358,84 @@ export default function UploadTray({
 
       {/* Details rows */}
       {showDetails && (
-        <div className="pxscroll" style={{ maxHeight: maxH, overflowY: "auto", borderTop: "1px solid #f1f1f3" }}>
+        <div
+          className="pxscroll"
+          style={{ maxHeight: maxH, overflowY: "auto", borderTop: "1px solid #f1f1f3" }}
+        >
           {rows.map((u) => (
             <div
               key={u.id}
-              style={{ display: "flex", alignItems: "center", gap: isSmall ? 9 : 11, padding: rowPad, borderBottom: "1px solid #fafafa" }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: isSmall ? 9 : 11,
+                padding: rowPad,
+                borderBottom: "1px solid #fafafa",
+              }}
             >
-              <div style={{ width: thumbSize, height: thumbSize, borderRadius: thumbRadius, background: u.tint, flexShrink: 0, position: "relative", overflow: "hidden" }}>
+              <div
+                style={{
+                  width: thumbSize,
+                  height: thumbSize,
+                  borderRadius: thumbRadius,
+                  background: u.tint,
+                  flexShrink: 0,
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+              >
                 {u.status === "uploading" && (
                   <div
                     style={{
                       position: "absolute",
                       inset: 0,
-                      background: "linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%)",
+                      background:
+                        "linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%)",
                       backgroundSize: "200% 100%",
                       animation: "pxShimmer 1.1s linear infinite",
                     }}
                   />
                 )}
               </div>
-              <span style={{ flex: 1, minWidth: 0, fontSize: rowFont, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: rowFont,
+                  fontWeight: 500,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
                 {u.name}
               </span>
-              <span style={{ fontSize: statusFont, fontWeight: 500, color: u.status === "done" ? "#16a34a" : u.status === "error" ? "#dc2626" : u.status === "uploading" ? "#2563eb" : u.status === "skipped" ? "#0891b2" : "#a1a1aa", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+              <span
+                style={{
+                  fontSize: statusFont,
+                  fontWeight: 500,
+                  color:
+                    u.status === "done"
+                      ? "#16a34a"
+                      : u.status === "error"
+                        ? "#dc2626"
+                        : u.status === "uploading"
+                          ? "#2563eb"
+                          : u.status === "skipped"
+                            ? "#0891b2"
+                            : "#a1a1aa",
+                  flexShrink: 0,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {statusLabel(u.status, u.progress)}
               </span>
             </div>
           ))}
           {overflow > 0 && (
-            <div style={{ padding: rowPad, fontSize: ovFont, color: "#a1a1aa", textAlign: "center" }}>
+            <div
+              style={{ padding: rowPad, fontSize: ovFont, color: "#a1a1aa", textAlign: "center" }}
+            >
               {t("overflow", { count: fmt(overflow) })}
             </div>
           )}

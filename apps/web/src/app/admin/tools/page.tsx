@@ -72,7 +72,8 @@ export default function AdminToolsPage() {
     setRunning(false);
   }
 
-  const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+  const pct =
+    progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
 
   return (
     <div style={{ maxWidth: 680, margin: "0 auto", padding: "40px 24px" }}>
@@ -101,10 +102,14 @@ export default function AdminToolsPage() {
           padding: 24,
         }}
       >
-        <h2 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>Blur-Platzhalterbilder generieren</h2>
-        <p style={{ margin: "0 0 20px", color: "var(--text-muted)", fontSize: 14, lineHeight: 1.6 }}>
-          Generiert Blur-Platzhalterbilder für alle bereits hochgeladenen Fotos, die noch keinen Platzhalter haben.
-          Neue Fotos erhalten den Platzhalter automatisch beim Verarbeiten.
+        <h2 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>
+          Blur-Platzhalterbilder generieren
+        </h2>
+        <p
+          style={{ margin: "0 0 20px", color: "var(--text-muted)", fontSize: 14, lineHeight: 1.6 }}
+        >
+          Generiert Blur-Platzhalterbilder für alle bereits hochgeladenen Fotos, die noch keinen
+          Platzhalter haben. Neue Fotos erhalten den Platzhalter automatisch beim Verarbeiten.
         </p>
 
         {status && (

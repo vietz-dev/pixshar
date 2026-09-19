@@ -15,7 +15,9 @@ export async function setup() {
     if (attempt > 0) {
       // Back off: wait for BetterAuth's rate limit window to partly expire.
       const wait = attempt * 5_000;
-      console.log(`[globalSetup] Rate limited, retrying in ${wait / 1000}s (attempt ${attempt + 1})`);
+      console.log(
+        `[globalSetup] Rate limited, retrying in ${wait / 1000}s (attempt ${attempt + 1})`,
+      );
       await new Promise((r) => setTimeout(r, wait));
     }
 

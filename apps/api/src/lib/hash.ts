@@ -20,7 +20,7 @@ export async function hashPassword(password: string): Promise<string> {
       salt,
       CONFIG.dkLen,
       { N: CONFIG.N, r: CONFIG.r, p: CONFIG.p, maxmem: 128 * CONFIG.N * CONFIG.r * 2 },
-      (err, key) => (err ? reject(err) : resolve(key))
+      (err, key) => (err ? reject(err) : resolve(key)),
     );
   });
   return `${salt}:${key.toString("hex")}`;
@@ -35,7 +35,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
       salt,
       CONFIG.dkLen,
       { N: CONFIG.N, r: CONFIG.r, p: CONFIG.p, maxmem: 128 * CONFIG.N * CONFIG.r * 2 },
-      (err, key) => (err ? reject(err) : resolve(key))
+      (err, key) => (err ? reject(err) : resolve(key)),
     );
   });
   const keyBuf = Buffer.from(keyHex, "hex");

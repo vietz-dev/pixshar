@@ -14,9 +14,11 @@ export async function pushPhotoStatus(eventId: string): Promise<void> {
     where: { eventId },
     _count: { status: true },
   });
-  const pending = counts.find((r: typeof counts[0]) => r.status === "PENDING")?._count.status ?? 0;
-  const processed = counts.find((r: typeof counts[0]) => r.status === "PROCESSED")?._count.status ?? 0;
-  const failed = counts.find((r: typeof counts[0]) => r.status === "FAILED")?._count.status ?? 0;
+  const pending =
+    counts.find((r: (typeof counts)[0]) => r.status === "PENDING")?._count.status ?? 0;
+  const processed =
+    counts.find((r: (typeof counts)[0]) => r.status === "PROCESSED")?._count.status ?? 0;
+  const failed = counts.find((r: (typeof counts)[0]) => r.status === "FAILED")?._count.status ?? 0;
   emitPhotoStatus(eventId, { pending, processed, failed, total: pending + processed + failed });
 }
 
@@ -52,7 +54,7 @@ const uploadToS3 = (key: string, buffer: Buffer, contentType: string, cacheContr
           Body: buffer,
           ContentType: contentType,
           ...(cacheControl ? { CacheControl: cacheControl } : {}),
-        })
+        }),
       ),
     catch: (e) => new Error(`S3 upload failed: ${e}`),
   });
@@ -62,7 +64,7 @@ const resizeImage = (
   width: number,
   height: number,
   quality: number,
-  format: "jpeg" | "webp" = "jpeg"
+  format: "jpeg" | "webp" = "jpeg",
 ) =>
   Effect.tryPromise({
     try: async () => {
@@ -102,7 +104,9 @@ export const processImageEffect = (input: ProcessImageInput) =>
     // Reconcile the stored (client-claimed) hash against the real bytes.
     const actualHash = sha256Hex(buffer);
     if (actualHash !== fileHash) {
-      yield* Console.error(`Hash mismatch for ${photoId}: claimed ${fileHash}, actual ${actualHash}`);
+      yield* Console.error(
+        `Hash mismatch for ${photoId}: claimed ${fileHash}, actual ${actualHash}`,
+      );
       yield* Effect.tryPromise({
         try: () => prisma.photo.update({ where: { id: photoId }, data: { fileHash: actualHash } }),
         catch: (e) => new Error(`DB hash reconcile failed: ${e}`),
