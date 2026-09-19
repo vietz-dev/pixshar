@@ -25,7 +25,7 @@ if (import.meta.main) {
       } finally {
         resizeQueueInflight.dec(batch.length);
       }
-    }
+    },
   );
 
   // Archive build remains DB-polling based; poller now runs here instead of API.

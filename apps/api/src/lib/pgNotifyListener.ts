@@ -21,7 +21,12 @@ async function handleNotification(payload: NotifyPayload): Promise<void> {
       // Re-fetch photo to get the stored keys (worker already wrote them to DB).
       const photo = await prisma.photo.findUnique({
         where: { id: photoId },
-        select: { thumbKey: true, displayKey: true, photographerName: true, placeholderDataUrl: true },
+        select: {
+          thumbKey: true,
+          displayKey: true,
+          photographerName: true,
+          placeholderDataUrl: true,
+        },
       });
       if (!photo?.thumbKey || !photo?.displayKey) break;
       try {
@@ -68,9 +73,7 @@ export async function startPgNotifyListener(): Promise<void> {
         } catch {
           return;
         }
-        handleNotification(data).catch((err) =>
-          console.error("[PgNotify] handler error:", err)
-        );
+        handleNotification(data).catch((err) => console.error("[PgNotify] handler error:", err));
       });
 
       client.on("error", (err) => {

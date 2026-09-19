@@ -44,7 +44,9 @@ async function s3ObjectExists(key: string): Promise<boolean> {
 }
 
 async function putToS3(key: string, body: Buffer, contentType = "image/jpeg"): Promise<void> {
-  await testS3.send(new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, Body: body, ContentType: contentType }));
+  await testS3.send(
+    new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, Body: body, ContentType: contentType }),
+  );
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,7 +59,7 @@ function sha256(buf: Buffer): string {
 function bluePng(): Buffer {
   return Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADklEQVQI12P4z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==",
-    "base64"
+    "base64",
   );
 }
 
@@ -65,7 +67,7 @@ function bluePng(): Buffer {
 function whitePng(): Buffer {
   return Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==",
-    "base64"
+    "base64",
   );
 }
 
@@ -73,7 +75,11 @@ function whitePng(): Buffer {
  * Polls GET /api/upload/events/:id/photos/status until pending === 0.
  * Throws if processing fails or times out.
  */
-async function waitUntilProcessed(cookie: string, eventId: string, timeoutMs: number): Promise<void> {
+async function waitUntilProcessed(
+  cookie: string,
+  eventId: string,
+  timeoutMs: number,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const res = await authedFetch(`/api/upload/events/${eventId}/photos/status`, cookie);
@@ -124,26 +130,24 @@ describe("Photo lifecycle", () => {
 
     beforeAll(async () => {
       // Step 1: init
-      const initRes = await authedFetch(
-        `/api/upload/events/${event.id}/photos/init`,
-        adminCookie,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            files: [
-              {
-                fileName: "admin-photo.png",
-                ext: "png",
-                contentType: "image/png",
-                size: jpeg.length,
-                fileHash,
-              },
-            ],
-          }),
-        }
-      );
+      const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
+        method: "POST",
+        body: JSON.stringify({
+          files: [
+            {
+              fileName: "admin-photo.png",
+              ext: "png",
+              contentType: "image/png",
+              size: jpeg.length,
+              fileHash,
+            },
+          ],
+        }),
+      });
       expect(initRes.status).toBe(200);
-      const { photos } = (await initRes.json()) as { photos: Array<{ id: string; duplicate: boolean }> };
+      const { photos } = (await initRes.json()) as {
+        photos: Array<{ id: string; duplicate: boolean }>;
+      };
       adminPhotoId = photos[0].id;
       adminOriginalKey = `${event.id}/${adminPhotoId}/original.png`;
 
@@ -158,7 +162,7 @@ describe("Photo lifecycle", () => {
         {
           method: "POST",
           body: JSON.stringify({ photoIds: [adminPhotoId] }),
-        }
+        },
       );
       expect(completeRes.status).toBe(202);
     }, 30_000);
@@ -323,11 +327,9 @@ describe("Photo lifecycle", () => {
 
   describe("Phase 5 — Given the admin deletes the admin-uploaded photo", () => {
     beforeAll(async () => {
-      const res = await authedFetch(
-        `/api/events/${event.id}/photos/${adminPhotoId}`,
-        adminCookie,
-        { method: "DELETE" }
-      );
+      const res = await authedFetch(`/api/events/${event.id}/photos/${adminPhotoId}`, adminCookie, {
+        method: "DELETE",
+      });
       expect(res.status).toBe(200);
     }, 15_000);
 

@@ -9,18 +9,13 @@ import {
   InvalidOriginalError,
   type ProcessImageInput,
 } from "../services/imageProcessor.js";
-import {
-  imageProcessingTotal,
-  imageProcessingDuration,
-} from "../lib/metrics.js";
+import { imageProcessingTotal, imageProcessingDuration } from "../lib/metrics.js";
 
 export interface PhotoResizeData {
   photoId: string;
 }
 
-export async function photoResizeHandler(
-  job: PgBoss.Job<PhotoResizeData>
-): Promise<void> {
+export async function photoResizeHandler(job: PgBoss.Job<PhotoResizeData>): Promise<void> {
   const { photoId } = job.data;
 
   const photo = await prisma.photo.findUnique({ where: { id: photoId } });
@@ -62,7 +57,7 @@ export async function photoResizeHandler(
     await prisma.$executeRawUnsafe(
       `SELECT pg_notify($1, $2)`,
       PG_NOTIFY_CHANNEL,
-      JSON.stringify({ type: "photo.processed", eventId: photo.eventId, photoId })
+      JSON.stringify({ type: "photo.processed", eventId: photo.eventId, photoId }),
     );
   } catch (e) {
     const isInvalid = e instanceof InvalidOriginalError;
@@ -90,7 +85,7 @@ export async function photoResizeHandler(
     await prisma.$executeRawUnsafe(
       `SELECT pg_notify($1, $2)`,
       PG_NOTIFY_CHANNEL,
-      JSON.stringify({ type: "photo.status", eventId: photo.eventId })
+      JSON.stringify({ type: "photo.status", eventId: photo.eventId }),
     );
 
     if (!isTerminal) {

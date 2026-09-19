@@ -1,10 +1,4 @@
-import {
-  Registry,
-  Gauge,
-  Counter,
-  Histogram,
-  collectDefaultMetrics,
-} from "prom-client";
+import { Registry, Gauge, Counter, Histogram, collectDefaultMetrics } from "prom-client";
 import { prisma } from "./prisma.js";
 
 export const register = new Registry();

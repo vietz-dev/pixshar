@@ -55,7 +55,7 @@ export async function signInAdmin(): Promise<string> {
 export function authedFetch(
   path: string,
   cookie: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
 ): Promise<Response> {
   return fetch(`${API}${path}`, {
     ...init,
@@ -87,7 +87,7 @@ export interface TestEvent {
 /** Creates a test event via the API and returns its record. */
 export async function createEvent(
   cookie: string,
-  overrides: Partial<{ name: string; slug: string; description: string; password: string }> = {}
+  overrides: Partial<{ name: string; slug: string; description: string; password: string }> = {},
 ): Promise<TestEvent> {
   const slug = overrides.slug ?? uniqueSlug("evt");
   const body: Record<string, string> = {
@@ -153,7 +153,7 @@ const S3_BUCKET = "pixshar";
 function bluePng(): Buffer {
   return Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADklEQVQI12P4z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==",
-    "base64"
+    "base64",
   );
 }
 
@@ -164,7 +164,7 @@ function bluePng(): Buffer {
 export async function waitUntilProcessed(
   cookie: string,
   eventId: string,
-  timeoutMs = 90_000
+  timeoutMs = 90_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -194,7 +194,15 @@ export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): P
   const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, cookie, {
     method: "POST",
     body: JSON.stringify({
-      files: [{ fileName: "dl-variant.png", ext: "png", contentType: "image/png", size: bytes.length, fileHash }],
+      files: [
+        {
+          fileName: "dl-variant.png",
+          ext: "png",
+          contentType: "image/png",
+          size: bytes.length,
+          fileHash,
+        },
+      ],
     }),
   });
   if (!initRes.ok) throw new Error(`upload init failed ${initRes.status}: ${await initRes.text()}`);
@@ -207,7 +215,7 @@ export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): P
       Key: `${event.id}/${photoId}/original.png`,
       Body: bytes,
       ContentType: "image/png",
-    })
+    }),
   );
 
   const completeRes = await authedFetch(`/api/upload/events/${event.id}/photos/complete`, cookie, {

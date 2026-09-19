@@ -55,8 +55,16 @@ export default function AdminPage() {
 
   function statusMeta(st: string) {
     return st === "READY"
-      ? { statusLabel: t("events.status.ready"), statusBg: "rgba(220,252,231,.92)", statusColor: "#16a34a" }
-      : { statusLabel: t("events.status.processing"), statusBg: "rgba(254,243,199,.92)", statusColor: "#d97706" };
+      ? {
+          statusLabel: t("events.status.ready"),
+          statusBg: "rgba(220,252,231,.92)",
+          statusColor: "#16a34a",
+        }
+      : {
+          statusLabel: t("events.status.processing"),
+          statusBg: "rgba(254,243,199,.92)",
+          statusColor: "#d97706",
+        };
   }
 
   function formatDate(d: string) {
@@ -65,11 +73,23 @@ export default function AdminPage() {
   }
 
   const processingCount = events.filter((e) => e.status === "PROCESSING").length;
-  const eventCountLabel = t("events.eventCount", { count: events.length, processing: processingCount });
+  const eventCountLabel = t("events.eventCount", {
+    count: events.length,
+    processing: processingCount,
+  });
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", color: "#a1a1aa" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#a1a1aa",
+        }}
+      >
         {tCommon("loading")}
       </div>
     );
@@ -78,10 +98,43 @@ export default function AdminPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#fff", animation: "pxFade .35s ease both" }}>
       {/* Sticky header */}
-      <div style={{ position: "sticky", top: 0, zIndex: 10, background: "rgba(255,255,255,.86)", backdropFilter: "blur(10px)", borderBottom: "1px solid #ececee", padding: "14px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          background: "rgba(255,255,255,.86)",
+          backdropFilter: "blur(10px)",
+          borderBottom: "1px solid #ececee",
+          padding: "14px 28px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 8, background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <div
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 8,
+              background: "#2563eb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <rect x="3" y="3" width="18" height="18" rx="3"></rect>
               <circle cx="8.5" cy="8.5" r="1.8"></circle>
               <path d="m21 15-4.5-4.5L7 20"></path>
@@ -91,53 +144,108 @@ export default function AdminPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ fontSize: 13, color: "#71717a" }}>{t("header.adminStudio")}</span>
-          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#18181b", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600 }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: "#18181b",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
             A
           </div>
         </div>
       </div>
 
       <div style={{ maxWidth: 1040, margin: "0 auto", padding: "34px 28px 48px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginBottom: 26 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: 16,
+            flexWrap: "wrap",
+            marginBottom: 26,
+          }}
+        >
           <div>
-            <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-.025em", margin: 0 }}>{t("events.title")}</h1>
+            <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: "-.025em", margin: 0 }}>
+              {t("events.title")}
+            </h1>
             <p style={{ fontSize: 14.5, color: "#71717a", margin: "6px 0 0" }}>{eventCountLabel}</p>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Link href="/admin/tools" style={{ fontSize: 13, color: "#71717a", textDecoration: "none", padding: "0 10px", height: 40, display: "inline-flex", alignItems: "center", border: "1px solid var(--border)", borderRadius: 8 }}>
-            Tools
-          </Link>
-          <Link href="/admin/events/new">
-            <button
+            <Link
+              href="/admin/tools"
               style={{
+                fontSize: 13,
+                color: "#71717a",
+                textDecoration: "none",
+                padding: "0 10px",
                 height: 40,
-                padding: "0 16px",
-                borderRadius: 8,
-                border: "none",
-                background: "#2563eb",
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 500,
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 7,
-                boxShadow: "0 1px 2px rgba(0,0,0,.08)",
-                transition: "background .15s",
-                cursor: "pointer",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#1d4ed8"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "#2563eb"; }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <path d="M12 5v14M5 12h14"></path>
-              </svg>
-              {t("events.newEvent")}
-            </button>
-          </Link>
+              Tools
+            </Link>
+            <Link href="/admin/events/new">
+              <button
+                style={{
+                  height: 40,
+                  padding: "0 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#2563eb",
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  boxShadow: "0 1px 2px rgba(0,0,0,.08)",
+                  transition: "background .15s",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#1d4ed8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#2563eb";
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                >
+                  <path d="M12 5v14M5 12h14"></path>
+                </svg>
+                {t("events.newEvent")}
+              </button>
+            </Link>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+            gap: 20,
+          }}
+        >
           {events.map((ev, i) => {
             const meta = statusMeta(ev.status);
             return (
@@ -163,24 +271,83 @@ export default function AdminPage() {
                 }}
                 onClick={() => router.push(`/admin/events/${ev.id}`)}
               >
-                <div style={{ aspectRatio: "16/10", background: GRADS[i % GRADS.length], position: "relative" }}>
-                  <div style={{
-                    position: "absolute", top: 11, right: 11, height: 24, padding: "0 10px", borderRadius: 999,
-                    display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 500,
-                    background: meta.statusBg, color: meta.statusColor, backdropFilter: "blur(6px)",
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: meta.statusColor }}></span>
+                <div
+                  style={{
+                    aspectRatio: "16/10",
+                    background: GRADS[i % GRADS.length],
+                    position: "relative",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 11,
+                      right: 11,
+                      height: 24,
+                      padding: "0 10px",
+                      borderRadius: 999,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      fontSize: 11.5,
+                      fontWeight: 500,
+                      background: meta.statusBg,
+                      color: meta.statusColor,
+                      backdropFilter: "blur(6px)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: meta.statusColor,
+                      }}
+                    ></span>
                     {meta.statusLabel}
                   </div>
                 </div>
                 <div style={{ padding: "15px 16px 16px" }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.01em", marginBottom: 3 }}>{ev.name}</div>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 600,
+                      letterSpacing: "-.01em",
+                      marginBottom: 3,
+                    }}
+                  >
+                    {ev.name}
+                  </div>
                   <div style={{ fontSize: 13, color: "#71717a" }}>
                     {t("events.eventDate", { date: formatDate(ev.createdAt) })}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, paddingTop: 13, borderTop: "1px solid #f4f4f5" }}>
-                    <span style={{ fontSize: 13, color: "#52525b", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginTop: 14,
+                      paddingTop: 13,
+                      borderTop: "1px solid #f4f4f5",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: "#52525b",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <rect x="3" y="3" width="18" height="18" rx="3"></rect>
                         <circle cx="8.5" cy="8.5" r="1.8"></circle>
                         <path d="m21 15-4.5-4.5L7 20"></path>
@@ -188,13 +355,35 @@ export default function AdminPage() {
                       {t("events.photos", { count: ev._count.photos })}
                     </span>
                     <span
-                      onClick={(e) => { e.stopPropagation(); router.push(`/gallery/${ev.slug}`); }}
-                      style={{ fontSize: 13, fontWeight: 500, color: "#2563eb", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/gallery/${ev.slug}`);
+                      }}
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: "#2563eb",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.textDecoration = "underline";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.textDecoration = "none";
+                      }}
                     >
                       {t("events.viewGallery")}
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                      >
                         <path d="M7 17 17 7M9 7h8v8"></path>
                       </svg>
                     </span>
@@ -206,7 +395,9 @@ export default function AdminPage() {
         </div>
 
         {events.length === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 20px", color: "#a1a1aa", fontSize: 14 }}>
+          <div
+            style={{ textAlign: "center", padding: "60px 20px", color: "#a1a1aa", fontSize: 14 }}
+          >
             {t("events.noEvents")}
           </div>
         )}

@@ -18,12 +18,12 @@ function sha256(buf: Buffer): string {
 function tinyJpeg(): Buffer {
   return Buffer.from(
     "ffd8ffe000104a46494600010100000100010000ffdb004300" +
-    "08060606070605080707070909080a0c140d0c0b0b0c191213" +
-    "0f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30" +
-    "313434341f27393d38323c2e333432ffc0000b080001000101" +
-    "011100ffc4001f0000010501010101010100000000000000000" +
-    "102030405060708090a0bffda00080101000000011800ffd9",
-    "hex"
+      "08060606070605080707070909080a0c140d0c0b0b0c191213" +
+      "0f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30" +
+      "313434341f27393d38323c2e333432ffc0000b080001000101" +
+      "011100ffc4001f0000010501010101010100000000000000000" +
+      "102030405060708090a0bffda00080101000000011800ffd9",
+    "hex",
   );
 }
 
@@ -48,27 +48,25 @@ describe("Photo Upload", () => {
         const jpeg = tinyJpeg();
         const hash = sha256(jpeg);
 
-        const res = await authedFetch(
-          `/api/upload/events/${event.id}/photos/init`,
-          adminCookie,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              files: [
-                {
-                  fileName: "test-photo.jpg",
-                  ext: "jpg",
-                  contentType: "image/jpeg",
-                  size: jpeg.length,
-                  fileHash: hash,
-                },
-              ],
-            }),
-          }
-        );
+        const res = await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
+          method: "POST",
+          body: JSON.stringify({
+            files: [
+              {
+                fileName: "test-photo.jpg",
+                ext: "jpg",
+                contentType: "image/jpeg",
+                size: jpeg.length,
+                fileHash: hash,
+              },
+            ],
+          }),
+        });
 
         expect(res.status).toBe(200);
-        const body = await res.json() as { photos: Array<{ fileHash: string; uploadUrl: string }> };
+        const body = (await res.json()) as {
+          photos: Array<{ fileHash: string; uploadUrl: string }>;
+        };
         expect(body.photos).toHaveLength(1);
         expect(body.photos[0].fileHash).toBe(hash);
         expect(body.photos[0].uploadUrl).toMatch(/^http/);
@@ -82,7 +80,15 @@ describe("Photo Upload", () => {
         const jpeg = tinyJpeg();
         const hash = sha256(jpeg);
         const payload = {
-          files: [{ fileName: "dup.jpg", ext: "jpg", contentType: "image/jpeg", size: jpeg.length, fileHash: hash }],
+          files: [
+            {
+              fileName: "dup.jpg",
+              ext: "jpg",
+              contentType: "image/jpeg",
+              size: jpeg.length,
+              fileHash: hash,
+            },
+          ],
         };
 
         // First init
@@ -92,13 +98,12 @@ describe("Photo Upload", () => {
         });
 
         // Second init with same hash
-        const res2 = await authedFetch(
-          `/api/upload/events/${event.id}/photos/init`,
-          adminCookie,
-          { method: "POST", body: JSON.stringify(payload) }
-        );
+        const res2 = await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
 
-        const body = await res2.json() as { photos: Array<{ duplicate?: boolean }> };
+        const body = (await res2.json()) as { photos: Array<{ duplicate?: boolean }> };
         // PENDING row → resume (not flagged duplicate yet), or if PROCESSED → duplicate: true
         expect([200, 200]).toContain(res2.status);
         // Either duplicate or a new presigned URL is fine; the key thing is no 500
@@ -132,7 +137,7 @@ describe("Photo Upload", () => {
         });
 
         expect(res.status).toBe(200);
-        const body = await res.json() as { photos: unknown[] };
+        const body = (await res.json()) as { photos: unknown[] };
         expect(body.photos).toHaveLength(1);
       });
     });
@@ -141,10 +146,11 @@ describe("Photo Upload", () => {
   describe("Given an unauthenticated request", () => {
     describe("When calling the admin upload init endpoint", () => {
       it("Then it returns 401 Unauthorized", async () => {
-        const res = await fetch(
-          `${API}/api/upload/events/${event.id}/photos/init`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files: [] }) }
-        );
+        const res = await fetch(`${API}/api/upload/events/${event.id}/photos/init`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files: [] }),
+        });
         expect(res.status).toBe(401);
       });
     });
@@ -159,7 +165,12 @@ describe("Photo Upload", () => {
 
         const res = await authedFetch(`/api/upload/events/${fresh.id}/photos/status`, adminCookie);
         expect(res.status).toBe(200);
-        const body = await res.json() as { pending: number; processed: number; failed: number; total: number };
+        const body = (await res.json()) as {
+          pending: number;
+          processed: number;
+          failed: number;
+          total: number;
+        };
         expect(body.total).toBe(0);
 
         await deleteEvent(adminCookie, fresh.id);

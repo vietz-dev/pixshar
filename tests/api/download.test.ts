@@ -27,7 +27,13 @@ import {
 // Shape of the both-variants guest download payload.
 interface VariantPayload {
   status: string;
-  parts: Array<{ index: number; url: string | null; sizeBytes: number; membershipSig: string; rebuilding: boolean }>;
+  parts: Array<{
+    index: number;
+    url: string | null;
+    sizeBytes: number;
+    membershipSig: string;
+    rebuilding: boolean;
+  }>;
   partCount: number;
   totalSizeBytes: number;
   photoCount: number;
@@ -44,12 +50,15 @@ async function pollAdminStatus(
   eventId: string,
   quality: "DISPLAY" | "ORIGINAL",
   until: (s: string) => boolean,
-  timeoutMs = 30_000
+  timeoutMs = 30_000,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   let status = "";
   while (Date.now() < deadline) {
-    const res = await authedFetch(`/api/events/${eventId}/download/status?quality=${quality}`, cookie);
+    const res = await authedFetch(
+      `/api/events/${eventId}/download/status?quality=${quality}`,
+      cookie,
+    );
     status = ((await res.json()) as { status: string }).status;
     if (until(status)) return status;
     await new Promise((r) => setTimeout(r, 500));
@@ -109,7 +118,7 @@ describe("Gallery archive download", () => {
           headers: { Cookie: galleryCookie },
         });
         expect(res.status).toBe(200);
-        const body = await res.json() as { status: string };
+        const body = (await res.json()) as { status: string };
         // Fresh event with no photos will be NONE (no DownloadJob row yet)
         expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING"]).toContain(body.status);
       });
@@ -124,7 +133,7 @@ describe("Gallery archive download", () => {
         it("Then it returns 200 with required status fields", async () => {
           const res = await authedFetch(`/api/events/${event.id}/download/status`, adminCookie);
           expect(res.status).toBe(200);
-          const body = await res.json() as Record<string, unknown>;
+          const body = (await res.json()) as Record<string, unknown>;
           expect(body).toHaveProperty("status");
           expect(body).toHaveProperty("photoCount");
           expect(body).toHaveProperty("processedPhotos");
@@ -153,27 +162,33 @@ describe("Gallery archive download", () => {
             method: "POST",
           });
           expect(res.status).toBe(200);
-          const body = await res.json() as { success: boolean };
+          const body = (await res.json()) as { success: boolean };
           expect(body.success).toBe(true);
 
           // With no processed photos there is no job — build-now leaves it NONE.
           // Once a debounce/reconcile is pending it promotes it to QUEUED.
           const statusRes = await authedFetch(
             `/api/events/${event.id}/download/status`,
-            adminCookie
+            adminCookie,
           );
-          const statusBody = await statusRes.json() as { status: string };
-          expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING", "READY"]).toContain(statusBody.status);
+          const statusBody = (await statusRes.json()) as { status: string };
+          expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING", "READY"]).toContain(
+            statusBody.status,
+          );
         });
       });
 
       describe("When posting POST /api/events/:id/download/rebuild-all", () => {
         it("Then it returns 200", async () => {
-          const res = await authedFetch(`/api/events/${event.id}/download/rebuild-all`, adminCookie, {
-            method: "POST",
-          });
+          const res = await authedFetch(
+            `/api/events/${event.id}/download/rebuild-all`,
+            adminCookie,
+            {
+              method: "POST",
+            },
+          );
           expect(res.status).toBe(200);
-          const body = await res.json() as { success: boolean };
+          const body = (await res.json()) as { success: boolean };
           expect(body.success).toBe(true);
         });
       });
@@ -208,15 +223,12 @@ describe("Gallery archive download", () => {
         const cancelRes = await authedFetch(
           `/api/events/${event.id}/download/cancel`,
           adminCookie,
-          { method: "POST" }
+          { method: "POST" },
         );
         expect(cancelRes.status).toBe(200);
 
-        const statusRes = await authedFetch(
-          `/api/events/${event.id}/download/status`,
-          adminCookie
-        );
-        const statusBody = await statusRes.json() as { status: string };
+        const statusRes = await authedFetch(`/api/events/${event.id}/download/status`, adminCookie);
+        const statusBody = (await statusRes.json()) as { status: string };
         // With no pending job both build-now and cancel are no-ops (NONE). With a
         // real job it moves to CANCELLED (or READY if the worker was very fast).
         expect(["NONE", "CANCELLED", "READY"]).toContain(statusBody.status);
@@ -253,7 +265,7 @@ describe("Gallery archive download", () => {
         for (let i = 0; i < 30; i++) {
           await new Promise((r) => setTimeout(r, 500));
           const s = await authedFetch(`/api/events/${emptyEvent.id}/download/status`, adminCookie);
-          const b = await s.json() as { status: string };
+          const b = (await s.json()) as { status: string };
           status = b.status;
           if (status === "READY" || status === "FAILED" || status === "CANCELLED") break;
         }
@@ -268,13 +280,16 @@ describe("Gallery archive download", () => {
           headers: { Cookie: emptyGalleryCookie },
         });
         expect(res.status).toBe(200);
-        const body = await res.json() as {
+        const body = (await res.json()) as {
           defaultQuality: string;
-          variants: Record<string, {
-            status: string;
-            parts?: { index: number; url: string; sizeBytes: number }[];
-            partCount?: number;
-          }>;
+          variants: Record<
+            string,
+            {
+              status: string;
+              parts?: { index: number; url: string; sizeBytes: number }[];
+              partCount?: number;
+            }
+          >;
         };
 
         // We built the ORIGINAL variant (build-now defaults to ORIGINAL), so its
@@ -306,7 +321,7 @@ describe("Gallery archive download", () => {
   describe("DOWNLOAD_MAX_PART_BYTES env var", () => {
     it("Then GET /api/events/:id/download/status exposes partCount field", async () => {
       const res = await authedFetch(`/api/events/${event.id}/download/status`, adminCookie);
-      const body = await res.json() as { partCount: number };
+      const body = (await res.json()) as { partCount: number };
       // partCount is 0 when no archive exists; any non-negative integer is valid
       expect(typeof body.partCount).toBe("number");
       expect(body.partCount).toBeGreaterThanOrEqual(0);
@@ -353,7 +368,7 @@ describe("Gallery archive download", () => {
           // Before any guest request the admin DISPLAY status is NONE.
           const before = await authedFetch(
             `/api/events/${lazyEvent.id}/download/status?quality=DISPLAY`,
-            adminCookie
+            adminCookie,
           );
           expect(((await before.json()) as { status: string }).status).toBe("NONE");
 
@@ -367,7 +382,7 @@ describe("Gallery archive download", () => {
             adminCookie,
             lazyEvent.id,
             "DISPLAY",
-            (s) => s !== "NONE"
+            (s) => s !== "NONE",
           );
           expect(after).not.toBe("NONE");
         } finally {
@@ -386,22 +401,54 @@ describe("Gallery archive download", () => {
 
         // Fan-out proof: the processing trigger created BOTH variants' jobs, so
         // neither admin status is NONE (they start DEBOUNCING right after upload).
-        const displayExists = await pollAdminStatus(adminCookie, fanEvent.id, "DISPLAY", (s) => s !== "NONE");
-        const originalExists = await pollAdminStatus(adminCookie, fanEvent.id, "ORIGINAL", (s) => s !== "NONE");
+        const displayExists = await pollAdminStatus(
+          adminCookie,
+          fanEvent.id,
+          "DISPLAY",
+          (s) => s !== "NONE",
+        );
+        const originalExists = await pollAdminStatus(
+          adminCookie,
+          fanEvent.id,
+          "ORIGINAL",
+          (s) => s !== "NONE",
+        );
         expect(displayExists).not.toBe("NONE");
         expect(originalExists).not.toBe("NONE");
 
         // Force both builds (skip the 60s debounce) so we can verify fetchability.
-        await authedFetch(`/api/events/${fanEvent.id}/download/build-now?quality=DISPLAY`, adminCookie, { method: "POST" });
-        await authedFetch(`/api/events/${fanEvent.id}/download/build-now?quality=ORIGINAL`, adminCookie, { method: "POST" });
+        await authedFetch(
+          `/api/events/${fanEvent.id}/download/build-now?quality=DISPLAY`,
+          adminCookie,
+          { method: "POST" },
+        );
+        await authedFetch(
+          `/api/events/${fanEvent.id}/download/build-now?quality=ORIGINAL`,
+          adminCookie,
+          { method: "POST" },
+        );
 
-        const displayStatus = await pollAdminStatus(adminCookie, fanEvent.id, "DISPLAY", (s) => s === "READY" || s === "FAILED", 60_000);
-        const originalStatus = await pollAdminStatus(adminCookie, fanEvent.id, "ORIGINAL", (s) => s === "READY" || s === "FAILED", 60_000);
+        const displayStatus = await pollAdminStatus(
+          adminCookie,
+          fanEvent.id,
+          "DISPLAY",
+          (s) => s === "READY" || s === "FAILED",
+          60_000,
+        );
+        const originalStatus = await pollAdminStatus(
+          adminCookie,
+          fanEvent.id,
+          "ORIGINAL",
+          (s) => s === "READY" || s === "FAILED",
+          60_000,
+        );
         expect(displayStatus).toBe("READY");
         expect(originalStatus).toBe("READY");
 
         // The Kompakt (DISPLAY) archive is downloadable: a valid presigned part URL.
-        const res = await fetch(`${API}/api/gallery/${fanEvent.slug}/download`, { headers: { Cookie: fanCookie } });
+        const res = await fetch(`${API}/api/gallery/${fanEvent.slug}/download`, {
+          headers: { Cookie: fanCookie },
+        });
         const body = (await res.json()) as BothVariantsBody;
         expect(body.variants.DISPLAY.status).toBe("READY");
         expect(body.variants.DISPLAY.parts.length).toBeGreaterThan(0);
@@ -430,14 +477,14 @@ describe("Gallery archive download", () => {
         const buildRes = await authedFetch(
           `/api/events/${indyEvent.id}/download/build-now?quality=DISPLAY`,
           adminCookie,
-          { method: "POST" }
+          { method: "POST" },
         );
         expect(buildRes.status).toBe(200);
 
         // ORIGINAL was never triggered → still NONE (independence).
         const originalRes = await authedFetch(
           `/api/events/${indyEvent.id}/download/status?quality=ORIGINAL`,
-          adminCookie
+          adminCookie,
         );
         expect(((await originalRes.json()) as { status: string }).status).toBe("NONE");
 
@@ -446,7 +493,7 @@ describe("Gallery archive download", () => {
           adminCookie,
           indyEvent.id,
           "DISPLAY",
-          (s) => s !== "NONE" && s !== "DEBOUNCING"
+          (s) => s !== "NONE" && s !== "DEBOUNCING",
         );
         expect(["QUEUED", "BUILDING", "READY"]).toContain(displayStatus);
       } finally {
@@ -457,7 +504,7 @@ describe("Gallery archive download", () => {
     it("Then admin status reports the variant it was asked for", async () => {
       const res = await authedFetch(
         `/api/events/${event.id}/download/status?quality=DISPLAY`,
-        adminCookie
+        adminCookie,
       );
       expect(res.status).toBe(200);
       const body = (await res.json()) as { quality: string };

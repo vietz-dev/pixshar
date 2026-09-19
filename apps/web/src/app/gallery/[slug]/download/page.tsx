@@ -69,7 +69,16 @@ function CheckIcon({ done }: { done: boolean }) {
       }}
     >
       {done && (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <polyline points="20 6 9 17 4 12" />
         </svg>
       )}
@@ -103,7 +112,8 @@ export default function GalleryDownloadPage() {
         for (const p of data.variants[q]?.parts ?? []) {
           try {
             next[q][p.index] =
-              localStorage.getItem(localStorageKey(slug, q, p.index, p.membershipSig ?? "")) === "1";
+              localStorage.getItem(localStorageKey(slug, q, p.index, p.membershipSig ?? "")) ===
+              "1";
           } catch {
             next[q][p.index] = false;
           }
@@ -111,7 +121,7 @@ export default function GalleryDownloadPage() {
       }
       setDownloaded(next);
     },
-    [slug]
+    [slug],
   );
 
   const apply = useCallback(
@@ -119,7 +129,7 @@ export default function GalleryDownloadPage() {
       setPayload(data);
       loadDownloadedState(data);
     },
-    [loadDownloadedState]
+    [loadDownloadedState],
   );
 
   // Initial fetch (handles auth redirect + first paint).
@@ -167,7 +177,17 @@ export default function GalleryDownloadPage() {
 
   if (error) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "var(--bg, #fafaf9)" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          background: "var(--bg, #fafaf9)",
+        }}
+      >
         <p style={{ color: "var(--danger, #ef4444)", marginBottom: 16 }}>{error}</p>
         <button onClick={() => router.push(`/gallery/${slug}/view`)} style={backBtnStyle}>
           {t("backToGallery")}
@@ -178,7 +198,15 @@ export default function GalleryDownloadPage() {
 
   if (!payload) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg, #fafaf9)" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--bg, #fafaf9)",
+        }}
+      >
         <span style={{ color: "var(--text-muted, #71717a)", fontSize: 14 }}>…</span>
       </div>
     );
@@ -189,7 +217,6 @@ export default function GalleryDownloadPage() {
   const active = payload.variants[quality];
 
   const parts = active.parts ?? [];
-  const total = active.totalSizeBytes ?? parts.reduce((s, p) => s + p.sizeBytes, 0);
   const n = parts.length;
 
   return (
@@ -198,16 +225,43 @@ export default function GalleryDownloadPage() {
         {/* Back link */}
         <button
           onClick={() => router.push(`/gallery/${slug}/view`)}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted, #71717a)", fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 28, padding: 0 }}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted, #71717a)",
+            fontSize: 13.5,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            marginBottom: 28,
+            padding: 0,
+          }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="15 18 9 12 15 6" />
           </svg>
           {t("backToGallery")}
         </button>
 
         {/* Header */}
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text, #18181b)", margin: "0 0 16px" }}>
+        <h1
+          style={{
+            fontSize: 22,
+            fontWeight: 700,
+            color: "var(--text, #18181b)",
+            margin: "0 0 16px",
+          }}
+        >
           {t("title")}
         </h1>
 
@@ -246,10 +300,20 @@ export default function GalleryDownloadPage() {
         <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 8px" }}>
           {active.partCount === 1
             ? t("variantSummarySingle", { size: formatBytes(active.totalSizeBytes) })
-            : t("variantSummary", { count: active.partCount, size: formatBytes(active.totalSizeBytes) })}
+            : t("variantSummary", {
+                count: active.partCount,
+                size: formatBytes(active.totalSizeBytes),
+              })}
         </p>
         {n > 1 && (
-          <p style={{ fontSize: 13, color: "var(--text-muted, #71717a)", margin: "0 0 20px", lineHeight: 1.5 }}>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-muted, #71717a)",
+              margin: "0 0 20px",
+              lineHeight: 1.5,
+            }}
+          >
             {t("instruction")}
           </p>
         )}
@@ -259,9 +323,29 @@ export default function GalleryDownloadPage() {
         {active.building && (
           <div
             data-testid="building-banner"
-            style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 12px", marginBottom: 20 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              fontSize: 12.5,
+              color: "#2563eb",
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: 10,
+              padding: "10px 12px",
+              marginBottom: 20,
+            }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0 }}>
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0 }}
+            >
               <path d="M21 12a9 9 0 1 1-6.2-8.5" />
             </svg>
             {t("buildingBanner")}
@@ -313,7 +397,14 @@ export default function GalleryDownloadPage() {
                 >
                   <CheckIcon done={done} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text, #18181b)", marginBottom: 2 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "var(--text, #18181b)",
+                        marginBottom: 2,
+                      }}
+                    >
                       {n === 1 ? t("title") : t("partLabel", { index: part.index, total: n })}
                     </div>
                     <div style={{ fontSize: 12.5, color: "var(--text-muted, #71717a)" }}>
@@ -330,7 +421,17 @@ export default function GalleryDownloadPage() {
                       )}
                     </div>
                   </div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #a1a1aa)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="var(--text-muted, #a1a1aa)"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ flexShrink: 0 }}
+                  >
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
@@ -381,7 +482,15 @@ function VariantTab({
         transition: "background .15s, color .15s",
       }}
     >
-      <span style={{ fontSize: 13.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          fontSize: 13.5,
+          fontWeight: 600,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
         {label}
         {building && (
           <svg

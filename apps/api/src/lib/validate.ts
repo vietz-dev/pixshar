@@ -1,5 +1,11 @@
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-export const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+export const ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+];
 
 // Magic bytes for image type verification (more reliable than client MIME type)
 const MAGIC_BYTES: Record<string, number[][]> = {
@@ -44,17 +50,25 @@ export function validateFiles(files: File[]): { valid: boolean; error?: string }
       return { valid: false, error: `File "${file.name}" exceeds 50MB limit` };
     }
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      return { valid: false, error: `File "${file.name}" is not a supported image type (${file.type})` };
+      return {
+        valid: false,
+        error: `File "${file.name}" is not a supported image type (${file.type})`,
+      };
     }
   }
 
   return { valid: true };
 }
 
-export async function validateFileMagicBytes(file: File): Promise<{ valid: boolean; error?: string }> {
+export async function validateFileMagicBytes(
+  file: File,
+): Promise<{ valid: boolean; error?: string }> {
   const head = Buffer.from(await file.slice(0, 16).arrayBuffer());
   if (!checkMagicBytes(head, file.type)) {
-    return { valid: false, error: `File "${file.name}" content does not match its declared type (${file.type})` };
+    return {
+      valid: false,
+      error: `File "${file.name}" content does not match its declared type (${file.type})`,
+    };
   }
   return { valid: true };
 }

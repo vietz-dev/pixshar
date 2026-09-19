@@ -8,7 +8,7 @@
 //   4. POST {completeUrl} with the ids that landed → server starts processing.
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — keep in sync with apps/api validate.ts
-const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const MIME_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -42,13 +42,13 @@ function fileExt(file: File): string {
 // The content type used for BOTH the init request and the PUT header — they must
 // match exactly or S3 rejects the presigned signature.
 export function fileContentType(file: File): string {
-  if (file.type && ALLOWED_MIME.includes(file.type)) return file.type;
+  if (file.type && ALLOWED_MIME.has(file.type)) return file.type;
   return MIME_BY_EXT[fileExt(file)] || "image/jpeg";
 }
 
 export function validateFile(file: File): string | null {
   if (file.size > MAX_FILE_SIZE) return `"${file.name}" exceeds the 50MB limit`;
-  if (file.type && !ALLOWED_MIME.includes(file.type)) {
+  if (file.type && !ALLOWED_MIME.has(file.type)) {
     return `"${file.name}" is not a supported image type`;
   }
   return null;
@@ -81,7 +81,7 @@ function putToS3(
   file: File,
   uploadUrl: string,
   contentType: string,
-  onProgress: (pct: number) => void
+  onProgress: (pct: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -144,7 +144,10 @@ export async function presignedUpload(opts: PresignedUploadOptions): Promise<voi
   // Only files that passed validation go to the server (index-aligned subset).
   const valid = items
     .map((it, i) => ({ it, meta: metas[i] }))
-    .filter((x): x is { it: UploadFileItem; meta: NonNullable<(typeof metas)[number]> } => x.meta !== null);
+    .filter(
+      (x): x is { it: UploadFileItem; meta: NonNullable<(typeof metas)[number]> } =>
+        x.meta !== null,
+    );
 
   if (valid.length === 0) return;
 
@@ -165,7 +168,8 @@ export async function presignedUpload(opts: PresignedUploadOptions): Promise<voi
   const { photos } = (await res.json()) as { photos: InitResult[] };
 
   // Results are index-aligned with the files we sent.
-  const fresh: { uid: string; file: File; uploadUrl: string; contentType: string; id: string }[] = [];
+  const fresh: { uid: string; file: File; uploadUrl: string; contentType: string; id: string }[] =
+    [];
   photos.forEach((r, i) => {
     const v = valid[i];
     if (!v) return;
@@ -192,13 +196,15 @@ export async function presignedUpload(opts: PresignedUploadOptions): Promise<voi
     await Promise.allSettled(
       batch.map(async (b) => {
         try {
-          await putToS3(b.file, b.uploadUrl, b.contentType, (pct) => onStatus(b.uid, "uploading", pct));
+          await putToS3(b.file, b.uploadUrl, b.contentType, (pct) =>
+            onStatus(b.uid, "uploading", pct),
+          );
           onStatus(b.uid, "done", 100);
           uploadedIds.push(b.id);
         } catch {
           onStatus(b.uid, "error", 0);
         }
-      })
+      }),
     );
     idx += batchSize;
   }

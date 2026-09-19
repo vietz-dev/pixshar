@@ -41,13 +41,13 @@ services:
       if [ -n \"$$NODE_ID\" ]; then
         /garage node configure \"$$NODE_ID\" -c 1 -z dc1 -r 127.0.0.1 || true;
       fi;
-      
+
       echo 'Creating bucket...';
       /garage bucket create pixshar || true;
-      
+
       echo 'Allowing public read...';
       /garage bucket allow pixshar --read --anonymous || true;
-      
+
       echo 'Creating key...';
       if [ ! -f /keys/access_key ]; then
         /garage key create pixshar-key > /tmp/key-create.log 2>&1 || true;
@@ -62,10 +62,10 @@ services:
           cat /tmp/key-create.log || true;
         fi;
       fi;
-      
+
       echo 'Allowing key on bucket...';
       /garage key allow pixshar-key --bucket pixshar --read --write || true;
-      
+
       echo 'Garage init complete';
       exit 0;
       "

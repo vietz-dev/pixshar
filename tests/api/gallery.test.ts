@@ -1,12 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import {
-  signInAdmin,
-  authedFetch,
-  createEvent,
-  deleteEvent,
-  unlockGallery,
-  type TestEvent,
-} from "./helpers.js";
+import { signInAdmin, createEvent, deleteEvent, unlockGallery, type TestEvent } from "./helpers.js";
 import { API } from "./helpers.js";
 
 describe("Gallery", () => {
@@ -34,7 +27,7 @@ describe("Gallery", () => {
         });
 
         expect(res.status).toBe(200);
-        const body = await res.json() as { success: boolean };
+        const body = (await res.json()) as { success: boolean };
         expect(body.success).toBe(true);
 
         const cookies = res.headers.getSetCookie();
@@ -52,7 +45,7 @@ describe("Gallery", () => {
         });
 
         expect(res.status).toBe(401);
-        const body = await res.json() as { error: string };
+        const body = (await res.json()) as { error: string };
         expect(body.error).toMatch(/invalid/i);
       });
     });
@@ -84,7 +77,7 @@ describe("Gallery", () => {
         });
 
         expect(res.status).toBe(200);
-        const body = await res.json() as { slug: string; photos: unknown[] };
+        const body = (await res.json()) as { slug: string; photos: unknown[] };
         expect(body.slug).toBe(event.slug);
         expect(Array.isArray(body.photos)).toBe(true);
       });
@@ -127,7 +120,7 @@ describe("Gallery", () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password: "brute-force" }),
-          })
+          }),
         );
         const results = await Promise.all(attempts);
         const statuses = results.map((r) => r.status);

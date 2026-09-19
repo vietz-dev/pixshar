@@ -6,7 +6,7 @@ import { getPresignedUrl } from "../lib/s3.js";
 import { requireGallerySession } from "../middleware/requireGallerySession.js";
 import { SignJWT } from "jose";
 import { env } from "../lib/env.js";
-import { getCookie, setCookie } from "hono/cookie";
+import { setCookie } from "hono/cookie";
 import type { HonoVariables } from "../types.js";
 import { verifyPassword } from "../lib/hash.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
@@ -19,11 +19,7 @@ import {
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
 import { buildBothVariantsPayload } from "../services/downloadJob.js";
-import {
-  galleryUnlocksTotal,
-  photoDownloadsTotal,
-  archiveDownloadsTotal,
-} from "../lib/metrics.js";
+import { galleryUnlocksTotal, photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -96,14 +92,14 @@ app.get("/:slug", requireGallerySession, async (c) => {
   });
 
   const photosWithUrls = await Promise.all(
-    photos.map(async (photo: typeof photos[0]) => ({
+    photos.map(async (photo: (typeof photos)[0]) => ({
       id: photo.id,
       photographerName: photo.photographerName,
       thumbUrl: await getPresignedUrl(photo.thumbKey, "get", 3600),
       displayUrl: await getPresignedUrl(photo.displayKey, "get", 3600),
       status: photo.status,
       placeholderDataUrl: photo.placeholderDataUrl ?? null,
-    }))
+    })),
   );
 
   return c.json({
@@ -139,7 +135,7 @@ app.post(
       files,
     });
     return c.json({ photos }, 200);
-  }
+  },
 );
 
 // Step 2 — confirm uploads landed in S3, start processing.
@@ -152,7 +148,7 @@ app.post(
     const { photoIds } = c.req.valid("json");
     await completeUpload(event.id, photoIds);
     return c.json({ ok: true }, 202);
-  }
+  },
 );
 
 app.get("/:slug/download", requireGallerySession, async (c) => {
@@ -256,7 +252,7 @@ app.get("/:slug/photos/:photoId/download", requireGallerySession, async (c) => {
     photo.originalKey,
     "get",
     60 * 60,
-    `attachment; filename="${filename}"`
+    `attachment; filename="${filename}"`,
   );
   photoDownloadsTotal.inc({ actor: "guest" });
   return c.json({ url });

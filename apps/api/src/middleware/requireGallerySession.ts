@@ -7,23 +7,25 @@ import type { HonoVariables } from "../types.js";
 
 const secret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
-export const requireGallerySession = createMiddleware<{ Variables: HonoVariables }>(async (c, next) => {
-  const slug = c.req.param("slug");
-  const token = getCookie(c, `gallery_${slug}`);
-  if (!token) {
-    return c.json({ error: "Gallery session required" }, 401);
-  }
+export const requireGallerySession = createMiddleware<{ Variables: HonoVariables }>(
+  async (c, next) => {
+    const slug = c.req.param("slug");
+    const token = getCookie(c, `gallery_${slug}`);
+    if (!token) {
+      return c.json({ error: "Gallery session required" }, 401);
+    }
 
-  try {
-    const { payload } = await jwtVerify(token, secret, { clockTolerance: 60 });
-    const eventId = payload.eventId as string;
-    const event = await prisma.event.findUnique({ where: { slug } });
-    if (!event || event.id !== eventId) {
+    try {
+      const { payload } = await jwtVerify(token, secret, { clockTolerance: 60 });
+      const eventId = payload.eventId as string;
+      const event = await prisma.event.findUnique({ where: { slug } });
+      if (!event || event.id !== eventId) {
+        return c.json({ error: "Invalid gallery session" }, 401);
+      }
+      c.set("galleryEvent", event);
+      await next();
+    } catch {
       return c.json({ error: "Invalid gallery session" }, 401);
     }
-    c.set("galleryEvent", event);
-    await next();
-  } catch {
-    return c.json({ error: "Invalid gallery session" }, 401);
-  }
-});
+  },
+);

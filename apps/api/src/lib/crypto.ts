@@ -3,7 +3,6 @@ import { env } from "./env.js";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
-const TAG_BYTES = 16;
 const PREFIX = "enc1:";
 
 function getKey(): Buffer {
@@ -26,5 +25,7 @@ export function decryptPassword(stored: string): string {
   const [ivHex, ciphertextHex, tagHex] = parts;
   const decipher = createDecipheriv(ALGORITHM, getKey(), Buffer.from(ivHex, "hex"));
   decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-  return decipher.update(Buffer.from(ciphertextHex, "hex")).toString("utf8") + decipher.final("utf8");
+  return (
+    decipher.update(Buffer.from(ciphertextHex, "hex")).toString("utf8") + decipher.final("utf8")
+  );
 }

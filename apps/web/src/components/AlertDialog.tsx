@@ -72,7 +72,15 @@ export default function AlertDialog({
           animation: "pxRise .22s ease both",
         }}
       >
-        <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-.01em", marginBottom: 8, color: "#18181b" }}>
+        <div
+          style={{
+            fontSize: 17,
+            fontWeight: 600,
+            letterSpacing: "-.01em",
+            marginBottom: 8,
+            color: "#18181b",
+          }}
+        >
           {title}
         </div>
         <div style={{ fontSize: 14, color: "#71717a", lineHeight: 1.5, marginBottom: 22 }}>
@@ -93,8 +101,12 @@ export default function AlertDialog({
               cursor: "pointer",
               transition: "background .15s",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#f4f4f5"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#f4f4f5";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#fff";
+            }}
           >
             {cancelLabel}
           </button>

@@ -1,7 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 
 export const prisma = new PrismaClient({
-  log: [{ level: "warn", emit: "stdout" }, { level: "error", emit: "stdout" }],
+  log: [
+    { level: "warn", emit: "stdout" },
+    { level: "error", emit: "stdout" },
+  ],
   transactionOptions: {
     maxWait: 60000,
     timeout: 60000,

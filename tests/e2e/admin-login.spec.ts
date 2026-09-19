@@ -15,7 +15,9 @@ test.describe("Admin login", () => {
     });
 
     test.describe("When a visitor lands on the login page", () => {
-      test("Then they see the Pixshar login form with email and password fields", async ({ page }) => {
+      test("Then they see the Pixshar login form with email and password fields", async ({
+        page,
+      }) => {
         await expect(page.locator("input[type='email']")).toBeVisible();
         await expect(page.locator("input[type='password']")).toBeVisible();
         await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
@@ -38,7 +40,7 @@ test.describe("Admin login", () => {
         await expect(page.locator("input[type='email']")).toBeVisible();
         // BetterAuth returns "Invalid email or password" (or similar)
         await expect(
-          page.locator("text=/invalid|incorrect|failed|unauthorized/i").first()
+          page.locator("text=/invalid|incorrect|failed|unauthorized/i").first(),
         ).toBeVisible({ timeout: 8_000 });
       });
     });

@@ -16,7 +16,7 @@ function apiBase(): string {
 
 async function handler(
   req: NextRequest,
-  ctx: { params: Promise<{ path: string[] }> }
+  ctx: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await ctx.params;
   const target = `${apiBase()}/api/${path.join("/")}${req.nextUrl.search}`;
