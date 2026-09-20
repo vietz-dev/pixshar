@@ -3,8 +3,8 @@
   "version": "0.0.31",
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "dev:worker": "bun --watch src/worker.ts",
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "dev:worker": "bun --env-file=../../.env --watch src/worker.ts",
     "build": "bun build src/index.ts src/worker.ts --outdir dist --target bun",
     "start": "bun dist/index.js",
     "start:worker": "bun dist/worker.js",

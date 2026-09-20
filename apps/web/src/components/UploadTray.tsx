@@ -2,6 +2,15 @@
 
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
+import {
+  AbsoluteCenter,
+  Box,
+  Button,
+  Flex,
+  Progress,
+  ProgressCircle,
+  Text,
+} from "@chakra-ui/react";
 
 export interface UploadItem {
   id: string;
@@ -37,6 +46,14 @@ export const TINTS = [
 export function randomTint() {
   return TINTS[Math.floor(Math.random() * TINTS.length)];
 }
+
+const STATUS_COLOR: Record<UploadItem["status"], string> = {
+  done: "success",
+  error: "danger",
+  uploading: "accent",
+  skipped: "cyan.600",
+  queued: "fgSubtle",
+};
 
 export default function UploadTray({
   queue,
@@ -103,9 +120,7 @@ export default function UploadTray({
         ? t("alreadyInGallerySubtitle", { count: skipped })
         : t("addedNowSubtitle");
 
-  const ringColor = active ? "#2563eb" : "#16a34a";
-  const CIRC = 100.53;
-  const offset = (CIRC * (1 - pct)).toFixed(2);
+  const ringPalette = active ? "accent" : "green";
 
   const order: Record<string, number> = { error: 0, uploading: 1, queued: 2, done: 3, skipped: 4 };
   const CAP = 60;
@@ -116,28 +131,29 @@ export default function UploadTray({
   const rows = sorted.slice(0, CAP);
   const overflow = total - rows.length;
 
-  const svgSize = isSmall ? 34 : 40;
+  const ringSize = isSmall ? 34 : 40;
   const strokeW = isSmall ? 4.5 : 4;
-  const ringFont = isSmall ? 10 : 11;
+  const ringFont = isSmall ? "10px" : "11px";
   const checkSize = isSmall ? 16 : 18;
   const padX = isSmall ? "12px" : "15px";
   const padY = isSmall ? "11px" : "14px";
-  const titleSize = isSmall ? 12.5 : 13.5;
-  const subSize = isSmall ? 11.5 : 12;
-  const btnH = isSmall ? 27 : 30;
-  const btnPad = isSmall ? "0 9px" : "0 11px";
-  const btnFont = isSmall ? 11.5 : 12.5;
-  const barH = 4;
-  const errPad = isSmall ? "9px 12px" : "10px 15px";
-  const errFont = isSmall ? 11.5 : 12.5;
-  const rowPad = isSmall ? "7px 12px" : "8px 15px";
-  const rowFont = isSmall ? 11.5 : 12.5;
-  const thumbSize = isSmall ? 24 : 28;
-  const thumbRadius = isSmall ? 5 : 6;
-  const statusFont = isSmall ? 11 : 11.5;
-  const ovFont = isSmall ? 11 : 12;
-  const gap = isSmall ? 11 : 13;
-  const maxH = isSmall ? 150 : 228;
+  const titleSize = isSmall ? "12.5px" : "13.5px";
+  const subSize = isSmall ? "11.5px" : "12px";
+  const btnH = isSmall ? "27px" : "30px";
+  const btnPad = isSmall ? "9px" : "11px";
+  const btnFont = isSmall ? "11.5px" : "12.5px";
+  const errPadX = isSmall ? "12px" : "15px";
+  const errPadY = isSmall ? "9px" : "10px";
+  const errFont = isSmall ? "11.5px" : "12.5px";
+  const rowPadX = isSmall ? "12px" : "15px";
+  const rowPadY = isSmall ? "7px" : "8px";
+  const rowFont = isSmall ? "11.5px" : "12.5px";
+  const thumbSize = isSmall ? "24px" : "28px";
+  const thumbRadius = isSmall ? "5px" : "6px";
+  const statusFont = isSmall ? "11px" : "11.5px";
+  const ovFont = isSmall ? "11px" : "12px";
+  const gap = isSmall ? "11px" : "13px";
+  const maxH = isSmall ? "150px" : "228px";
 
   function statusLabel(status: UploadItem["status"], progress: number): string {
     switch (status) {
@@ -155,292 +171,231 @@ export default function UploadTray({
   }
 
   return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid #e4e4e7",
-        borderRadius: 12,
-        overflow: "hidden",
-        marginBottom: 22,
-        boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-      }}
+    <Box
+      bg="surface"
+      borderWidth="1px"
+      borderColor="border"
+      borderRadius="card"
+      overflow="hidden"
+      mb="22px"
+      boxShadow="0 1px 3px rgba(0,0,0,.04)"
     >
-      <div style={{ display: "flex", alignItems: "center", gap, padding: `${padY} ${padX}` }}>
+      <Flex align="center" gap={gap} px={padX} py={padY}>
         {/* Ring */}
-        <div style={{ position: "relative", width: svgSize, height: svgSize, flexShrink: 0 }}>
-          <svg
-            width={svgSize}
-            height={svgSize}
-            viewBox="0 0 40 40"
-            style={{ transform: "rotate(-90deg)" }}
-          >
-            <circle cx="20" cy="20" r="16" fill="none" stroke="#f1f1f3" strokeWidth={strokeW} />
-            <circle
-              cx="20"
-              cy="20"
-              r="16"
-              fill="none"
-              stroke={ringColor}
-              strokeWidth={strokeW}
-              strokeLinecap="round"
-              strokeDasharray={CIRC}
-              strokeDashoffset={offset}
-              style={{ transition: "stroke-dashoffset .3s ease, stroke .3s ease" }}
-            />
-          </svg>
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
+        <ProgressCircle.Root
+          value={pctRounded}
+          colorPalette={ringPalette}
+          w={`${ringSize}px`}
+          h={`${ringSize}px`}
+          flexShrink={0}
+        >
+          <ProgressCircle.Circle css={{ "--size": `${ringSize}px`, "--thickness": `${strokeW}px` }}>
+            <ProgressCircle.Track stroke="gray.100" />
+            <ProgressCircle.Range strokeLinecap="round" />
+          </ProgressCircle.Circle>
+          <AbsoluteCenter>
             {active ? (
-              <span
-                style={{
-                  fontSize: ringFont,
-                  fontWeight: 600,
-                  color: "#3f3f46",
-                  fontVariantNumeric: "tabular-nums",
-                }}
+              <Text
+                fontSize={ringFont}
+                fontWeight="600"
+                color="gray.700"
+                fontVariantNumeric="tabular-nums"
               >
                 {pctRounded}%
-              </span>
+              </Text>
             ) : (
-              <svg
-                width={checkSize}
-                height={checkSize}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={ringColor}
-                strokeWidth="2.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
+              <Box color="colorPalette.solid">
+                <svg
+                  width={checkSize}
+                  height={checkSize}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </Box>
             )}
-          </div>
-        </div>
+          </AbsoluteCenter>
+        </ProgressCircle.Root>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: titleSize, fontWeight: 600, letterSpacing: "-.01em" }}>
+        <Box flex="1" minW="0">
+          <Text fontSize={titleSize} fontWeight="600" letterSpacing="-.01em">
             {title}
-          </div>
-          <div style={{ fontSize: subSize, color: "#71717a", marginTop: 2 }}>{subtitle}</div>
-        </div>
+          </Text>
+          <Text fontSize={subSize} color="fgMuted" mt="2px">
+            {subtitle}
+          </Text>
+        </Box>
 
-        <button
+        <Button
           onClick={onToggleDetails}
-          style={{
-            height: btnH,
-            padding: btnPad,
-            borderRadius: 7,
-            border: "1px solid #e4e4e7",
-            background: "#fff",
-            color: "#3f3f46",
-            fontSize: btnFont,
-            fontWeight: 500,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            transition: "background .15s",
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f4f4f5";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "#fff";
-          }}
+          variant="outline"
+          h={btnH}
+          px={btnPad}
+          borderRadius="7px"
+          borderColor="border"
+          bg="surface"
+          color="gray.700"
+          fontSize={btnFont}
+          fontWeight="500"
+          gap="5px"
+          _hover={{ bg: "bg" }}
         >
           {showDetails ? "↑" : "↓"}
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            style={{
-              transform: showDetails ? "rotate(180deg)" : "none",
-              transition: "transform .2s",
-            }}
+          <Box
+            display="inline-flex"
+            transform={showDetails ? "rotate(180deg)" : "none"}
+            transition="transform .2s"
           >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </Box>
+        </Button>
 
-        <button
+        <Button
           onClick={active ? onCancel : onClear}
-          style={{
-            height: btnH,
-            padding: "0 12px",
-            borderRadius: 7,
-            border: "none",
-            background: active ? "#fef2f2" : "#f4f4f5",
-            color: active ? "#dc2626" : "#3f3f46",
-            fontSize: btnFont,
-            fontWeight: 500,
-            transition: "background .15s",
-            cursor: "pointer",
-          }}
+          variant="subtle"
+          colorPalette={active ? "red" : "gray"}
+          h={btnH}
+          px="12px"
+          borderRadius="7px"
+          fontSize={btnFont}
+          fontWeight="500"
         >
           {active ? t("cancelButton") : t("clearButton")}
-        </button>
-      </div>
+        </Button>
+      </Flex>
 
       {/* Progress bar */}
-      <div style={{ height: barH, background: "#f1f1f3" }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${pctRounded}%`,
-            background: ringColor,
-            transition: "width .3s ease, background .3s ease",
-          }}
-        />
-      </div>
+      <Progress.Root value={pctRounded} colorPalette={ringPalette} shape="square">
+        <Progress.Track h="4px" bg="gray.100">
+          <Progress.Range transition="width .3s ease, background-color .3s ease" />
+        </Progress.Track>
+      </Progress.Root>
 
       {/* Error banner */}
       {err > 0 && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-            padding: errPad,
-            background: "#fef2f2",
-            borderTop: "1px solid #fee2e2",
-          }}
+        <Flex
+          align="center"
+          gap="9px"
+          px={errPadX}
+          py={errPadY}
+          bg="red.50"
+          borderTopWidth="1px"
+          borderTopColor="red.100"
+          color="danger"
         >
           <svg
             width="15"
             height="15"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#dc2626"
+            stroke="currentColor"
             strokeWidth="2"
           >
             <circle cx="12" cy="12" r="9" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
-          <span style={{ flex: 1, fontSize: errFont, color: "#b91c1c", fontWeight: 500 }}>
+          <Text flex="1" fontSize={errFont} fontWeight="500">
             {t("failedCount", { count: err })}
-          </span>
-          <button
+          </Text>
+          <Button
             onClick={onRetry}
-            style={{
-              height: isSmall ? 25 : 27,
-              padding: isSmall ? "0 9px" : "0 11px",
-              borderRadius: 6,
-              border: "1px solid #fecaca",
-              background: "#fff",
-              color: "#dc2626",
-              fontSize: isSmall ? 11 : 12,
-              fontWeight: 600,
-              transition: "background .15s",
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#fff5f5";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "#fff";
-            }}
+            variant="outline"
+            h={isSmall ? "25px" : "27px"}
+            px={isSmall ? "9px" : "11px"}
+            borderRadius="6px"
+            borderColor="red.200"
+            bg="surface"
+            color="danger"
+            fontSize={isSmall ? "11px" : "12px"}
+            fontWeight="600"
+            _hover={{ bg: "red.50" }}
           >
             {t("retryButton")}
-          </button>
-        </div>
+          </Button>
+        </Flex>
       )}
 
       {/* Details rows */}
       {showDetails && (
-        <div
+        <Box
           className="pxscroll"
-          style={{ maxHeight: maxH, overflowY: "auto", borderTop: "1px solid #f1f1f3" }}
+          maxH={maxH}
+          overflowY="auto"
+          borderTopWidth="1px"
+          borderTopColor="gray.100"
         >
           {rows.map((u) => (
-            <div
+            <Flex
               key={u.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: isSmall ? 9 : 11,
-                padding: rowPad,
-                borderBottom: "1px solid #fafafa",
-              }}
+              align="center"
+              gap={isSmall ? "9px" : "11px"}
+              px={rowPadX}
+              py={rowPadY}
+              borderBottomWidth="1px"
+              borderBottomColor="gray.50"
             >
-              <div
-                style={{
-                  width: thumbSize,
-                  height: thumbSize,
-                  borderRadius: thumbRadius,
-                  background: u.tint,
-                  flexShrink: 0,
-                  position: "relative",
-                  overflow: "hidden",
-                }}
+              <Box
+                w={thumbSize}
+                h={thumbSize}
+                borderRadius={thumbRadius}
+                bg={u.tint}
+                flexShrink={0}
+                position="relative"
+                overflow="hidden"
               >
                 {u.status === "uploading" && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background:
-                        "linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%)",
-                      backgroundSize: "200% 100%",
-                      animation: "pxShimmer 1.1s linear infinite",
-                    }}
+                  <Box
+                    position="absolute"
+                    inset="0"
+                    bgImage="linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%)"
+                    backgroundSize="200% 100%"
+                    animation="pxShimmer 1.1s linear infinite"
                   />
                 )}
-              </div>
-              <span
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  fontSize: rowFont,
-                  fontWeight: 500,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
+              </Box>
+              <Text
+                flex="1"
+                minW="0"
+                fontSize={rowFont}
+                fontWeight="500"
+                whiteSpace="nowrap"
+                overflow="hidden"
+                textOverflow="ellipsis"
               >
                 {u.name}
-              </span>
-              <span
-                style={{
-                  fontSize: statusFont,
-                  fontWeight: 500,
-                  color:
-                    u.status === "done"
-                      ? "#16a34a"
-                      : u.status === "error"
-                        ? "#dc2626"
-                        : u.status === "uploading"
-                          ? "#2563eb"
-                          : u.status === "skipped"
-                            ? "#0891b2"
-                            : "#a1a1aa",
-                  flexShrink: 0,
-                  fontVariantNumeric: "tabular-nums",
-                }}
+              </Text>
+              <Text
+                fontSize={statusFont}
+                fontWeight="500"
+                color={STATUS_COLOR[u.status]}
+                flexShrink={0}
+                fontVariantNumeric="tabular-nums"
               >
                 {statusLabel(u.status, u.progress)}
-              </span>
-            </div>
+              </Text>
+            </Flex>
           ))}
           {overflow > 0 && (
-            <div
-              style={{ padding: rowPad, fontSize: ovFont, color: "#a1a1aa", textAlign: "center" }}
-            >
+            <Text px={rowPadX} py={rowPadY} fontSize={ovFont} color="fgSubtle" textAlign="center">
               {t("overflow", { count: fmt(overflow) })}
-            </div>
+            </Text>
           )}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

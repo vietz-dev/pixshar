@@ -16,7 +16,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     ports:
       - "9000:9000" # S3 API
       - "9001:9001" # web console
@@ -37,7 +37,7 @@ services:
   # Create the bucket and allow anonymous read (presigned GET also works, this is
   # a belt-and-suspenders fallback for display URLs).
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy

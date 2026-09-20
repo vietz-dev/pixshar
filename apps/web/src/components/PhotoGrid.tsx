@@ -3,6 +3,7 @@
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useTranslations } from "next-intl";
+import { Box, chakra, Flex } from "@chakra-ui/react";
 import LazyImage from "./LazyImage";
 
 interface GridPhoto {
@@ -106,23 +107,22 @@ export default function PhotoGrid({
   const selectCheckbox = (photoId: string) => {
     const isSelected = selectedIds?.has(photoId) ?? false;
     return (
-      <div
-        style={{
-          position: "absolute",
-          top: 8,
-          left: 8,
-          width: 22,
-          height: 22,
-          borderRadius: 6,
-          border: isSelected ? "none" : "2px solid rgba(255,255,255,.9)",
-          background: isSelected ? "#2563eb" : "rgba(0,0,0,.35)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2,
-          transition: "background .12s, border .12s",
-          pointerEvents: "none",
-        }}
+      <Flex
+        position="absolute"
+        top="8px"
+        left="8px"
+        w="22px"
+        h="22px"
+        borderRadius="6px"
+        borderWidth={isSelected ? "0" : "2px"}
+        borderColor="rgba(255,255,255,.9)"
+        bg={isSelected ? "accent" : "rgba(0,0,0,.35)"}
+        align="center"
+        justify="center"
+        color="white"
+        zIndex={2}
+        transition="background .12s, border .12s"
+        pointerEvents="none"
       >
         {isSelected && (
           <svg
@@ -130,7 +130,7 @@ export default function PhotoGrid({
             height="12"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#fff"
+            stroke="currentColor"
             strokeWidth="3"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -138,35 +138,33 @@ export default function PhotoGrid({
             <path d="M20 6 9 17l-5-5" />
           </svg>
         )}
-      </div>
+      </Flex>
     );
   };
 
   const deleteBtn = (photoId: string) => (
-    <button
+    <chakra.button
       data-del
       onClick={(e) => {
         e.stopPropagation();
         onDelete?.(photoId);
       }}
-      style={{
-        position: "absolute",
-        top: 8,
-        right: 8,
-        width: 28,
-        height: 28,
-        borderRadius: 6,
-        border: "none",
-        background: "rgba(220,38,38,.85)",
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        opacity: 0,
-        transition: "opacity .15s",
-        zIndex: 2,
-      }}
+      position="absolute"
+      top="8px"
+      right="8px"
+      w="28px"
+      h="28px"
+      borderRadius="6px"
+      bg="rgba(220,38,38,.85)"
+      color="white"
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+      cursor="pointer"
+      opacity="0"
+      transition="opacity .15s"
+      zIndex={2}
+      _hover={{ bg: "rgba(185,28,28,.9)" }}
     >
       <svg
         width="14"
@@ -178,7 +176,7 @@ export default function PhotoGrid({
       >
         <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
       </svg>
-    </button>
+    </chakra.button>
   );
 
   const imgOrPlaceholder = (p: GridPhoto) => {
@@ -189,74 +187,61 @@ export default function PhotoGrid({
           placeholderDataUrl={p.placeholderDataUrl ?? null}
           alt={p.photographerName || ""}
           objectFit="cover"
-          style={{ width: "100%", height: "100%" }}
         />
       );
     }
     return (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          background: "#f4f4f5",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <Flex w="100%" h="100%" bg="bg" color="fgSubtle" align="center" justify="center">
         <svg
           width="20"
           height="20"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="#a1a1aa"
+          stroke="currentColor"
           strokeWidth="1.5"
         >
           <rect x="3" y="3" width="18" height="18" rx="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <path d="m21 15-5-5L5 21" />
         </svg>
-      </div>
+      </Flex>
     );
   };
 
   const statusBadge = (p: GridPhoto) =>
     p.status && p.status !== "PROCESSED" ? (
-      <div
-        style={{
-          position: "absolute",
-          bottom: 6,
-          left: 6,
-          height: 20,
-          padding: "0 8px",
-          borderRadius: 999,
-          background: "rgba(0,0,0,.6)",
-          color: "#fff",
-          fontSize: 11,
-          display: "flex",
-          alignItems: "center",
-        }}
+      <Flex
+        position="absolute"
+        bottom="6px"
+        left="6px"
+        h="20px"
+        px="8px"
+        borderRadius="pill"
+        bg="rgba(0,0,0,.6)"
+        color="white"
+        fontSize="11px"
+        align="center"
       >
         {p.status === "PENDING" ? t("statusProcessing") : t("statusFailed")}
-      </div>
+      </Flex>
     ) : null;
 
   if (photos.length === 0) {
     return (
-      <div
+      <Box
         ref={containerRef}
-        style={{
-          textAlign: "center",
-          padding: "40px 20px",
-          border: "1px solid #f4f4f5",
-          borderRadius: 12,
-          background: "#fff",
-          color: "#a1a1aa",
-          fontSize: 13.5,
-        }}
+        textAlign="center"
+        px="20px"
+        py="40px"
+        borderWidth="1px"
+        borderColor="bg"
+        borderRadius="card"
+        bg="surface"
+        color="fgSubtle"
+        fontSize="13.5px"
       >
         {t("noPhotos")}
-      </div>
+      </Box>
     );
   }
 
