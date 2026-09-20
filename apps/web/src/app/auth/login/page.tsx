@@ -40,14 +40,7 @@ export default function LoginPage() {
   }
 
   return (
-    <Flex
-      minH="100vh"
-      align="center"
-      justify="center"
-      px="24px"
-      py="40px"
-      bgImage="radial-gradient(120% 80% at 50% 0%, #fafafa 0%, {colors.bg} 100%)"
-    >
+    <Flex minH="100vh" align="center" justify="center" px="24px" py="40px" bgImage="authCover">
       <Box w="100%" maxW="380px" animation="pxRise .5s ease both">
         <Stack align="center" gap="14px" mb="30px">
           <Flex
@@ -64,7 +57,7 @@ export default function LoginPage() {
               height="24"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#fff"
+              stroke="white"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"

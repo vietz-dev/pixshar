@@ -49,6 +49,10 @@ const config = defineConfig({
       gradients: {
         // Gallery cover art — gate page and gallery hero.
         cover: { value: "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)" },
+        // Login page backdrop.
+        authCover: {
+          value: "radial-gradient(120% 80% at 50% 0%,#fafafa 0%,{colors.bg} 100%)",
+        },
         // Event card thumbnails on /admin — picked by index, purely decorative.
         eventCover: {
           1: { value: `${coverSheen(0.5)},linear-gradient(150deg,#f6dcab 0%,#c8843f 100%)` },
@@ -66,6 +70,19 @@ const config = defineConfig({
         },
       },
       colors: {
+        // Upload tray avatar tints — decorative, picked at random per file.
+        tint: {
+          1: { value: "#fecaca" },
+          2: { value: "#bfdbfe" },
+          3: { value: "#bbf7d0" },
+          4: { value: "#fde68a" },
+          5: { value: "#ddd6fe" },
+          6: { value: "#fbcfe8" },
+          7: { value: "#99f6e4" },
+          8: { value: "#fed7aa" },
+          9: { value: "#c7d2fe" },
+          10: { value: "#e9d5ff" },
+        },
         accent: {
           50: { value: "#eff6ff" },
           100: { value: "#dbeafe" },

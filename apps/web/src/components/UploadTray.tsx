@@ -30,18 +30,7 @@ interface UploadTrayProps {
   size?: "small" | "large";
 }
 
-export const TINTS = [
-  "#fecaca",
-  "#bfdbfe",
-  "#bbf7d0",
-  "#fde68a",
-  "#ddd6fe",
-  "#fbcfe8",
-  "#99f6e4",
-  "#fed7aa",
-  "#c7d2fe",
-  "#e9d5ff",
-];
+export const TINTS = Array.from({ length: 10 }, (_, i) => `tint.${i + 1}`);
 
 export function randomTint() {
   return TINTS[Math.floor(Math.random() * TINTS.length)];
