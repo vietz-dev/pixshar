@@ -9,6 +9,10 @@ import { createSystem, defaultConfig, defineConfig } from "@chakra-ui/react";
  * `accent` is declared both as a flat color (`bg="accent"`) and as a full
  * colorPalette (`colorPalette="accent"` on Button/Badge/Progress/Tabs).
  */
+/** Top-left highlight every event cover gradient carries. */
+const coverSheen = (alpha: number) =>
+  `radial-gradient(120% 90% at 28% 16%,rgba(255,255,255,${alpha}) 0%,rgba(255,255,255,0) 46%)`;
+
 const config = defineConfig({
   globalCss: {
     body: {
@@ -45,6 +49,21 @@ const config = defineConfig({
       gradients: {
         // Gallery cover art — gate page and gallery hero.
         cover: { value: "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)" },
+        // Event card thumbnails on /admin — picked by index, purely decorative.
+        eventCover: {
+          1: { value: `${coverSheen(0.5)},linear-gradient(150deg,#f6dcab 0%,#c8843f 100%)` },
+          2: { value: `${coverSheen(0.35)},linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)` },
+          3: { value: `${coverSheen(0.5)},linear-gradient(150deg,#f3dada 0%,#d18f8f 100%)` },
+          4: { value: `${coverSheen(0.5)},linear-gradient(150deg,#cfe0cd 0%,#6e8f68 100%)` },
+          5: { value: `${coverSheen(0.5)},linear-gradient(150deg,#d9dbde 0%,#878d95 100%)` },
+          6: { value: `${coverSheen(0.5)},linear-gradient(150deg,#f8d6c2 0%,#df8763 100%)` },
+          7: { value: `${coverSheen(0.5)},linear-gradient(150deg,#e0d9ee 0%,#9989c2 100%)` },
+          8: { value: `${coverSheen(0.5)},linear-gradient(150deg,#ece1cd 0%,#c0a673 100%)` },
+          9: { value: `${coverSheen(0.5)},linear-gradient(150deg,#cfe5e2 0%,#6ba39b 100%)` },
+          10: { value: `${coverSheen(0.5)},linear-gradient(150deg,#e4cdd9 0%,#a76f8b 100%)` },
+          11: { value: `${coverSheen(0.45)},linear-gradient(150deg,#cccdcf 0%,#5a5d65 100%)` },
+          12: { value: `${coverSheen(0.5)},linear-gradient(150deg,#f4e9d4 0%,#d7be8c 100%)` },
+        },
       },
       colors: {
         accent: {

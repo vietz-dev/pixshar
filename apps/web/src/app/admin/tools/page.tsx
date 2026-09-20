@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Box, Button, Card, Flex, Heading, Progress, Text } from "@chakra-ui/react";
 
 interface BackfillStatus {
   total: number;
@@ -74,103 +75,73 @@ export default function AdminToolsPage() {
 
   const pct =
     progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+  const disabled = running || (status?.missing === 0 && !done);
 
   return (
-    <div style={{ maxWidth: 680, margin: "0 auto", padding: "40px 24px" }}>
-      <div style={{ marginBottom: 32, display: "flex", alignItems: "center", gap: 16 }}>
-        <Link
-          href="/admin"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            color: "var(--text-muted)",
-            textDecoration: "none",
-            fontSize: 14,
-          }}
-        >
-          ← Admin
+    <Box maxW="680px" mx="auto" px="24px" py="40px">
+      <Flex mb="32px" align="center" gap="16px">
+        <Link href="/admin">
+          <Flex as="span" align="center" gap="6px" color="fgMuted" fontSize="14px">
+            ← Admin
+          </Flex>
         </Link>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>Tools</h1>
-      </div>
+        <Heading as="h1" m="0" fontSize="22px" fontWeight="600">
+          Tools
+        </Heading>
+      </Flex>
 
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          padding: 24,
-        }}
-      >
-        <h2 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>
-          Blur-Platzhalterbilder generieren
-        </h2>
-        <p
-          style={{ margin: "0 0 20px", color: "var(--text-muted)", fontSize: 14, lineHeight: 1.6 }}
-        >
-          Generiert Blur-Platzhalterbilder für alle bereits hochgeladenen Fotos, die noch keinen
-          Platzhalter haben. Neue Fotos erhalten den Platzhalter automatisch beim Verarbeiten.
-        </p>
+      <Card.Root bg="surface" borderWidth="1px" borderColor="border" borderRadius="card">
+        <Card.Body p="24px">
+          <Heading as="h2" m="0 0 8px" fontSize="16px" fontWeight="600">
+            Blur-Platzhalterbilder generieren
+          </Heading>
+          <Text m="0 0 20px" color="fgMuted" fontSize="14px" lineHeight="1.6">
+            Generiert Blur-Platzhalterbilder für alle bereits hochgeladenen Fotos, die noch keinen
+            Platzhalter haben. Neue Fotos erhalten den Platzhalter automatisch beim Verarbeiten.
+          </Text>
 
-        {status && (
-          <p style={{ margin: "0 0 20px", fontSize: 14, color: "var(--text-muted)" }}>
-            {status.missing === 0
-              ? `Alle ${status.total} Fotos haben bereits einen Platzhalter.`
-              : `${status.missing} von ${status.total} Fotos fehlt noch ein Platzhalter.`}
-          </p>
-        )}
+          {status && (
+            <Text m="0 0 20px" fontSize="14px" color="fgMuted">
+              {status.missing === 0
+                ? `Alle ${status.total} Fotos haben bereits einen Platzhalter.`
+                : `${status.missing} von ${status.total} Fotos fehlt noch ein Platzhalter.`}
+            </Text>
+          )}
 
-        {progress && (
-          <div style={{ marginBottom: 20 }}>
-            <div
-              style={{
-                height: 8,
-                background: "var(--border)",
-                borderRadius: 4,
-                overflow: "hidden",
-                marginBottom: 8,
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  width: `${pct}%`,
-                  background: "var(--accent)",
-                  borderRadius: 4,
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-              {progress.processed} / {progress.total} Fotos verarbeitet ({pct}%)
-            </p>
-          </div>
-        )}
+          {progress && (
+            <Progress.Root value={pct} colorPalette="accent" mb="20px">
+              <Progress.Track h="8px" borderRadius="4px" bg="border" mb="8px">
+                <Progress.Range borderRadius="4px" transition="width .3s ease" />
+              </Progress.Track>
+              <Text m="0" fontSize="13px" color="fgMuted">
+                {progress.processed} / {progress.total} Fotos verarbeitet ({pct}%)
+              </Text>
+            </Progress.Root>
+          )}
 
-        {done && (
-          <p style={{ margin: "0 0 16px", fontSize: 14, color: "var(--accent)", fontWeight: 500 }}>
-            ✓ Fertig — alle Platzhalterbilder wurden generiert.
-          </p>
-        )}
+          {done && (
+            <Text m="0 0 16px" fontSize="14px" color="accent" fontWeight="500">
+              ✓ Fertig — alle Platzhalterbilder wurden generiert.
+            </Text>
+          )}
 
-        <button
-          onClick={startBackfill}
-          disabled={running || (status?.missing === 0 && !done)}
-          style={{
-            padding: "8px 18px",
-            background: "var(--accent)",
-            color: "#fff",
-            border: "none",
-            borderRadius: "var(--radius)",
-            cursor: running || (status?.missing === 0 && !done) ? "not-allowed" : "pointer",
-            opacity: running || (status?.missing === 0 && !done) ? 0.6 : 1,
-            fontSize: 14,
-            fontWeight: 500,
-          }}
-        >
-          {running ? "Wird generiert…" : "Backfill starten"}
-        </button>
-      </div>
-    </div>
+          <Button
+            onClick={startBackfill}
+            disabled={disabled}
+            colorPalette="accent"
+            px="18px"
+            py="8px"
+            h="auto"
+            borderRadius="control"
+            fontSize="14px"
+            fontWeight="500"
+            cursor={disabled ? "not-allowed" : "pointer"}
+            opacity={disabled ? 0.6 : 1}
+          >
+            {running ? "Wird generiert…" : "Backfill starten"}
+          </Button>
+        </Card.Body>
+      </Card.Root>
+    </Box>
   );
 }
