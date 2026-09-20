@@ -1,6 +1,6 @@
 {
   "name": "@pixshar/web",
-  "version": "0.0.31",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "API_URL=${API_URL:-http://localhost:3001} bunx next dev",
