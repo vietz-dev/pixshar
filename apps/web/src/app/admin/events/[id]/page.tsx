@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toaster } from "@/components/ui/toaster";
 import { useTranslations } from "next-intl";
 import {
   Alert,
@@ -283,10 +283,10 @@ export default function EventDetailPage() {
       credentials: "include",
     });
     if (res.ok) {
-      toast.success(t("deletePhoto.success"));
+      toaster.create({ type: "success", title: t("deletePhoto.success") });
       fetchEvent();
     } else {
-      toast.error(t("deletePhoto.failed"));
+      toaster.create({ type: "error", title: t("deletePhoto.failed") });
     }
   }
 
@@ -309,13 +309,13 @@ export default function EventDetailPage() {
         body: JSON.stringify({ password: pwNewValue }),
       });
       if (res.ok) {
-        toast.success(t("password.saved"));
+        toaster.create({ type: "success", title: t("password.saved") });
         setEvent((prev) => (prev ? { ...prev, password: pwNewValue } : prev));
         setPwNewValue("");
         setPwChangeOpen(false);
         setPwVisible(false);
       } else {
-        toast.error(t("password.failed"));
+        toaster.create({ type: "error", title: t("password.failed") });
       }
     } finally {
       setPwSaving(false);
@@ -390,11 +390,11 @@ export default function EventDetailPage() {
         body: JSON.stringify({ photoIds: ids }),
       });
       if (!res.ok) throw new Error();
-      toast.success(t("bulkDelete.success", { count: ids.length }));
+      toaster.create({ type: "success", title: t("bulkDelete.success", { count: ids.length }) });
       exitSelection();
       fetchEvent();
     } catch {
-      toast.error(t("bulkDelete.failed"));
+      toaster.create({ type: "error", title: t("bulkDelete.failed") });
     } finally {
       setBulkDeleting(false);
       setBulkDeleteOpen(false);
@@ -424,12 +424,12 @@ export default function EventDetailPage() {
             }
           : prev,
       );
-      toast.success(t("bulkRename.success", { count: ids.length }));
+      toaster.create({ type: "success", title: t("bulkRename.success", { count: ids.length }) });
       setBulkRenameOpen(false);
       setBulkRenameName("");
       exitSelection();
     } catch {
-      toast.error(t("bulkRename.failed"));
+      toaster.create({ type: "error", title: t("bulkRename.failed") });
     } finally {
       setBulkRenaming(false);
     }

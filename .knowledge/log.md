@@ -1,5 +1,8 @@
 # Pixshar Knowledge Bundle — Update Log
 
+## 2026-09-20
+* **Change**: The web app migrated to **Chakra UI v3** for components and layout, replacing inline styles and undeclared CSS variables. A single theme module now owns all colors, radii, fonts, shadows and gradients behind semantic token names; overlays share one dialog primitive; toasts moved to Chakra's toaster. Dark mode stays deferred but is now a one-file change. Updated [frontend](/architecture/frontend.md).
+
 ## 2026-07-03
 * **Initialization**: Created foundational OKF bundle covering product overview, architecture, data model, API, and architectural decisions.
 * **Creation**: Added [overview](/overview.md), [frontend](/architecture/frontend.md), [backend](/architecture/backend.md), [storage](/architecture/storage.md), [auth](/architecture/auth.md), [image processing](/architecture/image-processing.md), [archive generation](/architecture/archive-generation.md).

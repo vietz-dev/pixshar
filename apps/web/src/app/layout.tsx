@@ -1,5 +1,5 @@
 import "./globals.css";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/toaster";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { EmotionRegistry } from "@/components/ui/emotion-registry";
@@ -29,7 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Provider>
             <NextIntlClientProvider locale={locale} messages={messages}>
               {children}
-              <Toaster position="bottom-right" richColors />
+              <Toaster />
             </NextIntlClientProvider>
           </Provider>
         </EmotionRegistry>

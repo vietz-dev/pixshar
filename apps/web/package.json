@@ -17,8 +17,7 @@
     "next": "16.2.9",
     "next-intl": "^4.13.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "sonner": "^2.0.7"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@chakra-ui/cli": "^3.37.0",

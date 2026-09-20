@@ -1,14 +1,14 @@
 ---
 type: Architecture
 title: Frontend
-description: Next.js 15 App Router application for both the guest gallery and admin studio.
-tags: [frontend, nextjs, ui]
-timestamp: 2026-07-03T00:00:00Z
+description: Next.js App Router application for both the guest gallery and admin studio, built on Chakra UI v3.
+tags: [frontend, nextjs, chakra-ui, ui]
+timestamp: 2026-09-20T00:00:00Z
 ---
 
 # Technology
 
-The frontend is a **Next.js 15** application using the App Router with `output: standalone` for Docker image builds. The standalone output bundles only the Node.js runtime files needed at run time, keeping images small.
+The frontend is a **Next.js 16** application using the App Router with `output: standalone` for Docker image builds. The standalone output bundles only the Node.js runtime files needed at run time, keeping images small.
 
 # Client/Server Split
 
@@ -16,20 +16,30 @@ The application favors **React Server Components** for data fetching and page sh
 
 # Styling
 
-There is **no component library or CSS framework**. All styling is plain CSS using a set of CSS custom properties (variables) defined in `globals.css`:
+The UI is built on **Chakra UI v3** — components *and* layout. Emotion is the style runtime; a server-inserted cache registry flushes critical styles during SSR so the first paint is styled. Chakra's preflight provides the CSS reset. Chakra's official builder/migrate/refactor agent skills are vendored in the repo so agent-driven UI work stays on-pattern.
 
-| Variable | Role |
+A single theme module is the only source of colors, radii, fonts, shadows and gradients. Call sites use **semantic token names**, never raw values:
+
+| Token | Role |
 |---|---|
-| `--bg` | Page background |
-| `--surface` | Card / panel background |
-| `--border` | Separator and border color |
-| `--text` | Primary text |
-| `--text-muted` | Secondary / hint text |
-| `--accent` | Brand action color |
-| `--danger` | Destructive action color |
-| `--radius` | Default border radius |
+| `bg` | Page background |
+| `surface` | Card / panel background |
+| `border` | Separator and border color |
+| `fg` / `fgMuted` / `fgSubtle` | Text, in descending emphasis |
+| `accent` | Brand action color (also a full `colorPalette`) |
+| `danger` / `success` / `warning` | Status colors |
+| `control` / `card` / `pill` | Named radii |
 
-Inline styles and these variables are used throughout components. This choice was deliberate: it removes build-time CSS tooling, makes theming trivial (swap variables in one file), and keeps components portable.
+Rules that keep the system coherent:
+
+- No inline style objects and no raw hex outside the theme. The one exception is the photo grid's virtualizer boxes, whose geometry is computed, not themed.
+- Hover and focus are declarative (`_hover`, `_focusVisible`), never imperative DOM style mutation.
+- Recipes exist only for primitives with a proven second call site; Chakra's defaults are preferred where they already resolve to the right token.
+- The global stylesheet holds only the handful of live `@keyframes`; everything else is theme-level global CSS.
+- Overlays are all one dialog primitive, so they are portalled, focus-trapped, scroll-locking and Escape-closable by construction.
+- Toasts come from Chakra's toaster.
+
+Dark mode is deliberately deferred. Because every call site names a semantic token, enabling it is a single pass over the theme rather than a sweep over components.
 
 # Internationalisation
 
