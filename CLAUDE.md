@@ -151,6 +151,9 @@ share gallery link → guest unlocks → guest uploads → photos appear.
 - Next.js: `"use client"` only where interactivity is needed; prefer server components for
   data fetching where it makes sense
 - API responses: always `{ error: string }` on failure with appropriate HTTP status
+- Commit subjects are load-bearing: release-please derives the version from them. `fix:` → patch,
+  `feat:` → minor, `feat!:` → minor while below `1.0.0`, `chore:`/`docs:`/`test:` → no release.
+  A real feature labelled `chore:` silently ships no bump, so label honestly.
 
 ## Running the Playwright e2e suite locally
 ```bash

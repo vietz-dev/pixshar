@@ -23,12 +23,8 @@ The chart deploys two components:
 
 ### 1. Build and push images (or use CI)
 
-The repository includes a GitHub Actions workflow that automatically builds and pushes images when you push a tag:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+The repository includes a GitHub Actions workflow that builds and pushes images when a
+release-please release PR is merged to `main` (see the root `README.md`).
 
 Images are pushed to `ghcr.io/<owner>/pixshar-api` and `ghcr.io/<owner>/pixshar-web`.
 
