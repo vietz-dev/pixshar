@@ -1,5 +1,7 @@
 # @pixshar/shared
 
+## 0.1.0
+
 ## 0.0.31
 
 ### Patch Changes

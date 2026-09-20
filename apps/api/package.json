@@ -1,6 +1,6 @@
 {
   "name": "@pixshar/api",
-  "version": "0.0.31",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "bun --env-file=../../.env --watch src/index.ts",
