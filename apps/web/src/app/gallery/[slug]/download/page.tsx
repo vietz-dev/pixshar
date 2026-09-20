@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { Box, Button, chakra, Flex, Heading, Spinner, Stack, Tabs, Text } from "@chakra-ui/react";
 
 interface ArchivePart {
   index: number;
@@ -52,6 +53,8 @@ function localStorageKey(slug: string, quality: Quality, partIndex: number, sig:
   return `pixshar_dl_${slug}_${quality}_part_${partIndex}_${sig}`;
 }
 
+// Intentionally left un-migrated: `download-page.spec.ts` selects this exact
+// span/svg shape (`svg polyline[points='20 6 9 17 4 12']` inside a <span>).
 function CheckIcon({ done }: { done: boolean }) {
   return (
     <span
@@ -173,42 +176,43 @@ export default function GalleryDownloadPage() {
     setDownloaded((prev) => ({ ...prev, [q]: { ...prev[q], [partIndex]: true } }));
   };
 
+  const backButton = (
+    <Button
+      onClick={() => router.push(`/gallery/${slug}/view`)}
+      variant="outline"
+      h="36px"
+      px="14px"
+      borderRadius="control"
+      borderColor="border"
+      bg="surface"
+      color="fg"
+      fontSize="13.5px"
+      fontWeight="500"
+    >
+      {t("backToGallery")}
+    </Button>
+  );
+
   // ---- Render states -------------------------------------------------------
 
   if (error) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-          background: "var(--bg, #fafaf9)",
-        }}
-      >
-        <p style={{ color: "var(--danger, #ef4444)", marginBottom: 16 }}>{error}</p>
-        <button onClick={() => router.push(`/gallery/${slug}/view`)} style={backBtnStyle}>
-          {t("backToGallery")}
-        </button>
-      </div>
+      <Flex minH="100vh" direction="column" align="center" justify="center" p="24px" bg="bg">
+        <Text color="danger" mb="16px">
+          {error}
+        </Text>
+        {backButton}
+      </Flex>
     );
   }
 
   if (!payload) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "var(--bg, #fafaf9)",
-        }}
-      >
-        <span style={{ color: "var(--text-muted, #71717a)", fontSize: 14 }}>…</span>
-      </div>
+      <Flex minH="100vh" align="center" justify="center" bg="bg">
+        <Text color="fgMuted" fontSize="14px">
+          …
+        </Text>
+      </Flex>
     );
   }
 
@@ -220,23 +224,20 @@ export default function GalleryDownloadPage() {
   const n = parts.length;
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg, #fafaf9)", padding: "32px 16px" }}>
-      <div style={{ maxWidth: 540, margin: "0 auto" }}>
+    <Box minH="100vh" bg="bg" px="16px" py="32px">
+      <Box maxW="540px" mx="auto">
         {/* Back link */}
-        <button
+        <Button
           onClick={() => router.push(`/gallery/${slug}/view`)}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-muted, #71717a)",
-            fontSize: 13.5,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            marginBottom: 28,
-            padding: 0,
-          }}
+          variant="plain"
+          h="auto"
+          p="0"
+          gap="5px"
+          color="fgMuted"
+          fontSize="13.5px"
+          fontWeight="400"
+          mb="28px"
+          _hover={{ color: "fg" }}
         >
           <svg
             width="14"
@@ -251,275 +252,225 @@ export default function GalleryDownloadPage() {
             <polyline points="15 18 9 12 15 6" />
           </svg>
           {t("backToGallery")}
-        </button>
+        </Button>
 
         {/* Header */}
-        <h1
-          style={{
-            fontSize: 22,
-            fontWeight: 700,
-            color: "var(--text, #18181b)",
-            margin: "0 0 16px",
-          }}
-        >
+        <Heading as="h1" fontSize="22px" fontWeight="700" color="fg" m="0 0 16px">
           {t("title")}
-        </h1>
+        </Heading>
 
         {/* Variant toggle */}
-        <div
-          role="tablist"
-          style={{
-            display: "flex",
-            gap: 6,
-            padding: 4,
-            borderRadius: 12,
-            background: "var(--surface, #fff)",
-            border: "1px solid var(--border, #e4e4e7)",
-            marginBottom: 18,
-          }}
+        <Tabs.Root
+          value={quality}
+          onValueChange={(e) => setQuality(e.value as Quality)}
+          variant="plain"
         >
-          <VariantTab
-            testId="variant-toggle-kompakt"
-            active={quality === "DISPLAY"}
-            onClick={() => setQuality("DISPLAY")}
-            label={t("tabKompakt")}
-            hint={t("tabKompaktHint")}
-            building={displayVariant.building}
-          />
-          <VariantTab
-            testId="variant-toggle-original"
-            active={quality === "ORIGINAL"}
-            onClick={() => setQuality("ORIGINAL")}
-            label={t("tabOriginal")}
-            hint={t("tabOriginalHint")}
-            building={originalVariant.building}
-          />
-        </div>
+          <Tabs.List
+            h="auto"
+            gap="6px"
+            p="4px"
+            borderRadius="card"
+            bg="surface"
+            borderWidth="1px"
+            borderColor="border"
+            mb="18px"
+          >
+            <VariantTab
+              value="DISPLAY"
+              active={quality === "DISPLAY"}
+              testId="variant-toggle-kompakt"
+              label={t("tabKompakt")}
+              hint={t("tabKompaktHint")}
+              building={displayVariant.building}
+            />
+            <VariantTab
+              value="ORIGINAL"
+              active={quality === "ORIGINAL"}
+              testId="variant-toggle-original"
+              label={t("tabOriginal")}
+              hint={t("tabOriginalHint")}
+              building={originalVariant.building}
+            />
+          </Tabs.List>
+        </Tabs.Root>
 
         {/* Active-variant summary */}
-        <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 8px" }}>
+        <Text fontSize="13.5px" color="fgMuted" m="0 0 8px">
           {active.partCount === 1
             ? t("variantSummarySingle", { size: formatBytes(active.totalSizeBytes) })
             : t("variantSummary", {
                 count: active.partCount,
                 size: formatBytes(active.totalSizeBytes),
               })}
-        </p>
+        </Text>
         {n > 1 && (
-          <p
-            style={{
-              fontSize: 13,
-              color: "var(--text-muted, #71717a)",
-              margin: "0 0 20px",
-              lineHeight: 1.5,
-            }}
-          >
+          <Text fontSize="13px" color="fgMuted" m="0 0 20px" lineHeight="1.5">
             {t("instruction")}
-          </p>
+          </Text>
         )}
-        {n <= 1 && <div style={{ marginBottom: 20 }} />}
+        {n <= 1 && <Box mb="20px" />}
 
         {/* Build-in-progress banner for the ACTIVE variant */}
         {active.building && (
-          <div
+          <Flex
             data-testid="building-banner"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              fontSize: 12.5,
-              color: "#2563eb",
-              background: "#eff6ff",
-              border: "1px solid #bfdbfe",
-              borderRadius: 10,
-              padding: "10px 12px",
-              marginBottom: 20,
-            }}
+            align="center"
+            gap="9px"
+            fontSize="12.5px"
+            color="accent"
+            bg="accent.50"
+            borderWidth="1px"
+            borderColor="accent.200"
+            borderRadius="10px"
+            px="12px"
+            py="10px"
+            mb="20px"
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0 }}
-            >
-              <path d="M21 12a9 9 0 1 1-6.2-8.5" />
-            </svg>
+            <Spinner size="sm" borderWidth="2.2px" color="currentColor" flexShrink={0} />
             {t("buildingBanner")}
-          </div>
+          </Flex>
         )}
 
         {/* Empty state for the active variant (no parts yet) */}
         {n === 0 && (
-          <p style={{ fontSize: 13.5, color: "var(--text-muted, #71717a)", margin: "0 0 20px" }}>
+          <Text fontSize="13.5px" color="fgMuted" m="0 0 20px">
             {active.building ||
             active.status === "BUILDING" ||
             active.status === "QUEUED" ||
             active.status === "DEBOUNCING"
               ? t("variantBuildingEmpty")
               : t("variantNoArchive")}
-          </p>
+          </Text>
         )}
 
         {/* Part list (active variant only — galleries can have 20+ parts) */}
         {n > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Stack gap="12px">
             {parts.map((part) => {
               const done = !!downloaded[quality]?.[part.index];
               const sig = part.membershipSig ?? "";
               return (
-                <a
+                <chakra.a
                   key={part.index}
                   href={part.url ?? undefined}
                   download={part.url ? true : undefined}
                   onClick={() => part.url && markDownloaded(quality, part.index, sig)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 14,
-                    padding: "16px 18px",
-                    borderRadius: 12,
-                    border: `1px solid ${done ? "#bbf7d0" : "var(--border, #e4e4e7)"}`,
-                    background: done ? "#f0fdf4" : "var(--surface, #fff)",
-                    textDecoration: "none",
-                    transition: "background .15s, border-color .15s",
-                    cursor: part.url ? "pointer" : "default",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!done && part.url) e.currentTarget.style.background = "#f9f9f8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = done ? "#f0fdf4" : "var(--surface, #fff)";
-                  }}
+                  display="flex"
+                  alignItems="center"
+                  gap="14px"
+                  px="18px"
+                  py="16px"
+                  borderRadius="card"
+                  borderWidth="1px"
+                  borderColor={done ? "green.200" : "border"}
+                  bg={done ? "green.50" : "surface"}
+                  textDecoration="none"
+                  transition="background .15s, border-color .15s"
+                  cursor={part.url ? "pointer" : "default"}
+                  _hover={part.url && !done ? { bg: "gray.50" } : undefined}
                 >
                   <CheckIcon done={done} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: "var(--text, #18181b)",
-                        marginBottom: 2,
-                      }}
-                    >
+                  <Box flex="1" minW="0">
+                    <Text fontSize="14px" fontWeight="600" color="fg" mb="2px">
                       {n === 1 ? t("title") : t("partLabel", { index: part.index, total: n })}
-                    </div>
-                    <div style={{ fontSize: 12.5, color: "var(--text-muted, #71717a)" }}>
+                    </Text>
+                    <Box fontSize="12.5px" color="fgMuted">
                       {t("partSize", { size: formatBytes(part.sizeBytes) })}
                       {done && (
-                        <span style={{ marginLeft: 8, color: "#16a34a", fontWeight: 500 }}>
+                        <Text as="span" ml="8px" color="success" fontWeight="500">
                           · {t("downloaded")}
-                        </span>
+                        </Text>
                       )}
                       {part.rebuilding && (
-                        <span style={{ marginLeft: 8, color: "#d97706", fontWeight: 500 }}>
+                        <Text as="span" ml="8px" color="warning" fontWeight="500">
                           · {t("rebuilding")}
-                        </span>
+                        </Text>
                       )}
-                    </div>
-                  </div>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="var(--text-muted, #a1a1aa)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ flexShrink: 0 }}
-                  >
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                </a>
+                    </Box>
+                  </Box>
+                  <Box color="fgSubtle" flexShrink={0} lineHeight="0">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </Box>
+                </chakra.a>
               );
             })}
-          </div>
+          </Stack>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
 function VariantTab({
-  testId,
+  value,
   active,
-  onClick,
+  testId,
   label,
   hint,
   building,
 }: {
-  testId: string;
+  value: Quality;
   active: boolean;
-  onClick: () => void;
+  testId: string;
   label: string;
   hint: string;
   building: boolean;
 }) {
   return (
-    <button
-      role="tab"
-      aria-selected={active}
+    <Tabs.Trigger
+      value={value}
       data-testid={testId}
-      onClick={onClick}
-      style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 2,
-        padding: "8px 10px",
-        borderRadius: 9,
-        border: "none",
-        cursor: "pointer",
-        background: active ? "var(--accent, #18181b)" : "transparent",
-        color: active ? "#fff" : "var(--text, #18181b)",
-        transition: "background .15s, color .15s",
-      }}
+      flex="1"
+      h="auto"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      textAlign="center"
+      whiteSpace="normal"
+      gap="2px"
+      px="10px"
+      py="8px"
+      borderRadius="9px"
+      bg="transparent"
+      color="fg"
+      transition="background .15s, color .15s"
+      _selected={{ bg: "fg", color: "surface" }}
     >
-      <span
-        style={{
-          fontSize: 13.5,
-          fontWeight: 600,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-        }}
+      <Text
+        as="span"
+        fontSize="13.5px"
+        fontWeight="600"
+        display="inline-flex"
+        alignItems="center"
+        gap="6px"
       >
         {label}
         {building && (
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            style={{ animation: "pxSpin 1s linear infinite", flexShrink: 0, opacity: 0.85 }}
-          >
-            <path d="M21 12a9 9 0 1 1-6.2-8.5" />
-          </svg>
+          <Spinner
+            size="xs"
+            borderWidth="2.4px"
+            color="currentColor"
+            opacity={0.85}
+            flexShrink={0}
+          />
         )}
-      </span>
-      <span style={{ fontSize: 11, opacity: active ? 0.8 : 0.6 }}>{hint}</span>
-    </button>
+      </Text>
+      <Text as="span" fontSize="11px" opacity={active ? 0.8 : 0.6}>
+        {hint}
+      </Text>
+    </Tabs.Trigger>
   );
 }
-
-const backBtnStyle: React.CSSProperties = {
-  height: 36,
-  padding: "0 14px",
-  borderRadius: 8,
-  border: "1px solid var(--border, #e4e4e7)",
-  background: "var(--surface, #fff)",
-  color: "var(--text, #18181b)",
-  fontSize: 13.5,
-  fontWeight: 500,
-  cursor: "pointer",
-};

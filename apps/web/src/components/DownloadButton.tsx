@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { Button, HStack, Progress, Spinner } from "@chakra-ui/react";
 
 type DownloadStatus = "NONE" | "DEBOUNCING" | "BUILDING" | "READY" | "FAILED";
 
@@ -23,6 +24,38 @@ interface DownloadState {
   message?: string;
   debounceUntil?: string;
   building?: boolean;
+}
+
+/** Shared chrome for every state of the button — only colors/cursor differ. */
+const buttonBase = {
+  variant: "outline",
+  h: "38px",
+  px: "14px",
+  gap: "6px",
+  borderRadius: "control",
+  borderColor: "border",
+  bg: "surface",
+  fontSize: "13.5px",
+  fontWeight: "500",
+} as const;
+
+function DownloadIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="7 10 12 15 17 10"></polyline>
+      <line x1="12" y1="15" x2="12" y2="3"></line>
+    </svg>
+  );
 }
 
 export default function DownloadButton({ slug }: { slug: string }) {
@@ -48,40 +81,10 @@ export default function DownloadButton({ slug }: { slug: string }) {
 
   if (!state) {
     return (
-      <button
-        disabled
-        style={{
-          height: 38,
-          padding: "0 14px",
-          borderRadius: 8,
-          border: "1px solid #e4e4e7",
-          background: "#fff",
-          color: "#a1a1aa",
-          fontSize: 13.5,
-          fontWeight: 500,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          cursor: "not-allowed",
-          opacity: 0.7,
-        }}
-      >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
+      <Button {...buttonBase} disabled color="fgSubtle" opacity={0.7} cursor="not-allowed">
+        <DownloadIcon />
         {t("downloadAll")}
-      </button>
+      </Button>
     );
   }
 
@@ -98,46 +101,16 @@ export default function DownloadButton({ slug }: { slug: string }) {
           ? t("downloadAllSize", { size: formatBytes(total) })
           : t("downloadAll");
     return (
-      <button
+      <Button
+        {...buttonBase}
         onClick={() => router.push(`/gallery/${slug}/download`)}
-        style={{
-          height: 38,
-          padding: "0 14px",
-          borderRadius: 8,
-          border: "1px solid #e4e4e7",
-          background: "#fff",
-          color: "#18181b",
-          fontSize: 13.5,
-          fontWeight: 500,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          cursor: "pointer",
-          transition: "background .15s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "#f4f4f5";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "#fff";
-        }}
+        color="fg"
+        transition="background .15s"
+        _hover={{ bg: "bg" }}
       >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
+        <DownloadIcon />
         {label}
-      </button>
+      </Button>
     );
   }
 
@@ -148,117 +121,48 @@ export default function DownloadButton({ slug }: { slug: string }) {
       : Math.round(((state.processedPhotos ?? 0) / state.photoCount) * 100);
     const label = isUploading ? t("uploadingS3", { pct }) : t("buildingPct", { pct });
     return (
-      <button
+      <Button
+        {...buttonBase}
         disabled
-        style={{
-          height: 38,
-          padding: "0 14px",
-          borderRadius: 8,
-          border: "1px solid #e4e4e7",
-          background: "#fff",
-          color: "#71717a",
-          fontSize: 13.5,
-          fontWeight: 500,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          cursor: "default",
-          opacity: 0.9,
-          position: "relative",
-          overflow: "hidden",
-        }}
+        color="fgMuted"
+        opacity={0.9}
+        cursor="default"
+        position="relative"
+        overflow="hidden"
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: `${pct}%`,
-            background: "rgba(37,99,235,.12)",
-            transition: "width .5s ease",
-          }}
-        />
-        <span
-          style={{
-            position: "relative",
-            zIndex: 1,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            style={{ animation: "pxSpin 1s linear infinite" }}
-          >
-            <path d="M21 12a9 9 0 1 1-6.2-8.5"></path>
-          </svg>
+        <Progress.Root value={pct} position="absolute" inset="0" shape="square">
+          <Progress.Track h="100%" bg="transparent">
+            <Progress.Range bg="accent.50" transition="width .5s ease" />
+          </Progress.Track>
+        </Progress.Root>
+        <HStack position="relative" zIndex={1} gap="6px">
+          <Spinner size="sm" borderWidth="2.2px" color="currentColor" />
           {label}
-        </span>
-      </button>
+        </HStack>
+      </Button>
     );
   }
 
   const label = labelFor(t, state.status);
-  const isDisabled = state.status === "FAILED";
+  const failed = state.status === "FAILED";
 
   return (
-    <button
-      disabled={isDisabled}
-      style={{
-        height: 38,
-        padding: "0 14px",
-        borderRadius: 8,
-        border: "1px solid #e4e4e7",
-        background: state.status === "FAILED" ? "#fef2f2" : "#fff",
-        color: state.status === "FAILED" ? "#dc2626" : "#71717a",
-        fontSize: 13.5,
-        fontWeight: 500,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        transition: "background .15s",
-        cursor: isDisabled ? "not-allowed" : "default",
-        opacity: 0.8,
-      }}
+    <Button
+      {...buttonBase}
+      disabled={failed}
+      bg={failed ? "red.50" : "surface"}
+      color={failed ? "danger" : "fgMuted"}
+      cursor={failed ? "not-allowed" : "default"}
+      opacity={0.8}
+      transition="background .15s"
     >
-      {state.status === "BUILDING" && (
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          style={{ animation: "pxSpin 1s linear infinite" }}
-        >
-          <path d="M21 12a9 9 0 1 1-6.2-8.5"></path>
-        </svg>
-      )}
-      {state.status !== "BUILDING" && (
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
+      {state.status === "BUILDING" ? (
+        <Spinner size="sm" borderWidth="2.2px" color="currentColor" />
+      ) : (
+        <DownloadIcon />
       )}
       {label}
-    </button>
+    </Button>
   );
 }
 
