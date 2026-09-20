@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { Box, Button, Card, Field, Flex, HStack, Input, Stack, Text } from "@chakra-ui/react";
 
 export default function LoginPage() {
   const t = useTranslations("auth.login");
@@ -39,37 +40,24 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "40px 24px",
-        background: "radial-gradient(120% 80% at 50% 0%, #fafafa 0%, #f4f4f5 100%)",
-      }}
+    <Flex
+      minH="100vh"
+      align="center"
+      justify="center"
+      px="24px"
+      py="40px"
+      bgImage="radial-gradient(120% 80% at 50% 0%, #fafafa 0%, {colors.bg} 100%)"
     >
-      <div style={{ width: "100%", maxWidth: 380, animation: "pxRise .5s ease both" }}>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 14,
-            marginBottom: 30,
-          }}
-        >
-          <div
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 13,
-              background: "#2563eb",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 6px 20px -6px rgba(37,99,235,.6)",
-            }}
+      <Box w="100%" maxW="380px" animation="pxRise .5s ease both">
+        <Stack align="center" gap="14px" mb="30px">
+          <Flex
+            w="46px"
+            h="46px"
+            borderRadius="13px"
+            bg="accent"
+            align="center"
+            justify="center"
+            boxShadow="0 6px 20px -6px rgba(37,99,235,.6)"
           >
             <svg
               width="24"
@@ -85,133 +73,74 @@ export default function LoginPage() {
               <circle cx="8.5" cy="8.5" r="1.8"></circle>
               <path d="m21 15-4.5-4.5L7 20"></path>
             </svg>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>Pixshar</div>
-            <div style={{ fontSize: 14, color: "#71717a", marginTop: 3 }}>{t("subtitle")}</div>
-          </div>
-        </div>
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e4e4e7",
-            borderRadius: 14,
-            boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-            padding: "26px 24px",
-          }}
+          </Flex>
+          <Box textAlign="center">
+            <Text fontSize="22px" fontWeight="600" letterSpacing="-.02em">
+              Pixshar
+            </Text>
+            <Text fontSize="14px" color="fgMuted" mt="3px">
+              {t("subtitle")}
+            </Text>
+          </Box>
+        </Stack>
+
+        <Card.Root
+          bg="surface"
+          borderColor="border"
+          borderRadius="card"
+          boxShadow="0 1px 3px rgba(0,0,0,.05)"
         >
-          <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
-              {t("emailLabel")}
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{
-                height: 40,
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "0 12px",
-                border: "1px solid #e4e4e7",
-                borderRadius: 8,
-                fontSize: 14,
-                background: "#fff",
-                outline: "none",
-                color: "#09090b",
-                marginBottom: 16,
-                transition: "border-color .15s, box-shadow .15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#2563eb";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e4e4e7";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 7,
-              }}
-            >
-              <label style={{ fontSize: 13, fontWeight: 500 }}>{t("passwordLabel")}</label>
-              <span style={{ fontSize: 12.5, color: "#2563eb", cursor: "pointer" }}>
-                {t("forgotPassword")}
-              </span>
-            </div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              style={{
-                height: 40,
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "0 12px",
-                border: "1px solid #e4e4e7",
-                borderRadius: 8,
-                fontSize: 14,
-                background: "#fff",
-                outline: "none",
-                color: "#09090b",
-                marginBottom: 20,
-                transition: "border-color .15s, box-shadow .15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#2563eb";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e4e4e7";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
-            {error && (
-              <div
-                style={{ fontSize: 12.5, color: "#dc2626", marginBottom: 12, textAlign: "center" }}
-              >
-                {error}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                height: 40,
-                width: "100%",
-                borderRadius: 8,
-                border: "none",
-                background: loading ? "#a8c1f0" : "#2563eb",
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 500,
-                boxShadow: "0 1px 2px rgba(0,0,0,.08)",
-                transition: "background .15s",
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {loading ? t("signingIn") : t("signIn")}
-            </button>
-          </form>
-        </div>
-        <div
-          style={{
-            textAlign: "center",
-            fontSize: 12.5,
-            color: "#a1a1aa",
-            marginTop: 18,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-          }}
-        >
+          <Card.Body px="24px" py="26px">
+            <form onSubmit={handleSubmit}>
+              <Stack gap="16px">
+                <Field.Root>
+                  <Field.Label fontSize="13px" fontWeight="500">
+                    {t("emailLabel")}
+                  </Field.Label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    borderRadius="control"
+                  />
+                </Field.Root>
+
+                <Field.Root invalid={!!error}>
+                  <HStack w="100%" justify="space-between">
+                    <Field.Label fontSize="13px" fontWeight="500">
+                      {t("passwordLabel")}
+                    </Field.Label>
+                    <Text fontSize="12.5px" color="accent" cursor="pointer">
+                      {t("forgotPassword")}
+                    </Text>
+                  </HStack>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    borderRadius="control"
+                  />
+                  <Field.ErrorText fontSize="12.5px" justifyContent="center" w="100%">
+                    {error}
+                  </Field.ErrorText>
+                </Field.Root>
+
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  colorPalette="accent"
+                  borderRadius="control"
+                  boxShadow="0 1px 2px rgba(0,0,0,.08)"
+                >
+                  {loading ? t("signingIn") : t("signIn")}
+                </Button>
+              </Stack>
+            </form>
+          </Card.Body>
+        </Card.Root>
+
+        <HStack justify="center" gap="6px" mt="18px" fontSize="12.5px" color="fgSubtle">
           <svg
             width="12"
             height="12"
@@ -224,8 +153,8 @@ export default function LoginPage() {
             <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
           </svg>
           {t("adminOnly")}
-        </div>
-      </div>
-    </div>
+        </HStack>
+      </Box>
+    </Flex>
   );
 }

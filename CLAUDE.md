@@ -15,7 +15,7 @@ a password, browse photos, and can upload their own.
 
 ## Stack
 - **Frontend**: Next.js 15 (App Router, `output: standalone`)
-- **Component Library**: Shadcn/ui (Tailwind-based, no pre-built components used except icons)
+- **Component Library**: Chakra UI v3 (`@chakra-ui/react`, Emotion runtime) — components *and* layout
 - **Backend**: Hono + Bun + Effect
 - **Auth**: BetterAuth — single admin account (seeded, no public sign-up), per-gallery JWT cookies for guests
 - **ORM**: Prisma + Postgres (CNPG/external-first; bundled `pixshar-postgres` fallback in Helm)
@@ -137,8 +137,17 @@ share gallery link → guest unlocks → guest uploads → photos appear.
 - TypeScript strict mode throughout — no `any`
 - Effect for any async pipeline that can fail and should retry
 - Zod for all external input validation (API request bodies)
-- No UI component library — plain CSS with CSS variables (defined in `globals.css`)
-- CSS variables: `--bg`, `--surface`, `--border`, `--text`, `--text-muted`, `--accent`, `--danger`, `--radius`
+- UI comes from Chakra UI v3. Tokens and semantic tokens live in `apps/web/src/components/theme.ts`;
+  recipes only for primitives that are demonstrably duplicated. No inline `style={{}}`, no raw hex.
+- Use semantic token *names* (`bg`, `surface`, `border`, `fg`, `fgMuted`, `fgSubtle`, `accent`,
+  `danger`, `success`, `warning`) and named radii (`control`, `card`, `pill`) — never raw values.
+  Dark mode is deliberately deferred; correct token names keep it to one `_dark` pass in `theme.ts`.
+- Hover/focus are `_hover` / `_focusVisible`, never `e.currentTarget.style` mutations.
+- `apps/web/src/app/globals.css` holds the four live `@keyframes` only; everything else is theme `globalCss`.
+- Chakra's official skills are vendored at `.agents/skills/` (agent-agnostic). Re-run
+  `cd apps/web && bun run typegen` whenever `theme.ts` changes (the `build` script does it for you).
+- `PhotoGrid`'s measured container and cell boxes are off-limits to styling changes — the virtualizer
+  positions rows from an estimate, not from measurement.
 - Next.js: `"use client"` only where interactivity is needed; prefer server components for
   data fetching where it makes sense
 - API responses: always `{ error: string }` on failure with appropriate HTTP status
