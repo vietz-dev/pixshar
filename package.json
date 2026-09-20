@@ -1,5 +1,6 @@
 {
   "name": "pixshar",
+  "version": "0.0.31",
   "private": true,
   "workspaces": [
     "apps/*",
