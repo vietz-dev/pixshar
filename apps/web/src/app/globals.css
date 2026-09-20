@@ -1,47 +1,3 @@
-* {
-  box-sizing: border-box;
-}
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
-body {
-  background: #f4f4f5;
-  font-family:
-    "Geist",
-    system-ui,
-    -apple-system,
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  color: #09090b;
-}
-::selection {
-  background: #bfdbfe;
-}
-input,
-button,
-textarea {
-  font-family: inherit;
-}
-button {
-  cursor: pointer;
-}
-
-.pxscroll::-webkit-scrollbar {
-  width: 11px;
-  height: 11px;
-}
-.pxscroll::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
-  border-radius: 8px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-.pxscroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 @keyframes pxFade {
   from {
     opacity: 0;
@@ -71,14 +27,5 @@ button {
   }
   100% {
     background-position: 200% 0;
-  }
-}
-@keyframes pxPulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.6;
   }
 }

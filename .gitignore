@@ -65,3 +65,6 @@ pixshar.zip
 example
 
 apps/web/tsconfig.tsbuildinfo
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/

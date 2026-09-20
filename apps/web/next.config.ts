@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
   // into the bundle and defeats the runtime override. src/middleware.ts reads
   // process.env.API_URL at runtime (e.g. http://api:3001 in compose).
   output: "standalone",
+  experimental: { optimizePackageImports: ["@chakra-ui/react"] },
   // API proxying is handled by src/middleware.ts for runtime env var support
   async headers() {
     return [
