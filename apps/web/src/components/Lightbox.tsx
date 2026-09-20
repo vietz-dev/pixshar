@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useState, useRef } from "react";
 import { useTranslations } from "next-intl";
+import { Box, Button, chakra, Dialog, Flex, HStack, Image, Portal, Text } from "@chakra-ui/react";
 
 interface LightboxPhoto {
   id: string;
@@ -20,6 +21,13 @@ interface LightboxProps {
   onDownload?: (photoId: string) => Promise<string>;
   onDelete?: (photoId: string) => void;
 }
+
+/** Shared chrome for the translucent controls floating over the image. */
+const overlayControl = {
+  bg: "rgba(255,255,255,.1)",
+  color: "white",
+  _hover: { bg: "rgba(255,255,255,.2)" },
+} as const;
 
 export default function Lightbox({
   photos,
@@ -59,13 +67,14 @@ export default function Lightbox({
     touchStartX.current = null;
   }
 
+  // Escape is handled by Dialog.Root; arrows stay on window so they work
+  // regardless of which control inside the dialog holds focus.
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight") onNext();
+      if (e.key === "ArrowRight") onNext();
       else if (e.key === "ArrowLeft") onPrev();
     },
-    [onClose, onNext, onPrev],
+    [onNext, onPrev],
   );
 
   useEffect(() => {
@@ -91,336 +100,295 @@ export default function Lightbox({
   if (!photo) return null;
 
   return (
-    <div
-      onClick={() => {
-        if (!swipeHandled.current) onClose();
-      }}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 80,
-        background: "rgba(9,9,11,.92)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        animation: "pxFade .22s ease both",
+    <Dialog.Root
+      open
+      size="full"
+      motionPreset="none"
+      aria-label={t("photoAlt")}
+      onOpenChange={(e) => {
+        if (!e.open) onClose();
       }}
     >
-      {/* Top bar */}
-      <div
-        style={{
-          position: "absolute",
-          top: 22,
-          left: 0,
-          right: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 24px",
-          color: "#e4e4e7",
-        }}
-      >
-        <span style={{ fontSize: 13.5, fontFamily: "'Geist Mono', monospace", color: "#a1a1aa" }}>
-          {counter}
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {onDownload && (
-            <button
+      <Portal>
+        <Dialog.Backdrop bg="rgba(9,9,11,.92)" backdropFilter="blur(6px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            onClick={() => {
+              if (!swipeHandled.current) onClose();
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            bg="transparent"
+            boxShadow="none"
+            borderRadius="0"
+            h="100dvh"
+            alignItems="center"
+            justifyContent="center"
+          >
+            {/* Top bar */}
+            <Flex
+              position="absolute"
+              top="22px"
+              left="0"
+              right="0"
+              align="center"
+              justify="space-between"
+              px="24px"
+              color="gray.200"
+            >
+              <Text fontSize="13.5px" fontFamily="mono" color="fgSubtle">
+                {counter}
+              </Text>
+              <HStack gap="10px">
+                {onDownload && (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload();
+                    }}
+                    disabled={downloading}
+                    variant="plain"
+                    h="38px"
+                    px="14px"
+                    borderRadius="control"
+                    borderWidth="1px"
+                    borderColor="rgba(255,255,255,.15)"
+                    fontSize="13.5px"
+                    fontWeight="500"
+                    gap="6px"
+                    {...overlayControl}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    {downloading ? t("downloading") : t("download")}
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(photo.id);
+                    }}
+                    variant="plain"
+                    h="38px"
+                    px="14px"
+                    borderRadius="control"
+                    borderWidth="1px"
+                    borderColor="rgba(255,255,255,.15)"
+                    fontSize="13.5px"
+                    fontWeight="500"
+                    gap="6px"
+                    {...overlayControl}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                    >
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                    </svg>
+                    {tCommon("delete")}
+                  </Button>
+                )}
+                <Dialog.CloseTrigger
+                  position="static"
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  w="38px"
+                  h="38px"
+                  borderRadius="50%"
+                  cursor="pointer"
+                  {...overlayControl}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                  >
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </Dialog.CloseTrigger>
+              </HStack>
+            </Flex>
+
+            {/* Prev */}
+            <chakra.button
               onClick={(e) => {
                 e.stopPropagation();
-                handleDownload();
+                onPrev();
               }}
-              disabled={downloading}
-              style={{
-                height: 38,
-                padding: "0 14px",
-                borderRadius: 8,
-                border: "1px solid rgba(255,255,255,.15)",
-                background: "rgba(255,255,255,.1)",
-                color: "#fff",
-                fontSize: 13.5,
-                fontWeight: 500,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                cursor: "pointer",
-                transition: "background .15s",
-                opacity: downloading ? 0.6 : 1,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,.2)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,.1)";
-              }}
+              position="absolute"
+              left="18px"
+              w="44px"
+              h="44px"
+              borderRadius="50%"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              cursor="pointer"
+              transition="background .15s"
+              zIndex={2}
+              {...overlayControl}
             >
               <svg
-                width="16"
-                height="16"
+                width="22"
+                height="22"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
               >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
+                <path d="m15 18-6-6 6-6" />
               </svg>
-              {downloading ? t("downloading") : t("download")}
-            </button>
-          )}
-          {onDelete && (
-            <button
+            </chakra.button>
+
+            {/* Image */}
+            <Box
+              onClick={(e) => e.stopPropagation()}
+              maxW="min(88vw, 1180px)"
+              maxH="80vh"
+              borderRadius="control"
+              boxShadow="0 30px 80px -20px rgba(0,0,0,.7)"
+              animationName="scale-in, fade-in"
+              animationDuration="moderate"
+              animationTimingFunction="cubic-bezier(.2,.7,.3,1)"
+              position="relative"
+              overflow="hidden"
+              bg="fg"
+            >
+              {photo.url ? (
+                <Box position="relative" maxW="min(88vw, 1180px)" maxH="80vh">
+                  {photo.placeholderDataUrl && !imgLoaded && (
+                    <Image
+                      src={photo.placeholderDataUrl}
+                      aria-hidden="true"
+                      position="absolute"
+                      inset="0"
+                      w="100%"
+                      h="100%"
+                      objectFit="contain"
+                      filter="blur(20px)"
+                      transform="scale(1.05)"
+                      pointerEvents="none"
+                    />
+                  )}
+                  <Image
+                    src={photo.url}
+                    alt={photo.photographerName || t("photoAlt")}
+                    onLoad={() => setImgLoaded(true)}
+                    maxW="min(88vw, 1180px)"
+                    maxH="80vh"
+                    objectFit="contain"
+                    display="block"
+                    opacity={imgLoaded ? 1 : 0}
+                    transition="opacity 0.3s ease"
+                  />
+                </Box>
+              ) : (
+                <Flex
+                  maxW="min(88vw, 1180px)"
+                  maxH="80vh"
+                  minW="400px"
+                  minH="300px"
+                  align="center"
+                  justify="center"
+                  color="gray.600"
+                >
+                  <svg
+                    width="48"
+                    height="48"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <path d="m21 15-5-5L5 21" />
+                  </svg>
+                </Flex>
+              )}
+              <Flex
+                position="absolute"
+                left="0"
+                right="0"
+                bottom="0"
+                p="16px"
+                bgImage="linear-gradient(0deg,rgba(0,0,0,.4),transparent)"
+                align="center"
+                gap="8px"
+              >
+                <Flex
+                  w="24px"
+                  h="24px"
+                  borderRadius="50%"
+                  bg="rgba(255,255,255,.25)"
+                  align="center"
+                  justify="center"
+                  fontSize="11px"
+                  fontWeight="600"
+                  color="white"
+                >
+                  {(photo.photographerName || tCommon("anonymous")).charAt(0).toUpperCase()}
+                </Flex>
+                <Text fontSize="13px" color="rgba(255,255,255,.92)">
+                  {photo.photographerName || tCommon("anonymous")}
+                </Text>
+              </Flex>
+            </Box>
+
+            {/* Next */}
+            <chakra.button
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete(photo.id);
+                onNext();
               }}
-              style={{
-                height: 38,
-                padding: "0 14px",
-                borderRadius: 8,
-                border: "1px solid rgba(255,255,255,.15)",
-                background: "rgba(255,255,255,.1)",
-                color: "#fff",
-                fontSize: 13.5,
-                fontWeight: 500,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                cursor: "pointer",
-                transition: "background .15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,.2)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,.1)";
-              }}
+              position="absolute"
+              right="18px"
+              w="44px"
+              h="44px"
+              borderRadius="50%"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              cursor="pointer"
+              transition="background .15s"
+              zIndex={2}
+              {...overlayControl}
             >
               <svg
-                width="16"
-                height="16"
+                width="22"
+                height="22"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.2"
+                strokeWidth="2"
               >
-                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="m9 18 6-6-6-6" />
               </svg>
-              {tCommon("delete")}
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: "50%",
-              border: "none",
-              background: "rgba(255,255,255,.1)",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              transition: "background .15s",
-            }}
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Prev */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onPrev();
-        }}
-        style={{
-          position: "absolute",
-          left: 18,
-          width: 44,
-          height: 44,
-          borderRadius: "50%",
-          border: "none",
-          background: "rgba(255,255,255,.1)",
-          color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          transition: "background .15s",
-          zIndex: 2,
-        }}
-      >
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="m15 18-6-6 6-6" />
-        </svg>
-      </button>
-
-      {/* Image */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: "min(88vw, 1180px)",
-          maxHeight: "80vh",
-          borderRadius: 8,
-          boxShadow: "0 30px 80px -20px rgba(0,0,0,.7)",
-          animation: "pxLbIn .28s cubic-bezier(.2,.7,.3,1) both",
-          position: "relative",
-          overflow: "hidden",
-          background: "#18181b",
-        }}
-      >
-        {photo.url ? (
-          <div style={{ position: "relative", maxWidth: "min(88vw, 1180px)", maxHeight: "80vh" }}>
-            {photo.placeholderDataUrl && !imgLoaded && (
-              <img
-                src={photo.placeholderDataUrl}
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  filter: "blur(20px)",
-                  transform: "scale(1.05)",
-                  pointerEvents: "none",
-                }}
-              />
-            )}
-            <img
-              src={photo.url}
-              alt={photo.photographerName || t("photoAlt")}
-              onLoad={() => setImgLoaded(true)}
-              style={{
-                maxWidth: "min(88vw, 1180px)",
-                maxHeight: "80vh",
-                objectFit: "contain",
-                display: "block",
-                opacity: imgLoaded ? 1 : 0,
-                transition: "opacity 0.3s ease",
-              }}
-            />
-          </div>
-        ) : (
-          <div
-            style={{
-              maxWidth: "min(88vw, 1180px)",
-              maxHeight: "80vh",
-              minWidth: 400,
-              minHeight: 300,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#52525b"
-              strokeWidth="1.5"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <path d="m21 15-5-5L5 21" />
-            </svg>
-          </div>
-        )}
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            padding: 16,
-            background: "linear-gradient(0deg,rgba(0,0,0,.4),transparent)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <div
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,.25)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#fff",
-            }}
-          >
-            {(photo.photographerName || tCommon("anonymous")).charAt(0).toUpperCase()}
-          </div>
-          <span style={{ fontSize: 13, color: "rgba(255,255,255,.92)" }}>
-            {photo.photographerName || tCommon("anonymous")}
-          </span>
-        </div>
-      </div>
-
-      {/* Next */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onNext();
-        }}
-        style={{
-          position: "absolute",
-          right: 18,
-          width: 44,
-          height: 44,
-          borderRadius: "50%",
-          border: "none",
-          background: "rgba(255,255,255,.1)",
-          color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          transition: "background .15s",
-          zIndex: 2,
-        }}
-      >
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="m9 18 6-6-6-6" />
-        </svg>
-      </button>
-    </div>
+            </chakra.button>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Portal>
+    </Dialog.Root>
   );
 }

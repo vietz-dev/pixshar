@@ -42,6 +42,10 @@ const config = defineConfig({
       shadows: {
         focusRing: { value: "0 0 0 3px rgba(37,99,235,.16)" },
       },
+      gradients: {
+        // Gallery cover art — gate page and gallery hero.
+        cover: { value: "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)" },
+      },
       colors: {
         accent: {
           50: { value: "#eff6ff" },

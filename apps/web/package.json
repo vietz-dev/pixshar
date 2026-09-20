@@ -3,7 +3,7 @@
   "version": "0.0.31",
   "type": "module",
   "scripts": {
-    "dev": "bunx next dev",
+    "dev": "API_URL=${API_URL:-http://localhost:3001} bunx next dev",
     "build": "bun run typegen && bunx next build",
     "start": "bunx next start",
     "typegen": "bunx @chakra-ui/cli typegen ./src/components/theme.ts --strict"

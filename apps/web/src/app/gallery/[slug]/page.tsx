@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { Box, Button, Field, Flex, Heading, Input, Text } from "@chakra-ui/react";
 
 interface GalleryEvent {
   id: string;
@@ -67,102 +68,79 @@ export default function GalleryGatePage() {
     }
   }
 
-  const coverGradient = "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)";
-
   if (loadingEvent) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#a1a1aa",
-        }}
-      >
+      <Flex minH="100vh" align="center" justify="center" color="fgSubtle">
         <span>…</span>
-      </div>
+      </Flex>
     );
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "40px 24px",
-        background: coverGradient,
-      }}
+    <Flex
+      minH="100vh"
+      position="relative"
+      align="center"
+      justify="center"
+      px="24px"
+      py="40px"
+      bgImage="cover"
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "linear-gradient(180deg,rgba(15,15,18,.32) 0%,rgba(15,15,18,.55) 100%)",
-        }}
+      <Box
+        position="absolute"
+        inset="0"
+        bgImage="linear-gradient(180deg,rgba(15,15,18,.32) 0%,rgba(15,15,18,.55) 100%)"
       />
-      <div
-        style={{
-          position: "relative",
-          width: "100%",
-          maxWidth: 400,
-          textAlign: "center",
-          animation: "pxRise .55s ease both",
-        }}
+      <Box
+        position="relative"
+        w="100%"
+        maxW="400px"
+        textAlign="center"
+        animation="pxRise .55s ease both"
       >
-        <div
-          style={{
-            fontSize: 12,
-            letterSpacing: ".22em",
-            textTransform: "uppercase",
-            color: "rgba(255,255,255,.82)",
-            fontWeight: 500,
-            marginBottom: 14,
-          }}
+        <Text
+          fontSize="12px"
+          letterSpacing=".22em"
+          textTransform="uppercase"
+          color="rgba(255,255,255,.82)"
+          fontWeight="500"
+          mb="14px"
         >
           {t("privateGallery")}
-        </div>
-        <h1
-          style={{
-            fontFamily: "'Newsreader', serif",
-            fontWeight: 300,
-            fontSize: 46,
-            lineHeight: 1.08,
-            color: "#fff",
-            margin: "0 0 12px",
-            letterSpacing: "-.01em",
-            textShadow: "0 2px 20px rgba(0,0,0,.25)",
-          }}
+        </Text>
+        <Heading
+          as="h1"
+          fontFamily="serif"
+          fontWeight="300"
+          fontSize="46px"
+          lineHeight="1.08"
+          color="white"
+          m="0 0 12px"
+          letterSpacing="-.01em"
+          textShadow="0 2px 20px rgba(0,0,0,.25)"
         >
           {event?.name || t("galleryFallback")}
-        </h1>
-        <div style={{ fontSize: 14, color: "rgba(255,255,255,.85)", marginBottom: 30 }}>
+        </Heading>
+        <Text fontSize="14px" color="rgba(255,255,255,.85)" mb="30px">
           {event?.description || t("descriptionFallback")}
-        </div>
-        <div
-          style={{
-            background: "rgba(255,255,255,.97)",
-            backdropFilter: "blur(8px)",
-            borderRadius: 16,
-            boxShadow: "0 20px 50px -18px rgba(0,0,0,.5)",
-            padding: "24px 22px",
-            textAlign: "left",
-          }}
+        </Text>
+        <Box
+          bg="rgba(255,255,255,.97)"
+          backdropFilter="blur(8px)"
+          borderRadius="16px"
+          boxShadow="0 20px 50px -18px rgba(0,0,0,.5)"
+          px="22px"
+          py="24px"
+          textAlign="left"
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              justifyContent: "center",
-              fontSize: 13.5,
-              fontWeight: 500,
-              color: "#52525b",
-              marginBottom: 16,
-            }}
+          <Flex
+            align="center"
+            justify="center"
+            gap="8px"
+            fontSize="13.5px"
+            fontWeight="500"
+            color="gray.600"
+            mb="16px"
           >
             <svg
               width="15"
@@ -176,83 +154,53 @@ export default function GalleryGatePage() {
               <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
             </svg>
             {t("isPrivate")}
-          </div>
+          </Flex>
           <form onSubmit={handleSubmit}>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t("passwordPlaceholder")}
-              style={{
-                height: 42,
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "0 14px",
-                border: "1px solid #e4e4e7",
-                borderRadius: 9,
-                fontSize: 14.5,
-                background: "#fff",
-                outline: "none",
-                textAlign: "center",
-                letterSpacing: ".04em",
-                marginBottom: 6,
-                transition: "border-color .15s, box-shadow .15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#2563eb";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e4e4e7";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
-            {error && (
-              <div
-                style={{ fontSize: 12.5, color: "#dc2626", textAlign: "center", marginBottom: 8 }}
-              >
+            <Field.Root invalid={!!error}>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t("passwordPlaceholder")}
+                h="42px"
+                px="14px"
+                borderRadius="9px"
+                fontSize="14.5px"
+                textAlign="center"
+                letterSpacing=".04em"
+              />
+              <Field.ErrorText fontSize="12.5px" justifyContent="center" w="100%" mt="6px" mb="8px">
                 {error}
-              </div>
-            )}
-            <button
+              </Field.ErrorText>
+            </Field.Root>
+            <Button
               type="submit"
               disabled={loading}
-              style={{
-                height: 42,
-                width: "100%",
-                borderRadius: 9,
-                border: "none",
-                background: loading ? "#a8c1f0" : "#2563eb",
-                color: "#fff",
-                fontSize: 14.5,
-                fontWeight: 500,
-                marginTop: 8,
-                boxShadow: "0 1px 2px rgba(0,0,0,.08)",
-                transition: "background .15s",
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
+              colorPalette="accent"
+              w="100%"
+              h="42px"
+              mt="14px"
+              borderRadius="9px"
+              fontSize="14.5px"
+              fontWeight="500"
+              boxShadow="0 1px 2px rgba(0,0,0,.08)"
             >
               {loading ? t("unlocking") : t("unlock")}
-            </button>
+            </Button>
           </form>
-        </div>
-        <div
-          style={{
-            marginTop: 22,
-            fontSize: 12,
-            color: "rgba(255,255,255,.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-          }}
+        </Box>
+        <Flex
+          align="center"
+          justify="center"
+          gap="6px"
+          mt="22px"
+          fontSize="12px"
+          color="rgba(255,255,255,.7)"
         >
-          <div
-            style={{ width: 13, height: 13, borderRadius: 4, background: "rgba(255,255,255,.85)" }}
-          />
+          <Box w="13px" h="13px" borderRadius="4px" bg="rgba(255,255,255,.85)" />
           {t("poweredBy")}
-        </div>
-      </div>
-    </div>
+        </Flex>
+      </Box>
+    </Flex>
   );
 }

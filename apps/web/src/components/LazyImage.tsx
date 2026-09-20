@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Box, Image } from "@chakra-ui/react";
 
 interface LazyImageProps {
   src: string;
   placeholderDataUrl: string | null;
   alt: string;
   objectFit?: "cover" | "contain";
-  style?: React.CSSProperties;
 }
 
 export default function LazyImage({
@@ -15,7 +15,6 @@ export default function LazyImage({
   placeholderDataUrl,
   alt,
   objectFit = "cover",
-  style,
 }: LazyImageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
@@ -38,51 +37,37 @@ export default function LazyImage({
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        position: "relative",
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
-        background: "#e4e4e7",
-        ...style,
-      }}
-    >
+    <Box ref={containerRef} position="relative" w="100%" h="100%" overflow="hidden" bg="gray.200">
       {placeholderDataUrl && (
-        <img
+        <Image
           src={placeholderDataUrl}
           aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit,
-            filter: "blur(20px)",
-            transform: "scale(1.1)",
-            opacity: loaded ? 0 : 1,
-            transition: "opacity 0.3s ease",
-            pointerEvents: "none",
-          }}
+          position="absolute"
+          inset="0"
+          w="100%"
+          h="100%"
+          objectFit={objectFit}
+          filter="blur(20px)"
+          transform="scale(1.1)"
+          opacity={loaded ? 0 : 1}
+          transition="opacity 0.3s ease"
+          pointerEvents="none"
         />
       )}
       {shouldLoad && (
-        <img
+        <Image
           src={src}
           alt={alt}
           onLoad={() => setLoaded(true)}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit,
-            opacity: loaded ? 1 : 0,
-            transition: "opacity 0.3s ease",
-          }}
+          position="absolute"
+          inset="0"
+          w="100%"
+          h="100%"
+          objectFit={objectFit}
+          opacity={loaded ? 1 : 0}
+          transition="opacity 0.3s ease"
         />
       )}
-    </div>
+    </Box>
   );
 }

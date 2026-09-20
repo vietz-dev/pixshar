@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { Box, Button, Flex, Heading, HStack, Text } from "@chakra-ui/react";
+import { FilterChip, FilterChipCount } from "../../../../components/ui/filter-chip";
 import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import UploadModal from "../../../../components/UploadModal";
@@ -156,37 +158,19 @@ export default function GalleryViewPage() {
 
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#a1a1aa",
-        }}
-      >
+      <Flex minH="100vh" align="center" justify="center" color="fgSubtle">
         {tCommon("loading")}
-      </div>
+      </Flex>
     );
   }
   if (error) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#dc2626",
-        }}
-      >
+      <Flex minH="100vh" align="center" justify="center" color="danger">
         {error}
-      </div>
+      </Flex>
     );
   }
   if (!gallery) return null;
-
-  const coverGradient = "linear-gradient(150deg,#3a4a6b 0%,#7c91b8 100%)";
 
   const photoCountLabel = activePhotographer
     ? t("photoCountFiltered", { filtered: filteredPhotos.length, total: processedPhotos.length })
@@ -198,93 +182,68 @@ export default function GalleryViewPage() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", animation: "pxFade .35s ease both" }}>
+    <Box minH="100vh" bg="surface" animation="pxFade .35s ease both">
       {/* Hero */}
-      <div
-        style={{
-          position: "relative",
-          height: 300,
-          background: coverGradient,
-          display: "flex",
-          alignItems: "flex-end",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(180deg,rgba(15,15,18,.05) 0%,rgba(15,15,18,.5) 100%)",
-          }}
+      <Flex position="relative" h="300px" bgImage="cover" align="flex-end">
+        <Box
+          position="absolute"
+          inset="0"
+          bgImage="linear-gradient(180deg,rgba(15,15,18,.05) 0%,rgba(15,15,18,.5) 100%)"
         />
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "0 28px 26px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-end",
-            gap: 16,
-            flexWrap: "wrap",
-          }}
+        <Flex
+          position="relative"
+          w="100%"
+          maxW="1100px"
+          mx="auto"
+          px="28px"
+          pb="26px"
+          justify="space-between"
+          align="flex-end"
+          gap="16px"
+          wrap="wrap"
         >
-          <div>
-            <div
-              style={{
-                fontSize: 11.5,
-                letterSpacing: ".2em",
-                textTransform: "uppercase",
-                color: "rgba(255,255,255,.85)",
-                fontWeight: 500,
-                marginBottom: 9,
-              }}
+          <Box>
+            <Text
+              fontSize="11.5px"
+              letterSpacing=".2em"
+              textTransform="uppercase"
+              color="rgba(255,255,255,.85)"
+              fontWeight="500"
+              mb="9px"
             >
               {t("eventLabel")}
-            </div>
-            <h1
-              style={{
-                fontFamily: "'Newsreader', serif",
-                fontWeight: 300,
-                fontSize: 40,
-                lineHeight: 1.06,
-                color: "#fff",
-                margin: 0,
-                letterSpacing: "-.01em",
-                textShadow: "0 2px 18px rgba(0,0,0,.3)",
-              }}
+            </Text>
+            <Heading
+              as="h1"
+              fontFamily="serif"
+              fontWeight="300"
+              fontSize="40px"
+              lineHeight="1.06"
+              color="white"
+              m="0"
+              letterSpacing="-.01em"
+              textShadow="0 2px 18px rgba(0,0,0,.3)"
             >
               {gallery.name}
-            </h1>
-            <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.85)", marginTop: 13 }}>
+            </Heading>
+            <Text fontSize="13.5px" color="rgba(255,255,255,.85)" mt="13px">
               {gallery.description || t("descriptionFallback")} · {photoCountLabel}
-            </div>
-          </div>
-          <button
+            </Text>
+          </Box>
+          <Button
             onClick={() => setUploadModalOpen(true)}
-            style={{
-              height: 40,
-              padding: "0 16px",
-              borderRadius: 9,
-              border: "none",
-              background: "#fff",
-              color: "#18181b",
-              fontSize: 13.5,
-              fontWeight: 500,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              boxShadow: "0 4px 14px -4px rgba(0,0,0,.3)",
-              transition: "transform .15s",
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-1px)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "";
-            }}
+            variant="plain"
+            h="40px"
+            px="16px"
+            gap="7px"
+            borderRadius="9px"
+            bg="surface"
+            color="fg"
+            fontSize="13.5px"
+            fontWeight="500"
+            boxShadow="0 4px 14px -4px rgba(0,0,0,.3)"
+            transition="transform .15s"
+            _hover={{ transform: "translateY(-1px)", bg: "surface" }}
           >
             <svg
               width="16"
@@ -300,166 +259,107 @@ export default function GalleryViewPage() {
               <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"></path>
             </svg>
             {t("uploadButton")}
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Flex>
+      </Flex>
 
       {/* Sticky toolbar */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 9,
-          background: "rgba(255,255,255,.9)",
-          backdropFilter: "blur(10px)",
-          borderBottom: "1px solid #ececee",
-          padding: "11px 28px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 0,
-        }}
+      <Box
+        position="sticky"
+        top="0"
+        zIndex={9}
+        bg="rgba(255,255,255,.9)"
+        backdropFilter="blur(10px)"
+        borderBottomWidth="1px"
+        borderBottomColor="border"
+        px="28px"
+        py="11px"
       >
         {/* Row 1: count + controls */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 14,
-            flexWrap: "wrap",
-          }}
-        >
-          <span style={{ fontSize: 13.5, color: "#52525b", fontWeight: 500 }}>
+        <Flex align="center" justify="space-between" gap="14px" wrap="wrap">
+          <Text fontSize="13.5px" color="gray.600" fontWeight="500">
             {photoCountLabel}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          </Text>
+          <HStack gap="10px">
             <DownloadButton slug={slug} />
             {!isMobile && (
-              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <span style={{ fontSize: 12.5, color: "#a1a1aa" }}>{t("layout")}</span>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 3,
-                    background: "#f4f4f5",
-                    border: "1px solid #ececee",
-                    borderRadius: 9,
-                    padding: 3,
-                  }}
+              <HStack gap="7px">
+                <Text fontSize="12.5px" color="fgSubtle">
+                  {t("layout")}
+                </Text>
+                <HStack
+                  gap="3px"
+                  bg="bg"
+                  borderWidth="1px"
+                  borderColor="border"
+                  borderRadius="9px"
+                  p="3px"
                 >
                   {layoutItems.map((l) => {
                     const active = layout === l.key;
                     return (
-                      <button
+                      <Button
                         key={l.key}
                         onClick={() => setLayout(l.key)}
-                        style={{
-                          height: 28,
-                          padding: "0 11px",
-                          borderRadius: 7,
-                          border: "none",
-                          fontSize: 12.5,
-                          fontWeight: 500,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          background: active ? "#fff" : "transparent",
-                          color: active ? "#18181b" : "#71717a",
-                          boxShadow: active ? "0 1px 2px rgba(0,0,0,.1)" : "none",
-                          transition: "all .15s",
-                          cursor: "pointer",
-                        }}
+                        variant="plain"
+                        h="28px"
+                        px="11px"
+                        gap="6px"
+                        borderRadius="7px"
+                        fontSize="12.5px"
+                        fontWeight="500"
+                        bg={active ? "surface" : "transparent"}
+                        color={active ? "fg" : "fgMuted"}
+                        boxShadow={active ? "0 1px 2px rgba(0,0,0,.1)" : "none"}
+                        transition="all .15s"
+                        _hover={{ color: "fg" }}
                       >
                         {l.label}
-                      </button>
+                      </Button>
                     );
                   })}
-                </div>
-              </div>
+                </HStack>
+              </HStack>
             )}
-          </div>
-        </div>
+          </HStack>
+        </Flex>
 
         {/* Row 2: photographer filter chips */}
         {photographers.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              gap: 6,
-              flexWrap: "wrap",
-              paddingTop: 9,
-              marginTop: 9,
-              borderTop: "1px solid #f0f0f2",
-            }}
+          <Flex
+            gap="6px"
+            wrap="wrap"
+            pt="9px"
+            mt="9px"
+            borderTopWidth="1px"
+            borderTopColor="gray.100"
           >
-            <button
+            <FilterChip
+              active={activePhotographer === null}
               onClick={() => setActivePhotographer(null)}
-              style={{
-                height: 28,
-                padding: "0 11px",
-                borderRadius: 999,
-                border: activePhotographer === null ? "none" : "1px solid #e4e4e7",
-                background: activePhotographer === null ? "#18181b" : "#fff",
-                color: activePhotographer === null ? "#fff" : "#52525b",
-                fontSize: 12.5,
-                fontWeight: 500,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                transition: "background .15s, color .15s, border .15s",
-              }}
             >
               {t("filterAll")}
-              <span
-                style={{
-                  marginLeft: 5,
-                  opacity: 0.6,
-                  fontSize: 11.5,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {processedPhotos.length}
-              </span>
-            </button>
+              <FilterChipCount>{processedPhotos.length}</FilterChipCount>
+            </FilterChip>
             {photographers.map((name) => {
               const active = activePhotographer === name;
               return (
-                <button
+                <FilterChip
                   key={name}
+                  active={active}
                   onClick={() => setActivePhotographer(active ? null : name)}
-                  style={{
-                    height: 28,
-                    padding: "0 11px",
-                    borderRadius: 999,
-                    border: active ? "none" : "1px solid #e4e4e7",
-                    background: active ? "#18181b" : "#fff",
-                    color: active ? "#fff" : "#52525b",
-                    fontSize: 12.5,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    transition: "background .15s, color .15s, border .15s",
-                  }}
                 >
                   {name}
-                  <span
-                    style={{
-                      marginLeft: 5,
-                      opacity: 0.6,
-                      fontSize: 11.5,
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {photographerCounts.get(name)}
-                  </span>
-                </button>
+                  <FilterChipCount>{photographerCounts.get(name)}</FilterChipCount>
+                </FilterChip>
               );
             })}
-          </div>
+          </Flex>
         )}
-      </div>
+      </Box>
 
       {/* Photos */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 24px 44px" }}>
+      <Box maxW="1100px" mx="auto" px="24px" pt="20px" pb="44px">
         <PhotoGrid
           photos={filteredPhotos.map((p) => ({
             id: p.id,
@@ -475,7 +375,7 @@ export default function GalleryViewPage() {
             setLbOpen(true);
           }}
         />
-      </div>
+      </Box>
 
       {/* Lightbox */}
       {lbOpen && (
@@ -512,6 +412,6 @@ export default function GalleryViewPage() {
           }}
         />
       )}
-    </div>
+    </Box>
   );
 }

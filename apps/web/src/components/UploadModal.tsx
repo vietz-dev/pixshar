@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { Box, Button, chakra, Dialog, Field, Flex, Input, Portal, Text } from "@chakra-ui/react";
 import UploadTray, { UploadItem, randomTint } from "./UploadTray";
 import { presignedUpload } from "../lib/uploadClient";
 
@@ -32,8 +33,6 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
       : total > 0
         ? t("uploadCount", { count: total })
         : t("chooseFirst");
-  const submitBg = nameOk ? (submitted && allDone ? "#16a34a" : "#2563eb") : "#a8c1f0";
-  const submitCursor = nameOk ? "pointer" : "not-allowed";
 
   const fileMapRef = useRef<Map<string, File>>(new Map());
 
@@ -120,266 +119,208 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 85,
-        background: "rgba(9,9,11,.5)",
-        backdropFilter: "blur(3px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-        animation: "pxFade .2s ease both",
+    <Dialog.Root
+      open
+      placement="center"
+      size="sm"
+      onOpenChange={(e) => {
+        if (!e.open) onClose();
       }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "100%",
-          maxWidth: 460,
-          background: "#fff",
-          borderRadius: 16,
-          boxShadow: "0 30px 70px -20px rgba(0,0,0,.5)",
-          overflow: "hidden",
-          animation: "pxLbIn .26s cubic-bezier(.2,.7,.3,1) both",
-        }}
-      >
-        <div
-          style={{
-            padding: "20px 22px 0",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-          }}
-        >
-          <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-.01em", margin: 0 }}>
-              {t("title")}
-            </h2>
-            <p style={{ fontSize: 13.5, color: "#71717a", margin: "5px 0 0" }}>
-              {t("subtitle", { galleryName })}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: "none",
-              background: "#f4f4f5",
-              color: "#52525b",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              transition: "background .15s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#e4e4e7";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "#f4f4f5";
-            }}
+      <Portal>
+        <Dialog.Backdrop bg="rgba(9,9,11,.5)" backdropFilter="blur(3px)" />
+        <Dialog.Positioner p="24px">
+          <Dialog.Content
+            maxW="460px"
+            bg="surface"
+            borderRadius="16px"
+            boxShadow="0 30px 70px -20px rgba(0,0,0,.5)"
+            overflow="hidden"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div style={{ padding: "18px 22px 22px" }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
-            {t("nameLabel")} <span style={{ color: "#dc2626" }}>*</span>
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("namePlaceholder")}
-            style={{
-              height: 40,
-              width: "100%",
-              padding: "0 12px",
-              border: "1px solid #e4e4e7",
-              borderRadius: 8,
-              fontSize: 14,
-              background: "#fff",
-              outline: "none",
-              marginBottom: 16,
-              transition: "border-color .15s, box-shadow .15s",
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "#2563eb";
-              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "#e4e4e7";
-              e.currentTarget.style.boxShadow = "none";
-            }}
-          />
-
-          <div
-            onClick={() => fileRef.current?.click()}
-            style={{
-              border: "1.5px dashed #d4d4d8",
-              borderRadius: 11,
-              background: "#fafafa",
-              padding: "24px 18px",
-              textAlign: "center",
-              cursor: "pointer",
-              transition: "all .15s",
-              marginBottom: 14,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "#2563eb";
-              e.currentTarget.style.background = "#f8faff";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "#d4d4d8";
-              e.currentTarget.style.background = "#fafafa";
-            }}
-          >
-            <input
-              type="file"
-              multiple
-              ref={fileRef}
-              onChange={(e) => addFilesWithMap(e.target.files)}
-              style={{ display: "none" }}
-            />
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: "#eff6ff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 11px",
-              }}
-            >
-              <svg
-                width="19"
-                height="19"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#2563eb"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <Dialog.Header pt="20px" px="22px" pb="0" justifyContent="space-between" gap="12px">
+              <Box>
+                <Dialog.Title fontSize="18px" fontWeight="600" letterSpacing="-.01em">
+                  {t("title")}
+                </Dialog.Title>
+                <Dialog.Description fontSize="13.5px" color="fgMuted" mt="5px">
+                  {t("subtitle", { galleryName })}
+                </Dialog.Description>
+              </Box>
+              <Dialog.CloseTrigger
+                position="static"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                flexShrink={0}
+                w="32px"
+                h="32px"
+                borderRadius="control"
+                bg="bg"
+                color="gray.600"
+                cursor="pointer"
+                transition="background .15s"
+                _hover={{ bg: "border" }}
               >
-                <path d="M12 17V3m0 0L7 8m5-5 5 5" />
-                <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
-              </svg>
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{t("chooseTap")}</div>
-            <div style={{ fontSize: 12, color: "#a1a1aa" }}>{t("chooseDrag")}</div>
-          </div>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                >
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </Dialog.CloseTrigger>
+            </Dialog.Header>
 
-          {total > 0 && (
-            <UploadTray
-              queue={queue}
-              showDetails={showDetails}
-              onToggleDetails={() => setShowDetails((s) => !s)}
-              onClear={handleClear}
-              onCancel={handleCancel}
-              onRetry={handleRetry}
-              size="small"
-            />
-          )}
+            <Dialog.Body pt="18px" px="22px" pb="22px">
+              <Field.Root required mb="16px">
+                <Field.Label fontSize="13px" fontWeight="500">
+                  {t("nameLabel")}
+                  <Field.RequiredIndicator />
+                </Field.Label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={t("namePlaceholder")}
+                  borderRadius="control"
+                />
+              </Field.Root>
 
-          {/* Disclaimer during active upload */}
-          {active && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginTop: 12,
-                padding: "8px 10px",
-                background: "#eff6ff",
-                borderRadius: 8,
-                border: "1px solid #dbeafe",
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#2563eb"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <Box
+                onClick={() => fileRef.current?.click()}
+                borderWidth="1.5px"
+                borderStyle="dashed"
+                borderColor="gray.300"
+                borderRadius="11px"
+                bg="gray.50"
+                px="18px"
+                py="24px"
+                textAlign="center"
+                cursor="pointer"
+                transition="all .15s"
+                mb="14px"
+                _hover={{ borderColor: "accent", bg: "accent.subtle" }}
               >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 16v-4M12 8h.01" />
-              </svg>
-              <span style={{ fontSize: 12, color: "#1e40af", fontWeight: 500 }}>
-                {t("staying")}
-              </span>
-            </div>
-          )}
+                <chakra.input
+                  type="file"
+                  multiple
+                  ref={fileRef}
+                  onChange={(e) => addFilesWithMap(e.target.files)}
+                  display="none"
+                />
+                <Flex
+                  w="40px"
+                  h="40px"
+                  borderRadius="10px"
+                  bg="accent.subtle"
+                  color="accent"
+                  align="center"
+                  justify="center"
+                  mx="auto"
+                  mb="11px"
+                >
+                  <svg
+                    width="19"
+                    height="19"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 17V3m0 0L7 8m5-5 5 5" />
+                    <path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                </Flex>
+                <Text fontSize="14px" fontWeight="500" mb="2px">
+                  {t("chooseTap")}
+                </Text>
+                <Text fontSize="12px" color="fgSubtle">
+                  {t("chooseDrag")}
+                </Text>
+              </Box>
 
-          {/* Button: Upload or Close */}
-          {submitted && allDone ? (
-            <button
-              onClick={onClose}
-              style={{
-                height: 42,
-                width: "100%",
-                borderRadius: 9,
-                border: "none",
-                background: "#16a34a",
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 500,
-                marginTop: 14,
-                transition: "background .15s",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#15803d";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#16a34a";
-              }}
-            >
-              {tCommon("close")}
-            </button>
-          ) : (
-            <button
-              onClick={doUpload}
-              disabled={!nameOk || total === 0}
-              style={{
-                height: 42,
-                width: "100%",
-                borderRadius: 9,
-                border: "none",
-                background: submitBg,
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 500,
-                marginTop: 14,
-                transition: "background .15s",
-                cursor: submitCursor,
-              }}
-            >
-              {submitLabel}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+              {total > 0 && (
+                <UploadTray
+                  queue={queue}
+                  showDetails={showDetails}
+                  onToggleDetails={() => setShowDetails((s) => !s)}
+                  onClear={handleClear}
+                  onCancel={handleCancel}
+                  onRetry={handleRetry}
+                  size="small"
+                />
+              )}
+
+              {/* Disclaimer during active upload */}
+              {active && (
+                <Flex
+                  align="center"
+                  gap="8px"
+                  mt="12px"
+                  px="10px"
+                  py="8px"
+                  bg="accent.subtle"
+                  borderRadius="control"
+                  borderWidth="1px"
+                  borderColor="accent.muted"
+                  color="accent"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4M12 8h.01" />
+                  </svg>
+                  <Text fontSize="12px" fontWeight="500" color="accent.800">
+                    {t("staying")}
+                  </Text>
+                </Flex>
+              )}
+
+              {/* Button: Upload or Close */}
+              {submitted && allDone ? (
+                <Button
+                  onClick={onClose}
+                  colorPalette="green"
+                  w="100%"
+                  h="42px"
+                  mt="14px"
+                  borderRadius="9px"
+                  fontSize="14px"
+                  fontWeight="500"
+                >
+                  {tCommon("close")}
+                </Button>
+              ) : (
+                <Button
+                  onClick={doUpload}
+                  disabled={!nameOk || total === 0}
+                  colorPalette="accent"
+                  w="100%"
+                  h="42px"
+                  mt="14px"
+                  borderRadius="9px"
+                  fontSize="14px"
+                  fontWeight="500"
+                >
+                  {submitLabel}
+                </Button>
+              )}
+            </Dialog.Body>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Portal>
+    </Dialog.Root>
   );
 }

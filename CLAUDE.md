@@ -152,6 +152,20 @@ share gallery link → guest unlocks → guest uploads → photos appear.
   data fetching where it makes sense
 - API responses: always `{ error: string }` on failure with appropriate HTTP status
 
+## Running the Playwright e2e suite locally
+```bash
+docker compose up -d postgres minio minio-init          # MinIO comes from quay.io, not Docker Hub
+cd apps/api && bunx prisma migrate deploy && bun prisma/seed.ts
+bun run dev                                             # api :3001 + web :3000
+bunx playwright test
+```
+The API needs a full env (see `.env.example`); `GALLERY_ENCRYPTION_KEY` is 64 lowercase hex chars,
+and MinIO needs `S3_FORCE_PATH_STYLE=true`. The web dev script defaults `API_URL` to
+`http://localhost:3001` — in Compose it is `http://api:3001`. BetterAuth rate-limits repeated
+sign-ins, so leave ~2 minutes between full suite runs or the wrong-credentials test sees
+"Too many requests" instead of the login error. Admin credentials are `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` from `.env` (`admin@example.com` / `changeme` by default).
+
 ## Known things to verify/fix
 - `Bun.image()` API: check exact method signatures against
   https://bun.com/blog/bun-v1.3.14 — quality may be 0–1 not 0–100
