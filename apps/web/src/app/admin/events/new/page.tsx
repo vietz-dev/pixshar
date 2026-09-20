@@ -3,6 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import {
+  Box,
+  Button,
+  Card,
+  Field,
+  Flex,
+  Group,
+  Heading,
+  Input,
+  InputAddon,
+  Stack,
+  Text,
+  Textarea,
+} from "@chakra-ui/react";
 
 function slugify(name: string): string {
   return name
@@ -61,29 +75,20 @@ export default function NewEventPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#fafafa", animation: "pxFade .35s ease both" }}>
-      <div style={{ maxWidth: 620, margin: "0 auto", padding: "30px 28px 48px" }}>
-        <button
+    <Box minH="100vh" bg="gray.50" animation="pxFade .35s ease both">
+      <Box maxW="620px" mx="auto" px="28px" pt="30px" pb="48px">
+        <Button
           onClick={() => router.push("/admin")}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#71717a",
-            fontSize: 13.5,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: 0,
-            marginBottom: 20,
-            cursor: "pointer",
-            transition: "color .15s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "#09090b";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "#71717a";
-          }}
+          variant="plain"
+          h="auto"
+          p="0"
+          mb="20px"
+          gap="6px"
+          fontSize="13.5px"
+          fontWeight="400"
+          color="fgMuted"
+          transition="color .15s"
+          _hover={{ color: "fg" }}
         >
           <svg
             width="15"
@@ -96,210 +101,141 @@ export default function NewEventPage() {
             <path d="m15 18-6-6 6-6"></path>
           </svg>
           {t("backToEvents")}
-        </button>
-        <h1 style={{ fontSize: 25, fontWeight: 600, letterSpacing: "-.025em", margin: "0 0 5px" }}>
+        </Button>
+        <Heading as="h1" fontSize="25px" fontWeight="600" letterSpacing="-.025em" m="0 0 5px">
           {t("title")}
-        </h1>
-        <p style={{ fontSize: 14.5, color: "#71717a", margin: "0 0 26px" }}>{t("subtitle")}</p>
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e4e4e7",
-            borderRadius: 14,
-            boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-            padding: "26px 24px",
-          }}
+        </Heading>
+        <Text fontSize="14.5px" color="fgMuted" m="0 0 26px">
+          {t("subtitle")}
+        </Text>
+        <Card.Root
+          bg="surface"
+          borderWidth="1px"
+          borderColor="border"
+          borderRadius="14px"
+          boxShadow="0 1px 3px rgba(0,0,0,.05)"
         >
-          <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
-              {t("nameLabel")}
-            </label>
-            <input
-              value={name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              placeholder={t("namePlaceholder")}
-              required
-              style={{
-                height: 40,
-                width: "100%",
-                padding: "0 12px",
-                border: "1px solid #e4e4e7",
-                borderRadius: 8,
-                fontSize: 14,
-                background: "#fff",
-                outline: "none",
-                marginBottom: 18,
-                transition: "border-color .15s, box-shadow .15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#2563eb";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e4e4e7";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
+          <Card.Body px="24px" py="26px">
+            <form onSubmit={handleSubmit}>
+              <Stack gap="18px">
+                <Field.Root required>
+                  <Field.Label fontSize="13.5px" fontWeight="500" mb="7px">
+                    {t("nameLabel")}
+                  </Field.Label>
+                  <Input
+                    value={name}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder={t("namePlaceholder")}
+                    h="40px"
+                    fontSize="14px"
+                    borderRadius="control"
+                  />
+                </Field.Root>
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
-              {t("shareLinkLabel")}
-            </label>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "stretch",
-                border: "1px solid #e4e4e7",
-                borderRadius: 8,
-                overflow: "hidden",
-                marginBottom: 6,
-                background: "#fff",
-              }}
-            >
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0 11px",
-                  background: "#f4f4f5",
-                  color: "#71717a",
-                  fontSize: 13,
-                  fontFamily: "'Geist Mono', monospace",
-                  borderRight: "1px solid #e4e4e7",
-                }}
-              >
-                pixshar.app/gallery/
-              </span>
-              <input
-                value={slug}
-                onChange={(e) => handleSlugChange(e.target.value)}
-                placeholder={t("slugPlaceholder")}
-                required
-                pattern="[a-z0-9-]+"
-                style={{
-                  flex: 1,
-                  height: 40,
-                  padding: "0 12px",
-                  border: "none",
-                  fontSize: 13,
-                  background: "#fff",
-                  outline: "none",
-                  fontFamily: "'Geist Mono', monospace",
-                  color: "#09090b",
-                }}
-              />
-            </div>
-            <p style={{ fontSize: 12.5, color: "#a1a1aa", margin: "0 0 18px" }}>{t("slugHint")}</p>
+                <Field.Root required>
+                  <Field.Label fontSize="13.5px" fontWeight="500" mb="7px">
+                    {t("shareLinkLabel")}
+                  </Field.Label>
+                  <Group attached w="100%">
+                    <InputAddon
+                      px="11px"
+                      bg="bg"
+                      color="fgMuted"
+                      fontSize="13px"
+                      fontFamily="mono"
+                      borderRadius="control"
+                    >
+                      pixshar.app/gallery/
+                    </InputAddon>
+                    <Input
+                      value={slug}
+                      onChange={(e) => handleSlugChange(e.target.value)}
+                      placeholder={t("slugPlaceholder")}
+                      pattern="[a-z0-9-]+"
+                      h="40px"
+                      fontSize="13px"
+                      fontFamily="mono"
+                      borderRadius="control"
+                    />
+                  </Group>
+                  <Field.HelperText fontSize="12.5px" color="fgSubtle" mt="6px">
+                    {t("slugHint")}
+                  </Field.HelperText>
+                </Field.Root>
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
-              {t("descriptionLabel")}{" "}
-              <span style={{ color: "#a1a1aa", fontWeight: 400 }}>{t("optional")}</span>
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t("descriptionPlaceholder")}
-              style={{
-                width: "100%",
-                minHeight: 74,
-                padding: "10px 12px",
-                border: "1px solid #e4e4e7",
-                borderRadius: 8,
-                fontSize: 14,
-                background: "#fff",
-                outline: "none",
-                resize: "vertical",
-                marginBottom: 18,
-                lineHeight: 1.5,
-                transition: "border-color .15s, box-shadow .15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#2563eb";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e4e4e7";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
+                <Field.Root>
+                  <Field.Label fontSize="13.5px" fontWeight="500" mb="7px">
+                    {t("descriptionLabel")}{" "}
+                    <Text as="span" color="fgSubtle" fontWeight="400">
+                      {t("optional")}
+                    </Text>
+                  </Field.Label>
+                  <Textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder={t("descriptionPlaceholder")}
+                    minH="74px"
+                    resize="vertical"
+                    fontSize="14px"
+                    lineHeight="1.5"
+                    borderRadius="control"
+                  />
+                </Field.Root>
 
-            <label style={{ display: "block", fontSize: 13.5, fontWeight: 500, marginBottom: 7 }}>
-              {t("passwordLabel")}
-            </label>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t("passwordPlaceholder")}
-              required
-              style={{
-                height: 40,
-                width: "100%",
-                padding: "0 12px",
-                border: "1px solid #e4e4e7",
-                borderRadius: 8,
-                fontSize: 14,
-                background: "#fff",
-                outline: "none",
-                fontFamily: "'Geist Mono', monospace",
-                transition: "border-color .15s, box-shadow .15s",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#2563eb";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,.16)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e4e4e7";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
-
-            {error && <p style={{ color: "#dc2626", fontSize: 13, marginTop: 12 }}>{error}</p>}
-          </form>
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
-          <button
+                <Field.Root required invalid={!!error}>
+                  <Field.Label fontSize="13.5px" fontWeight="500" mb="7px">
+                    {t("passwordLabel")}
+                  </Field.Label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t("passwordPlaceholder")}
+                    h="40px"
+                    fontSize="14px"
+                    fontFamily="mono"
+                    borderRadius="control"
+                  />
+                  <Field.ErrorText fontSize="13px" mt="12px">
+                    {error}
+                  </Field.ErrorText>
+                </Field.Root>
+              </Stack>
+            </form>
+          </Card.Body>
+        </Card.Root>
+        <Flex justify="flex-end" gap="10px" mt="20px">
+          <Button
             onClick={() => router.push("/admin")}
-            style={{
-              height: 40,
-              padding: "0 16px",
-              borderRadius: 8,
-              border: "1px solid #e4e4e7",
-              background: "#fff",
-              color: "#18181b",
-              fontSize: 14,
-              fontWeight: 500,
-              transition: "background .15s",
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#f4f4f5";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "#fff";
-            }}
+            variant="outline"
+            h="40px"
+            px="16px"
+            borderRadius="control"
+            bg="surface"
+            borderColor="border"
+            color="fg"
+            fontSize="14px"
+            fontWeight="500"
+            transition="background .15s"
+            _hover={{ bg: "bg" }}
           >
             {t("cancelButton")}
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleSubmit}
             disabled={loading}
-            style={{
-              height: 40,
-              padding: "0 18px",
-              borderRadius: 8,
-              border: "none",
-              background: loading ? "#a8c1f0" : "#2563eb",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 500,
-              boxShadow: "0 1px 2px rgba(0,0,0,.08)",
-              transition: "background .15s",
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
+            colorPalette="accent"
+            h="40px"
+            px="18px"
+            borderRadius="control"
+            fontSize="14px"
+            fontWeight="500"
+            boxShadow="0 1px 2px rgba(0,0,0,.08)"
           >
             {loading ? t("creating") : t("createButton")}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </Flex>
+      </Box>
+    </Box>
   );
 }
