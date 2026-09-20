@@ -1,15 +1,15 @@
 name: Release
 
 # ============================================
-# Changesets-driven release. One workflow, no PAT.
+# Commit-driven release. One workflow, no PAT.
 #
 # Flow:
-#   dev:      bunx changeset → PR → merge to main
-#   release:  changesets/action sees changesets → opens "chore: release" PR
-#             (version.sh bumps every package.json + Helm chart)
-#   merge:    the Version PR merges → no changesets left → publish.sh runs.
-#             If v<version> not yet tagged, it signals published=true, which
-#             fans out to build images + package Helm + create the GitHub Release.
+#   dev:      merge a Conventional Commit to main (fix: → patch, feat: → minor)
+#   release:  release-please opens a "chore: release <version>" PR that bumps
+#             the root + three workspace package.json files, the Helm chart's
+#             version + appVersion, and writes CHANGELOG.md
+#   merge:    merging that PR tags v<version> and creates the GitHub Release.
+#             release_created=true fans out to build images + package Helm.
 #
 # Everything runs in this single workflow, so the GITHUB_TOKEN
 # "can't trigger another workflow" rule never bites us — no PAT needed.
@@ -24,55 +24,31 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # version PR commit + create GitHub Release/tag
-  pull-requests: write # open the Version Packages PR
+  contents: write # release PR commit + create GitHub Release/tag
+  pull-requests: write # open the release PR
   packages: write # push images + Helm chart to ghcr.io
+  issues: write # release-please labels the release PR
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   release:
-    name: Version or Publish
+    name: Release
     runs-on: ubuntu-latest
     outputs:
-      published: ${{ steps.changesets.outputs.published }}
-      version: ${{ steps.version.outputs.version }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: googleapis/release-please-action@v4
+        id: release
         with:
-          fetch-depth: 0
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Create Version PR or signal release
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          version: bash scripts/version.sh
-          publish: bash scripts/publish.sh
-          title: "chore: release"
-          commit: "chore: release"
-          # We create one clean v<version> release ourselves in the helm job,
-          # instead of the per-package releases this action would otherwise make.
-          createGithubReleases: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Read released version
-        id: version
-        if: steps.changesets.outputs.published == 'true'
-        run: echo "version=$(node -p "require('./packages/shared/package.json').version")" >> "$GITHUB_OUTPUT"
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   images:
     name: Build & Push ${{ matrix.name }} image
     needs: release
-    if: needs.release.outputs.published == 'true'
+    if: needs.release.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -115,9 +91,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   helm:
-    name: Package Helm & Create Release
+    name: Package Helm
     needs: [release, images]
-    if: needs.release.outputs.published == 'true'
+    if: needs.release.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,11 +115,3 @@ jobs:
 
       - name: Push Helm chart to ghcr.io
         run: helm push pixshar-*.tgz oci://ghcr.io/${{ github.repository_owner }}
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "v${{ needs.release.outputs.version }}" \
-            --title "v${{ needs.release.outputs.version }}" \
-            --generate-notes
