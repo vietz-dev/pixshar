@@ -1,5 +1,7 @@
 # @pixshar/web
 
+> Superseded by the root `CHANGELOG.md` as of v0.0.31. Kept for history.
+
 ## 0.0.31
 
 ### Patch Changes
