@@ -4,20 +4,15 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Box, Button, Field, Flex, Heading, Input, Text } from "@chakra-ui/react";
-
-interface GalleryEvent {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-}
+import type { GalleryInfo } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 export default function GalleryGatePage() {
   const t = useTranslations("gallery.gate");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [event, setEvent] = useState<GalleryEvent | null>(null);
+  const [event, setEvent] = useState<GalleryInfo | null>(null);
   const [loadingEvent, setLoadingEvent] = useState(true);
   const router = useRouter();
   const params = useParams();
@@ -32,11 +27,9 @@ export default function GalleryGatePage() {
           return;
         }
         // Fetch public event info separately so the gate page can show the event name.
-        fetch(`/api/gallery/${slug}/info`)
-          .then((r) => r.json())
-          .then((data) => {
-            if (data && data.id) setEvent(data);
-          })
+        api.gallery
+          .info({ slug })
+          .then(setEvent)
           .catch(() => {})
           .finally(() => setLoadingEvent(false));
       })

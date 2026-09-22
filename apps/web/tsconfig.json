@@ -18,7 +18,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@pixshar/contracts": ["../../packages/contracts/src/index.ts"]
     },
     "target": "ES2017"
   },

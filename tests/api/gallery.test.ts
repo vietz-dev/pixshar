@@ -15,6 +15,41 @@ describe("Gallery", () => {
     await deleteEvent(adminCookie, event.id);
   });
 
+  // ─── Info (oRPC) ─────────────────────────────────────────────────────────────
+
+  describe("Given a gallery that exists", () => {
+    describe("When calling gallery.info over RPC", () => {
+      it("Then it returns the public event info", async () => {
+        const res = await fetch(`${API}/api/rpc/gallery/info`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ json: { slug: event.slug } }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { json: { id: string; name: string } };
+        expect(body.json.id).toBe(event.id);
+        expect(body.json.name).toBeTruthy();
+      });
+    });
+  });
+
+  describe("Given a gallery slug that does not exist", () => {
+    describe("When calling gallery.info over RPC", () => {
+      it("Then it returns 404 with the NOT_FOUND code", async () => {
+        const res = await fetch(`${API}/api/rpc/gallery/info`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ json: { slug: "does-not-exist-xyz" } }),
+        });
+
+        expect(res.status).toBe(404);
+        const body = (await res.json()) as { json: { code: string } };
+        expect(body.json.code).toBe("NOT_FOUND");
+      });
+    });
+  });
+
   // ─── Unlock ──────────────────────────────────────────────────────────────────
 
   describe("Given a gallery protected by a password", () => {

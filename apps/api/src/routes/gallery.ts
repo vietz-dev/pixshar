@@ -29,17 +29,8 @@ const unlockSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
-// Public endpoint — returns only event name/description so the gate page can
-// display the event title before the guest authenticates.
-app.get("/:slug/info", async (c) => {
-  const slug = c.req.param("slug");
-  const event = await prisma.event.findUnique({
-    where: { slug },
-    select: { id: true, name: true, description: true },
-  });
-  if (!event) return c.json({ error: "Gallery not found" }, 404);
-  return c.json(event);
-});
+// NOTE: the public GET /:slug/info endpoint now lives in the contract as
+// `gallery.info` (apps/api/src/rpc/router.ts).
 
 app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
   const slug = c.req.param("slug");
