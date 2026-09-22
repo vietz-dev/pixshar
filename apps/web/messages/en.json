@@ -52,7 +52,8 @@
       "cancelButton": "Cancel",
       "creating": "Creating...",
       "createButton": "Create event",
-      "createFailed": "Failed to create event"
+      "createFailed": "Failed to create event",
+      "slugTaken": "That share link is already taken."
     },
     "eventDetail": {
       "backToEvents": "Back to events",

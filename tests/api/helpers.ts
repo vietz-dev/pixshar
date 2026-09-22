@@ -5,6 +5,10 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { ContractRouterClient } from "@orpc/contract";
+import type { Contract } from "@pixshar/contracts";
 
 export const API = "http://localhost:3001";
 export const ADMIN_EMAIL = "admin@example.com";
@@ -51,6 +55,19 @@ export async function signInAdmin(): Promise<string> {
   return cookies;
 }
 
+/**
+ * Typed oRPC client against the live API. Pass a session/gallery cookie to
+ * authenticate; procedures assert their own access level server-side.
+ */
+export function rpc(cookie?: string): ContractRouterClient<Contract> {
+  return createORPCClient(
+    new RPCLink({
+      url: `${API}/api/rpc`,
+      headers: cookie ? { Cookie: cookie } : {},
+    }),
+  );
+}
+
 /** Performs an authenticated request against the API. */
 export function authedFetch(
   path: string,
@@ -90,31 +107,19 @@ export async function createEvent(
   overrides: Partial<{ name: string; slug: string; description: string; password: string }> = {},
 ): Promise<TestEvent> {
   const slug = overrides.slug ?? uniqueSlug("evt");
-  const body: Record<string, string> = {
+  return rpc(cookie).events.create({
     name: overrides.name ?? `Test Event ${slug}`,
     slug,
     password: overrides.password ?? "gallery-pass",
-  };
-  if (overrides.description !== undefined) body.description = overrides.description;
-
-  const res = await authedFetch("/api/events", cookie, {
-    method: "POST",
-    body: JSON.stringify(body),
+    description: overrides.description,
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`createEvent failed ${res.status}: ${text}`);
-  }
-  // API returns the event object directly (not wrapped in { event: ... })
-  return res.json() as Promise<TestEvent>;
 }
 
-/** Deletes a test event by ID. Silently ignores 404. */
+/** Deletes a test event by ID. Silently ignores an already-deleted event. */
 export async function deleteEvent(cookie: string, id: string): Promise<void> {
-  const res = await authedFetch(`/api/events/${id}`, cookie, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) {
-    console.warn(`deleteEvent(${id}) failed: ${res.status}`);
-  }
+  await rpc(cookie)
+    .events.delete({ id })
+    .catch((err: unknown) => console.warn(`deleteEvent(${id}) failed: ${String(err)}`));
 }
 
 /** Gets a gallery session cookie for a given slug + password. */

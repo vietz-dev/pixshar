@@ -5,16 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Badge, Box, Button, Card, Flex, Grid, Heading, Text } from "@chakra-ui/react";
-
-interface EventItem {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  status: string;
-  createdAt: string;
-  _count: { photos: number };
-}
+import { ORPCError } from "@orpc/client";
+import type { EventSummary } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 /** Event status → Chakra colorPalette. Also consumed by the event detail page. */
 export const EVENT_STATUS_PALETTE: Record<string, string> = {
@@ -28,32 +21,25 @@ const COVER_COUNT = 12;
 export default function AdminPage() {
   const t = useTranslations("admin");
   const tCommon = useTranslations("common");
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/events", { credentials: "include" })
-      .then((res) => {
-        if (res.status === 401) {
-          router.push("/auth/login");
-          return null;
-        }
-        return res.json();
+    api.events
+      .list({})
+      .then((data) => setEvents(data))
+      .catch((err) => {
+        if (err instanceof ORPCError && err.code === "UNAUTHORIZED") router.push("/auth/login");
       })
-      .then((data) => {
-        if (data) setEvents(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      .finally(() => setLoading(false));
   }, [router]);
 
   function statusLabel(st: string) {
     return st === "READY" ? t("events.status.ready") : t("events.status.processing");
   }
 
-  function formatDate(d: string) {
-    const date = new Date(d);
+  function formatDate(date: Date) {
     return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   }
 

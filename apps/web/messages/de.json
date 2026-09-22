@@ -52,7 +52,8 @@
       "cancelButton": "Abbrechen",
       "creating": "Wird erstellt...",
       "createButton": "Event erstellen",
-      "createFailed": "Event konnte nicht erstellt werden"
+      "createFailed": "Event konnte nicht erstellt werden",
+      "slugTaken": "Dieser Link ist bereits vergeben."
     },
     "eventDetail": {
       "backToEvents": "Zurück zu Events",

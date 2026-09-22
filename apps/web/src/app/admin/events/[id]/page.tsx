@@ -29,31 +29,9 @@ import DownloadPanel from "../../../../components/DownloadPanel";
 import AlertDialog from "../../../../components/AlertDialog";
 import UploadTray, { UploadItem, randomTint } from "../../../../components/UploadTray";
 import { presignedUpload } from "../../../../lib/uploadClient";
-
-interface Photo {
-  id: string;
-  photographerName: string | null;
-  originalKey: string;
-  displayKey: string;
-  thumbKey: string;
-  thumbUrl: string;
-  displayUrl: string;
-  status: string;
-  uploadedBy: string;
-  createdAt: string;
-  placeholderDataUrl: string | null;
-}
-
-interface EventDetail {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  password: string | null;
-  status: string;
-  createdAt: string;
-  photos: Photo[];
-}
+import { ORPCError } from "@orpc/client";
+import type { AdminPhoto as Photo, EventDetail } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 export default function EventDetailPage() {
   const t = useTranslations("admin.eventDetail");
@@ -97,19 +75,13 @@ export default function EventDetailPage() {
   const [showAnonymous, setShowAnonymous] = useState(false);
 
   const fetchEvent = useCallback(() => {
-    fetch(`/api/events/${id}`, { credentials: "include" })
-      .then((res) => {
-        if (res.status === 401) {
-          router.push("/auth/login");
-          return null;
-        }
-        return res.json();
+    api.events
+      .get({ id })
+      .then((data) => setEvent(data))
+      .catch((err) => {
+        if (err instanceof ORPCError && err.code === "UNAUTHORIZED") router.push("/auth/login");
       })
-      .then((data) => {
-        if (data) setEvent(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      .finally(() => setLoading(false));
   }, [id, router]);
 
   useEffect(() => {
@@ -145,7 +117,7 @@ export default function EventDetailPage() {
           displayUrl: p.displayUrl,
           status: "PROCESSED",
           uploadedBy: "ADMIN",
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(),
           placeholderDataUrl: p.placeholderDataUrl ?? null,
         };
         return { ...prev, photos: [photo, ...prev.photos] };
@@ -266,13 +238,10 @@ export default function EventDetailPage() {
   }
 
   async function handleDeleteEvent() {
-    const res = await fetch(`/api/events/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) {
+    try {
+      await api.events.delete({ id });
       router.push("/admin");
-    } else {
+    } catch {
       setError(t("deleteEvent.failed"));
     }
   }
@@ -302,21 +271,14 @@ export default function EventDetailPage() {
     if (!pwNewValue.trim()) return;
     setPwSaving(true);
     try {
-      const res = await fetch(`/api/events/${id}/password`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pwNewValue }),
-      });
-      if (res.ok) {
-        toaster.create({ type: "success", title: t("password.saved") });
-        setEvent((prev) => (prev ? { ...prev, password: pwNewValue } : prev));
-        setPwNewValue("");
-        setPwChangeOpen(false);
-        setPwVisible(false);
-      } else {
-        toaster.create({ type: "error", title: t("password.failed") });
-      }
+      await api.events.setPassword({ id, password: pwNewValue });
+      toaster.create({ type: "success", title: t("password.saved") });
+      setEvent((prev) => (prev ? { ...prev, password: pwNewValue } : prev));
+      setPwNewValue("");
+      setPwChangeOpen(false);
+      setPwVisible(false);
+    } catch {
+      toaster.create({ type: "error", title: t("password.failed") });
     } finally {
       setPwSaving(false);
     }

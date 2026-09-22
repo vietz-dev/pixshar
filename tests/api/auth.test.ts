@@ -51,9 +51,13 @@ describe("Authentication", () => {
   });
 
   describe("Given no session cookie", () => {
-    describe("When requesting an admin-only route", () => {
+    describe("When calling an admin-only procedure", () => {
       it("Then it returns 401 Unauthorized", async () => {
-        const res = await fetch(`${API}/api/events`);
+        const res = await fetch(`${API}/api/rpc/events/list`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ json: {} }),
+        });
         expect(res.status).toBe(401);
       });
     });

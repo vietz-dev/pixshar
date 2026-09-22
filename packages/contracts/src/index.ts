@@ -1,5 +1,8 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
+import { events } from "./events.js";
+
+export * from "./events.js";
 
 /** Public event info shown on the gallery password gate. */
 export const galleryInfo = z.object({
@@ -10,6 +13,7 @@ export const galleryInfo = z.object({
 export type GalleryInfo = z.infer<typeof galleryInfo>;
 
 export const contract = {
+  events,
   gallery: {
     info: oc
       .input(z.object({ slug: z.string() }))

@@ -20,6 +20,7 @@ import {
   authedFetch,
   createEvent,
   deleteEvent,
+  rpc,
   unlockGallery,
   type TestEvent,
 } from "./helpers.js";
@@ -182,20 +183,16 @@ describe("Photo lifecycle", () => {
       await waitUntilProcessed(adminCookie, event.id, 60_000);
 
       // Fetch the processed keys so later phases can verify S3 cleanup
-      const eventRes = await authedFetch(`/api/events/${event.id}`, adminCookie);
-      const body = (await eventRes.json()) as {
-        photos: Array<{ id: string; thumbKey: string; displayKey: string; status: string }>;
-      };
-      const photo = body.photos.find((p) => p.id === adminPhotoId)!;
+      const detail = await rpc(adminCookie).events.get({ id: event.id });
+      const photo = detail.photos.find((p) => p.id === adminPhotoId)!;
       adminThumbKey = photo.thumbKey;
       adminDisplayKey = photo.displayKey;
     }, 90_000);
 
     describe("When the image-processor worker completes the job", () => {
       it("Then the photo status is PROCESSED", async () => {
-        const res = await authedFetch(`/api/events/${event.id}`, adminCookie);
-        const body = (await res.json()) as { photos: Array<{ id: string; status: string }> };
-        const photo = body.photos.find((p) => p.id === adminPhotoId);
+        const detail = await rpc(adminCookie).events.get({ id: event.id });
+        const photo = detail.photos.find((p) => p.id === adminPhotoId);
         expect(photo?.status).toBe("PROCESSED");
       });
 
@@ -210,11 +207,8 @@ describe("Photo lifecycle", () => {
       });
 
       it("Then the admin event detail returns presigned thumb and display URLs", async () => {
-        const res = await authedFetch(`/api/events/${event.id}`, adminCookie);
-        const body = (await res.json()) as {
-          photos: Array<{ id: string; thumbUrl: string; displayUrl: string }>;
-        };
-        const photo = body.photos.find((p) => p.id === adminPhotoId)!;
+        const detail = await rpc(adminCookie).events.get({ id: event.id });
+        const photo = detail.photos.find((p) => p.id === adminPhotoId)!;
         expect(photo.thumbUrl).toMatch(/^http/);
         expect(photo.displayUrl).toMatch(/^http/);
       });
@@ -284,11 +278,8 @@ describe("Photo lifecycle", () => {
       await waitUntilProcessed(adminCookie, event.id, 60_000);
 
       // Capture guest photo keys for later S3 cleanup verification
-      const eventRes = await authedFetch(`/api/events/${event.id}`, adminCookie);
-      const body = (await eventRes.json()) as {
-        photos: Array<{ id: string; thumbKey: string; displayKey: string }>;
-      };
-      const guestPhoto = body.photos.find((p) => p.id === guestPhotoId)!;
+      const detail = await rpc(adminCookie).events.get({ id: event.id });
+      const guestPhoto = detail.photos.find((p) => p.id === guestPhotoId)!;
       guestThumbKey = guestPhoto.thumbKey;
       guestDisplayKey = guestPhoto.displayKey;
     }, 90_000);
@@ -335,9 +326,8 @@ describe("Photo lifecycle", () => {
 
     describe("When DELETE /api/events/:id/photos/:photoId is called", () => {
       it("Then the photo no longer appears in the admin event detail", async () => {
-        const res = await authedFetch(`/api/events/${event.id}`, adminCookie);
-        const body = (await res.json()) as { photos: Array<{ id: string }> };
-        expect(body.photos.find((p) => p.id === adminPhotoId)).toBeUndefined();
+        const detail = await rpc(adminCookie).events.get({ id: event.id });
+        expect(detail.photos.find((p) => p.id === adminPhotoId)).toBeUndefined();
       });
 
       it("Then the photo is no longer visible in the guest gallery", async () => {
@@ -369,14 +359,14 @@ describe("Photo lifecycle", () => {
 
   describe("Phase 6 — Given the admin deletes the entire event", () => {
     beforeAll(async () => {
-      const res = await authedFetch(`/api/events/${event.id}`, adminCookie, { method: "DELETE" });
-      expect(res.status).toBe(200);
+      await rpc(adminCookie).events.delete({ id: event.id });
     }, 15_000);
 
-    describe("When DELETE /api/events/:id is called", () => {
-      it("Then GET /api/events/:id returns 404", async () => {
-        const res = await authedFetch(`/api/events/${event.id}`, adminCookie);
-        expect(res.status).toBe(404);
+    describe("When events.delete is called", () => {
+      it("Then events.get fails with NOT_FOUND", async () => {
+        await expect(rpc(adminCookie).events.get({ id: event.id })).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
       });
 
       it("Then the remaining guest photo's original S3 object is removed", async () => {

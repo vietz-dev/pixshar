@@ -17,6 +17,8 @@ import {
   Text,
   Textarea,
 } from "@chakra-ui/react";
+import { ORPCError } from "@orpc/client";
+import { api } from "@/lib/rpc";
 
 function slugify(name: string): string {
   return name
@@ -54,22 +56,17 @@ export default function NewEventPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ name, slug, description, password }),
+      const event = await api.events.create({
+        name,
+        slug,
+        description: description || undefined,
+        password,
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || t("createFailed"));
-      }
-
-      const event = await res.json();
       router.push(`/admin/events/${event.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("createFailed"));
+      setError(
+        err instanceof ORPCError && err.code === "CONFLICT" ? t("slugTaken") : t("createFailed"),
+      );
       setLoading(false);
     }
   }
