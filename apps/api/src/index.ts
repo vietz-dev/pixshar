@@ -14,12 +14,16 @@ import { startBoss } from "./lib/pgboss.js";
 import { startPgNotifyListener } from "./lib/pgNotifyListener.js";
 import { httpRequestsTotal, httpRequestDuration } from "./lib/metrics.js";
 import { RPCHandler } from "@orpc/server/fetch";
+import { ResponseHeadersPlugin } from "@orpc/server/plugins";
 import { onError } from "@orpc/server";
 import { router } from "./rpc/router.js";
 import { defaultResolveContext, type ContextResolver } from "./rpc/context.js";
 
 const rpcHandler = new RPCHandler(router, {
   interceptors: [onError((error) => console.error("[RPC]", error))],
+  // Lets procedures write response headers via `context.resHeaders`
+  // (gallery.unlock sets the gallery session cookie that way).
+  plugins: [new ResponseHeadersPlugin()],
 });
 
 /**

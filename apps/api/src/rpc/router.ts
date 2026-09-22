@@ -1,11 +1,16 @@
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { serialize as serializeCookie } from "hono/utils/cookie";
+import { SignJWT } from "jose";
 import { env } from "../lib/env.js";
 import { encryptPassword, decryptPassword } from "../lib/crypto.js";
-import { hashPassword } from "../lib/hash.js";
+import { hashPassword, verifyPassword } from "../lib/hash.js";
+import { galleryUnlocksTotal, photoDownloadsTotal } from "../lib/metrics.js";
 import { prisma } from "../lib/prisma.js";
 import { deleteS3Object, getPresignedUrl, s3 } from "../lib/s3.js";
 import { base } from "./base.js";
-import { adminOs, rateLimit, requireOwner } from "./middleware.js";
+import { adminOs, galleryOs, rateLimit, requireOwner } from "./middleware.js";
+
+const jwtSecret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
 const eventSummarySelect = {
   id: true,
@@ -128,5 +133,101 @@ export const router = base.router({
       if (!event) throw errors.NOT_FOUND({ message: "Gallery not found" });
       return event;
     }),
+
+    unlock: base.gallery.unlock
+      .use(
+        rateLimit({
+          key: (input: { slug: string }) => `unlock:${input.slug}`,
+          limit: 5,
+          windowMs: 60_000,
+        }),
+      )
+      .handler(async ({ input, context, errors }) => {
+        const event = await prisma.event.findUnique({ where: { slug: input.slug } });
+        if (!event) throw errors.NOT_FOUND({ message: "Gallery not found" });
+
+        const valid = await verifyPassword(input.password, event.passwordHash);
+        galleryUnlocksTotal.inc({ result: valid ? "success" : "failure" });
+        if (!valid) throw errors.UNAUTHORIZED({ message: "Invalid password" });
+
+        const token = await new SignJWT({ eventId: event.id })
+          .setProtectedHeader({ alg: "HS256" })
+          .setExpirationTime("7d")
+          .sign(jwtSecret);
+
+        // Set-Cookie from inside a procedure, via the response-headers plugin.
+        context.resHeaders?.append(
+          "Set-Cookie",
+          serializeCookie(`gallery_${input.slug}`, token, {
+            httpOnly: true,
+            secure: env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 7,
+            path: "/",
+          }),
+        );
+
+        return { success: true as const };
+      }),
+
+    get: base.gallery.get
+      .use(
+        rateLimit({
+          key: (input: { slug: string }) => `gallery-get:${input.slug}`,
+          limit: 120,
+          windowMs: 60_000,
+        }),
+      )
+      .use(galleryOs)
+      .handler(async ({ context }) => {
+        const event = context.galleryEvent;
+        const photos = await prisma.photo.findMany({
+          where: { eventId: event.id, status: "PROCESSED" },
+          orderBy: { createdAt: "desc" },
+        });
+
+        return {
+          id: event.id,
+          slug: event.slug,
+          name: event.name,
+          description: event.description,
+          photos: await Promise.all(
+            photos.map(async (photo) => ({
+              id: photo.id,
+              photographerName: photo.photographerName,
+              thumbUrl: await getPresignedUrl(photo.thumbKey, "get", 3600),
+              displayUrl: await getPresignedUrl(photo.displayKey, "get", 3600),
+              status: photo.status,
+              placeholderDataUrl: photo.placeholderDataUrl ?? null,
+            })),
+          ),
+        };
+      }),
+
+    photoDownload: base.gallery.photoDownload
+      .use(
+        rateLimit({
+          key: (input: { slug: string }) => `photo-dl:${input.slug}`,
+          limit: 60,
+          windowMs: 60_000,
+        }),
+      )
+      .use(galleryOs)
+      .handler(async ({ input, context, errors }) => {
+        const photo = await prisma.photo.findUnique({
+          where: { id: input.photoId, eventId: context.galleryEvent.id },
+        });
+        if (!photo) throw errors.NOT_FOUND({ message: "Photo not found" });
+
+        const filename = `${(photo.photographerName || "photo").replace(/[^a-zA-Z0-9_-]/g, "_")}-${photo.id}.jpg`;
+        const url = await getPresignedUrl(
+          photo.originalKey,
+          "get",
+          60 * 60,
+          `attachment; filename="${filename}"`,
+        );
+        photoDownloadsTotal.inc({ actor: "guest" });
+        return { url };
+      }),
   },
 });

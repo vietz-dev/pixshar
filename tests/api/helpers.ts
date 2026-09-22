@@ -122,12 +122,24 @@ export async function deleteEvent(cookie: string, id: string): Promise<void> {
     .catch((err: unknown) => console.warn(`deleteEvent(${id}) failed: ${String(err)}`));
 }
 
-/** Gets a gallery session cookie for a given slug + password. */
+// Unlock is rate limited to 5 attempts/minute per gallery, and suites unlock
+// the same gallery in many tests — hand back the cookie we already have.
+const galleryCookies = new Map<string, string>();
+
+/**
+ * Gets a gallery session cookie for a given slug + password.
+ *
+ * Uses the RPC wire format directly rather than the typed client: the cookie
+ * lives in the response headers, which the client does not expose.
+ */
 export async function unlockGallery(slug: string, password: string): Promise<string> {
-  const res = await fetch(`${API}/api/gallery/${slug}/unlock`, {
+  const cached = galleryCookies.get(`${slug}:${password}`);
+  if (cached) return cached;
+
+  const res = await fetch(`${API}/api/rpc/gallery/unlock`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ json: { slug, password } }),
   });
   if (!res.ok) {
     const body = await res.text();
@@ -137,6 +149,7 @@ export async function unlockGallery(slug: string, password: string): Promise<str
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
+  galleryCookies.set(`${slug}:${password}`, galleryCookie);
   return galleryCookie;
 }
 

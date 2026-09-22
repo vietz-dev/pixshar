@@ -164,10 +164,10 @@ test.describe("Gallery download page", () => {
       }
 
       // Fetch the download payload to see if there are any parts
-      const galleryCookieRes = await fetch(`${API}/api/gallery/${eventSlug}/unlock`, {
+      const galleryCookieRes = await fetch(`${API}/api/rpc/gallery/unlock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "dl-e2e-pass" }),
+        body: JSON.stringify({ json: { slug: eventSlug, password: "dl-e2e-pass" } }),
       });
       const galleryCookieStr = galleryCookieRes.headers
         .getSetCookie()

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Box, Button, Field, Flex, Heading, Input, Text } from "@chakra-ui/react";
+import { ORPCError } from "@orpc/client";
 import type { GalleryInfo } from "@pixshar/contracts";
 import { api } from "@/lib/rpc";
 
@@ -20,20 +21,17 @@ export default function GalleryGatePage() {
 
   useEffect(() => {
     // Check if already unlocked — if so, skip straight to the view.
-    fetch(`/api/gallery/${slug}`, { credentials: "include" })
-      .then((res) => {
-        if (res.ok) {
-          router.push(`/gallery/${slug}/view`);
-          return;
-        }
-        // Fetch public event info separately so the gate page can show the event name.
+    api.gallery
+      .get({ slug })
+      .then(() => router.push(`/gallery/${slug}/view`))
+      .catch(() =>
+        // Not unlocked: show the gate, with the public event info on it.
         api.gallery
           .info({ slug })
           .then(setEvent)
           .catch(() => {})
-          .finally(() => setLoadingEvent(false));
-      })
-      .catch(() => setLoadingEvent(false));
+          .finally(() => setLoadingEvent(false)),
+      );
   }, [slug, router]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -42,20 +40,17 @@ export default function GalleryGatePage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/gallery/${slug}/unlock`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || t("invalidPassword"));
-      }
-
+      await api.gallery.unlock({ slug, password });
       router.push(`/gallery/${slug}/view`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("unlockFailed"));
+      const code = err instanceof ORPCError ? err.code : null;
+      setError(
+        code === "UNAUTHORIZED"
+          ? t("invalidPassword")
+          : code === "TOO_MANY_REQUESTS"
+            ? t("tooManyAttempts")
+            : t("unlockFailed"),
+      );
     } finally {
       setLoading(false);
     }

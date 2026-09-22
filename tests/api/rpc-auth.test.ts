@@ -82,6 +82,18 @@ describe("oRPC access levels", () => {
     });
   });
 
+  describe("Given no gallery session cookie", () => {
+    describe("When calling a galleryOs procedure", () => {
+      it("Then it fails with UNAUTHORIZED before any database access", async () => {
+        const res = await call("gallery/get", { slug: "any-slug" });
+
+        expect(res.status).toBe(401);
+        const body = (await res.json()) as { json: { code: string } };
+        expect(body.json.code).toBe("UNAUTHORIZED");
+      });
+    });
+  });
+
   describe("Given an admin who does not own the event", () => {
     describe("When calling a procedure guarded by requireOwner", () => {
       it("Then it fails with NOT_FOUND for an unknown event", async () => {

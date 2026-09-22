@@ -148,6 +148,7 @@
       "unlocking": "Unlocking...",
       "unlock": "Unlock gallery",
       "invalidPassword": "Invalid password",
+      "tooManyAttempts": "Too many attempts. Please try again later.",
       "unlockFailed": "Failed to unlock",
       "poweredBy": "Powered by Pixshar"
     },

@@ -1,14 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { getPresignedUrl } from "../lib/s3.js";
 import { requireGallerySession } from "../middleware/requireGallerySession.js";
-import { SignJWT } from "jose";
-import { env } from "../lib/env.js";
-import { setCookie } from "hono/cookie";
 import type { HonoVariables } from "../types.js";
-import { verifyPassword } from "../lib/hash.js";
 import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
 import {
   initUpload,
@@ -19,88 +13,14 @@ import {
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus, onPhotoProcessed } from "../lib/eventBus.js";
 import { buildBothVariantsPayload } from "../services/downloadJob.js";
-import { galleryUnlocksTotal, photoDownloadsTotal, archiveDownloadsTotal } from "../lib/metrics.js";
+import { archiveDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
-const secret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
-
-const unlockSchema = z.object({
-  password: z.string().min(1).max(128),
-});
-
-// NOTE: the public GET /:slug/info endpoint now lives in the contract as
-// `gallery.info` (apps/api/src/rpc/router.ts).
-
-app.post("/:slug/unlock", zValidator("json", unlockSchema), async (c) => {
-  const slug = c.req.param("slug");
-  const body = c.req.valid("json");
-
-  const event = await prisma.event.findUnique({ where: { slug } });
-  if (!event) {
-    return c.json({ error: "Gallery not found" }, 404);
-  }
-
-  // Rate limit: 5 attempts per minute per IP
-  const rateKey = getRateLimitKey(c, `unlock:${slug}`);
-  if (!checkRateLimit(rateKey, 5, 60_000)) {
-    return c.json({ error: "Too many attempts. Please try again later." }, 429);
-  }
-
-  const valid = await verifyPassword(body.password, event.passwordHash);
-  galleryUnlocksTotal.inc({ result: valid ? "success" : "failure" });
-  if (!valid) {
-    return c.json({ error: "Invalid password" }, 401);
-  }
-
-  const token = await new SignJWT({ eventId: event.id })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("7d")
-    .sign(secret);
-
-  setCookie(c, `gallery_${slug}`, token, {
-    httpOnly: true,
-    secure: env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
-
-  return c.json({ success: true });
-});
-
-app.get("/:slug", requireGallerySession, async (c) => {
-  // Rate limit: 120 requests per minute per gallery
-  const rateKey = getRateLimitKey(c, `gallery-get:${c.req.param("slug")}`);
-  if (!checkRateLimit(rateKey, 120, 60_000)) {
-    return c.json({ error: "Too many requests. Please try again later." }, 429);
-  }
-
-  const event = c.get("galleryEvent");
-  const photos = await prisma.photo.findMany({
-    where: { eventId: event.id, status: "PROCESSED" },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const photosWithUrls = await Promise.all(
-    photos.map(async (photo: (typeof photos)[0]) => ({
-      id: photo.id,
-      photographerName: photo.photographerName,
-      thumbUrl: await getPresignedUrl(photo.thumbKey, "get", 3600),
-      displayUrl: await getPresignedUrl(photo.displayKey, "get", 3600),
-      status: photo.status,
-      placeholderDataUrl: photo.placeholderDataUrl ?? null,
-    })),
-  );
-
-  return c.json({
-    id: event.id,
-    slug: event.slug,
-    name: event.name,
-    description: event.description,
-    photos: photosWithUrls,
-  });
-});
+// NOTE: the public info endpoint, POST /:slug/unlock, GET /:slug and the
+// per-photo download now live in the contract as `gallery.{info,unlock,get,
+// photoDownload}` (apps/api/src/rpc/router.ts). What remains here is the two
+// SSE streams and the upload/archive endpoints.
 
 // Step 1 — dedup + presigned PUT URLs for guest uploads (direct browser → S3).
 app.post(
@@ -219,34 +139,6 @@ app.get("/:slug/photos/stream", requireGallerySession, async (c) => {
       });
     });
   });
-});
-
-app.get("/:slug/photos/:photoId/download", requireGallerySession, async (c) => {
-  // Rate limit: 60 photo downloads per minute per gallery
-  const rateKey = getRateLimitKey(c, `photo-dl:${c.req.param("slug")}`);
-  if (!checkRateLimit(rateKey, 60, 60_000)) {
-    return c.json({ error: "Too many requests. Please try again later." }, 429);
-  }
-
-  const event = c.get("galleryEvent");
-  const photoId = c.req.param("photoId");
-
-  const photo = await prisma.photo.findUnique({
-    where: { id: photoId, eventId: event.id },
-  });
-  if (!photo) {
-    return c.json({ error: "Photo not found" }, 404);
-  }
-
-  const filename = `${(photo.photographerName || "photo").replace(/[^a-zA-Z0-9_-]/g, "_")}-${photo.id}.jpg`;
-  const url = await getPresignedUrl(
-    photo.originalKey,
-    "get",
-    60 * 60,
-    `attachment; filename="${filename}"`,
-  );
-  photoDownloadsTotal.inc({ actor: "guest" });
-  return c.json({ url });
 });
 
 export default app;

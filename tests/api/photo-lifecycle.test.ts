@@ -218,19 +218,22 @@ describe("Photo lifecycle", () => {
   // ─── Phase 3: Guest gallery view ─────────────────────────────────────────
 
   describe("Phase 3 — Given a processed photo in a password-protected gallery", () => {
-    describe("When a guest unlocks the gallery and requests GET /api/gallery/:slug", () => {
+    describe("When a guest unlocks the gallery and calls gallery.get", () => {
       it("Then the photo appears with thumb and display URLs", async () => {
         const galleryCookie = await unlockGallery(event.slug, "lifecycle-pass");
-        const res = await fetch(`${API}/api/gallery/${event.slug}`, {
-          headers: { Cookie: galleryCookie },
+        const data = await rpc(galleryCookie).gallery.get({ slug: event.slug });
+        expect(data.photos).toHaveLength(1);
+        expect(data.photos[0].thumbUrl).toMatch(/^http/);
+        expect(data.photos[0].displayUrl).toMatch(/^http/);
+      });
+
+      it("Then the guest can get a presigned download URL for that photo", async () => {
+        const galleryCookie = await unlockGallery(event.slug, "lifecycle-pass");
+        const { url } = await rpc(galleryCookie).gallery.photoDownload({
+          slug: event.slug,
+          photoId: adminPhotoId,
         });
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as {
-          photos: Array<{ thumbUrl: string; displayUrl: string }>;
-        };
-        expect(body.photos).toHaveLength(1);
-        expect(body.photos[0].thumbUrl).toMatch(/^http/);
-        expect(body.photos[0].displayUrl).toMatch(/^http/);
+        expect(url).toMatch(/^http/);
       });
     });
   });
@@ -287,23 +290,14 @@ describe("Photo lifecycle", () => {
     describe("When the guest upload is processed", () => {
       it("Then the gallery shows 2 photos total", async () => {
         const galleryCookie = await unlockGallery(event.slug, "lifecycle-pass");
-        const res = await fetch(`${API}/api/gallery/${event.slug}`, {
-          headers: { Cookie: galleryCookie },
-        });
-        const body = (await res.json()) as { photos: unknown[] };
-        expect(body.photos).toHaveLength(2);
+        const data = await rpc(galleryCookie).gallery.get({ slug: event.slug });
+        expect(data.photos).toHaveLength(2);
       });
 
       it("Then the guest photo is attributed to the photographer", async () => {
         const galleryCookie = await unlockGallery(event.slug, "lifecycle-pass");
-        const res = await fetch(`${API}/api/gallery/${event.slug}`, {
-          headers: { Cookie: galleryCookie },
-        });
-        const body = (await res.json()) as {
-          photos: Array<{ photographerName: string | null }>;
-        };
-        const guestPhoto = body.photos.find((p) => p.photographerName === "Alice Guest");
-        expect(guestPhoto).toBeDefined();
+        const data = await rpc(galleryCookie).gallery.get({ slug: event.slug });
+        expect(data.photos.find((p) => p.photographerName === "Alice Guest")).toBeDefined();
       });
 
       it("Then the guest photo's S3 objects exist", async () => {
@@ -332,13 +326,10 @@ describe("Photo lifecycle", () => {
 
       it("Then the photo is no longer visible in the guest gallery", async () => {
         const galleryCookie = await unlockGallery(event.slug, "lifecycle-pass");
-        const res = await fetch(`${API}/api/gallery/${event.slug}`, {
-          headers: { Cookie: galleryCookie },
-        });
-        const body = (await res.json()) as { photos: Array<{ id: string }> };
-        expect(body.photos.find((p) => p.id === adminPhotoId)).toBeUndefined();
+        const data = await rpc(galleryCookie).gallery.get({ slug: event.slug });
+        expect(data.photos.find((p) => p.id === adminPhotoId)).toBeUndefined();
         // Guest photo is still there
-        expect(body.photos).toHaveLength(1);
+        expect(data.photos).toHaveLength(1);
       });
 
       it("Then the deleted photo's original S3 object is removed", async () => {
