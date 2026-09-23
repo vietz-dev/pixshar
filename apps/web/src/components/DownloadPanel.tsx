@@ -13,9 +13,9 @@ import {
   SimpleGrid,
   Text,
 } from "@chakra-ui/react";
+import type { Quality } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 import AlertDialog from "./AlertDialog";
-
-type Quality = "DISPLAY" | "ORIGINAL";
 
 interface AdminDownloadState {
   quality: Quality;
@@ -126,10 +126,7 @@ function VariantPanel({
   async function handleBuildNow() {
     setActionLoading("buildNow");
     try {
-      await fetch(`/api/events/${eventId}/download/build-now?quality=${quality}`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.events.download.buildNow({ id: eventId, quality });
     } finally {
       setActionLoading(null);
     }
@@ -138,10 +135,7 @@ function VariantPanel({
   async function handleRebuildAll() {
     setActionLoading("rebuildAll");
     try {
-      await fetch(`/api/events/${eventId}/download/rebuild-all?quality=${quality}`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.events.download.rebuildAll({ id: eventId, quality });
     } finally {
       setActionLoading(null);
     }
@@ -151,10 +145,7 @@ function VariantPanel({
     setCancelOpen(false);
     setActionLoading("cancel");
     try {
-      await fetch(`/api/events/${eventId}/download/cancel?quality=${quality}`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.events.download.cancel({ id: eventId, quality });
     } finally {
       setActionLoading(null);
     }

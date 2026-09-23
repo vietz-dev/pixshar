@@ -1,5 +1,6 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
+import { downloadStatus, quality } from "./download.js";
 
 /** One row of the admin event list. */
 export const eventSummary = z.object({
@@ -80,4 +81,36 @@ export const events = {
     .input(z.object({ id: z.string() }))
     .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
     .output(success),
+
+  /** Presigned, attachment-dispositioned URL for one original photo. */
+  photoDownload: oc
+    .input(z.object({ id: z.string(), photoId: z.string() }))
+    .errors({ NOT_FOUND: {}, FORBIDDEN: {}, TOO_MANY_REQUESTS: {} })
+    .output(z.object({ url: z.string() })),
+
+  /** Archive build controls — one variant per call. */
+  download: {
+    status: oc
+      .input(z.object({ id: z.string(), quality: quality.default("ORIGINAL") }))
+      .errors({ NOT_FOUND: {}, FORBIDDEN: {}, TOO_MANY_REQUESTS: {} })
+      .output(downloadStatus),
+
+    /** Skip the debounce wait and queue the pending reconcile now. */
+    buildNow: oc
+      .input(z.object({ id: z.string(), quality: quality.default("ORIGINAL") }))
+      .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+      .output(success),
+
+    /** Rebuild every existing part's bytes, preserving part membership. */
+    rebuildAll: oc
+      .input(z.object({ id: z.string(), quality: quality.default("ORIGINAL") }))
+      .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+      .output(success),
+
+    /** Stop adding parts; already-committed parts stay downloadable. */
+    cancel: oc
+      .input(z.object({ id: z.string(), quality: quality.default("ORIGINAL") }))
+      .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+      .output(success),
+  },
 };

@@ -1,4 +1,5 @@
 import { oc } from "@orpc/contract";
+import { bothVariantsPayload } from "./download.js";
 import { galleryUpload } from "./upload.js";
 import { z } from "zod";
 
@@ -59,6 +60,12 @@ export const gallery = {
     .input(z.object({ slug: z.string(), photoId: z.string() }))
     .errors({ UNAUTHORIZED: {}, NOT_FOUND: {}, TOO_MANY_REQUESTS: {} })
     .output(z.object({ url: z.string() })),
+
+  /** Both archive variants in one round trip, with presigned part URLs. */
+  download: oc
+    .input(z.object({ slug: z.string() }))
+    .errors({ UNAUTHORIZED: {}, NOT_FOUND: {}, TOO_MANY_REQUESTS: {} })
+    .output(bothVariantsPayload),
 
   /** Guest upload bookends — same presigned flow as the admin's. */
   upload: galleryUpload,

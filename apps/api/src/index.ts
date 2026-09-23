@@ -18,6 +18,7 @@ import { ResponseHeadersPlugin } from "@orpc/server/plugins";
 import { onError } from "@orpc/server";
 import { router } from "./rpc/router.js";
 import { defaultResolveContext, type ContextResolver } from "./rpc/context.js";
+import { dispose } from "./runtime.js";
 
 const rpcHandler = new RPCHandler(router, {
   interceptors: [onError((error) => console.error("[RPC]", error))],
@@ -125,6 +126,8 @@ if (import.meta.main) {
     console.log("[API] SIGTERM — graceful shutdown");
     // Stop accepting new connections; wait for in-flight requests to complete.
     server.stop(true);
+    // Release the request-side Effect runtime's scoped resources.
+    await dispose();
     await boss.stop({ graceful: true });
     process.exit(0);
   });

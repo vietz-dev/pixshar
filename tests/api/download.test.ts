@@ -1,22 +1,21 @@
 /**
- * API integration tests for the gallery download archive endpoints.
+ * API integration tests for the download archive procedures.
  * Runs against the live Docker Compose stack (localhost:3001).
  *
  * Covers:
  *  - Auth guards: gallery cookie required, cross-gallery cookie rejected
- *  - GET /api/gallery/:slug/download — payload shape for all non-READY states
- *  - GET /api/gallery/:slug/download — payload shape when READY (parts array)
- *  - POST /api/events/:id/download/build-now — skip debounce, queue reconcile
- *  - POST /api/events/:id/download/rebuild-all — rebuild all parts (membership-preserving)
- *  - POST /api/events/:id/download/cancel — cancels a queued/building job
- *  - GET /api/events/:id/download/status — admin status endpoint shape
- *  - Admin auth guard on all admin download endpoints
+ *  - gallery.download — payload shape for all non-READY states and when READY
+ *  - events.download.buildNow — skip debounce, queue reconcile
+ *  - events.download.rebuildAll — rebuild all parts (membership-preserving)
+ *  - events.download.cancel — cancels a queued/building job
+ *  - events.download.status — admin status shape, per variant
+ *  - Admin auth guard on all admin download procedures
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type { Quality } from "@pixshar/contracts";
 import {
-  API,
   signInAdmin,
-  authedFetch,
+  rpc,
   createEvent,
   deleteEvent,
   unlockGallery,
@@ -24,42 +23,17 @@ import {
   type TestEvent,
 } from "./helpers.js";
 
-// Shape of the both-variants guest download payload.
-interface VariantPayload {
-  status: string;
-  parts: Array<{
-    index: number;
-    url: string | null;
-    sizeBytes: number;
-    membershipSig: string;
-    rebuilding: boolean;
-  }>;
-  partCount: number;
-  totalSizeBytes: number;
-  photoCount: number;
-  building: boolean;
-}
-interface BothVariantsBody {
-  defaultQuality: string;
-  status: string; // back-compat: default variant spread at top level
-  variants: { DISPLAY: VariantPayload; ORIGINAL: VariantPayload };
-}
-
 async function pollAdminStatus(
   cookie: string,
   eventId: string,
-  quality: "DISPLAY" | "ORIGINAL",
+  quality: Quality,
   until: (s: string) => boolean,
   timeoutMs = 30_000,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   let status = "";
   while (Date.now() < deadline) {
-    const res = await authedFetch(
-      `/api/events/${eventId}/download/status?quality=${quality}`,
-      cookie,
-    );
-    status = ((await res.json()) as { status: string }).status;
+    status = (await rpc(cookie).events.download.status({ id: eventId, quality })).status;
     if (until(status)) return status;
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -85,55 +59,49 @@ describe("Gallery archive download", () => {
     await deleteEvent(adminCookie, event.id);
   });
 
-  // ── Auth guards on guest download endpoint ─────────────────────────────────
+  // ── Auth guards on the guest download procedure ───────────────────────────
 
   describe("Given no gallery session cookie", () => {
-    describe("When fetching GET /api/gallery/:slug/download", () => {
-      it("Then it returns 401", async () => {
-        const res = await fetch(`${API}/api/gallery/${event.slug}/download`);
-        expect(res.status).toBe(401);
+    describe("When calling gallery.download", () => {
+      it("Then it fails with UNAUTHORIZED", async () => {
+        await expect(rpc().gallery.download({ slug: event.slug })).rejects.toMatchObject({
+          code: "UNAUTHORIZED",
+        });
       });
     });
   });
 
   describe("Given a gallery session cookie for a different event", () => {
-    it("Then it returns 401 (cross-gallery cookie rejected)", async () => {
+    it("Then it fails with UNAUTHORIZED (cross-gallery cookie rejected)", async () => {
       const other = await createEvent(adminCookie, { password: "other-pass" });
       const otherCookie = await unlockGallery(other.slug, "other-pass");
       await deleteEvent(adminCookie, other.id);
 
-      const res = await fetch(`${API}/api/gallery/${event.slug}/download`, {
-        headers: { Cookie: otherCookie },
+      await expect(rpc(otherCookie).gallery.download({ slug: event.slug })).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
       });
-      expect(res.status).toBe(401);
     });
   });
 
   // ── Payload shape — no archive yet ────────────────────────────────────────
 
   describe("Given a valid gallery session and no archive exists yet", () => {
-    describe("When fetching GET /api/gallery/:slug/download", () => {
-      it("Then it returns 200 with status NONE", async () => {
-        const res = await fetch(`${API}/api/gallery/${event.slug}/download`, {
-          headers: { Cookie: galleryCookie },
-        });
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as { status: string };
+    describe("When calling gallery.download", () => {
+      it("Then it answers with a not-yet-built status", async () => {
+        const body = await rpc(galleryCookie).gallery.download({ slug: event.slug });
         // Fresh event with no photos will be NONE (no DownloadJob row yet)
         expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING"]).toContain(body.status);
       });
     });
   });
 
-  // ── Admin download/status endpoint ────────────────────────────────────────
+  // ── Admin download status ─────────────────────────────────────────────────
 
-  describe("Admin download status endpoint", () => {
+  describe("Admin download status", () => {
     describe("Given an authenticated admin", () => {
-      describe("When fetching GET /api/events/:id/download/status", () => {
-        it("Then it returns 200 with required status fields", async () => {
-          const res = await authedFetch(`/api/events/${event.id}/download/status`, adminCookie);
-          expect(res.status).toBe(200);
-          const body = (await res.json()) as Record<string, unknown>;
+      describe("When calling events.download.status", () => {
+        it("Then it returns the required status fields", async () => {
+          const body = await rpc(adminCookie).events.download.status({ id: event.id });
           expect(body).toHaveProperty("status");
           expect(body).toHaveProperty("photoCount");
           expect(body).toHaveProperty("processedPhotos");
@@ -145,9 +113,10 @@ describe("Gallery archive download", () => {
     });
 
     describe("Given no admin session", () => {
-      it("Then it returns 401", async () => {
-        const res = await fetch(`${API}/api/events/${event.id}/download/status`);
-        expect(res.status).toBe(401);
+      it("Then it fails with UNAUTHORIZED", async () => {
+        await expect(rpc().events.download.status({ id: event.id })).rejects.toMatchObject({
+          code: "UNAUTHORIZED",
+        });
       });
     });
   });
@@ -156,56 +125,36 @@ describe("Gallery archive download", () => {
 
   describe("Admin build-now / rebuild-all", () => {
     describe("Given an authenticated admin", () => {
-      describe("When posting POST /api/events/:id/download/build-now", () => {
-        it("Then it returns 200 (no-op when there is no pending job to skip)", async () => {
-          const res = await authedFetch(`/api/events/${event.id}/download/build-now`, adminCookie, {
-            method: "POST",
-          });
-          expect(res.status).toBe(200);
-          const body = (await res.json()) as { success: boolean };
+      describe("When calling events.download.buildNow", () => {
+        it("Then it succeeds (no-op when there is no pending job to skip)", async () => {
+          const body = await rpc(adminCookie).events.download.buildNow({ id: event.id });
           expect(body.success).toBe(true);
 
           // With no processed photos there is no job — build-now leaves it NONE.
           // Once a debounce/reconcile is pending it promotes it to QUEUED.
-          const statusRes = await authedFetch(
-            `/api/events/${event.id}/download/status`,
-            adminCookie,
-          );
-          const statusBody = (await statusRes.json()) as { status: string };
-          expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING", "READY"]).toContain(
-            statusBody.status,
-          );
+          const status = await rpc(adminCookie).events.download.status({ id: event.id });
+          expect(["NONE", "DEBOUNCING", "QUEUED", "BUILDING", "READY"]).toContain(status.status);
         });
       });
 
-      describe("When posting POST /api/events/:id/download/rebuild-all", () => {
-        it("Then it returns 200", async () => {
-          const res = await authedFetch(
-            `/api/events/${event.id}/download/rebuild-all`,
-            adminCookie,
-            {
-              method: "POST",
-            },
-          );
-          expect(res.status).toBe(200);
-          const body = (await res.json()) as { success: boolean };
+      describe("When calling events.download.rebuildAll", () => {
+        it("Then it succeeds", async () => {
+          const body = await rpc(adminCookie).events.download.rebuildAll({ id: event.id });
           expect(body.success).toBe(true);
         });
       });
     });
 
     describe("Given no admin session", () => {
-      it("Then build-now returns 401", async () => {
-        const res = await fetch(`${API}/api/events/${event.id}/download/build-now`, {
-          method: "POST",
+      it("Then buildNow fails with UNAUTHORIZED", async () => {
+        await expect(rpc().events.download.buildNow({ id: event.id })).rejects.toMatchObject({
+          code: "UNAUTHORIZED",
         });
-        expect(res.status).toBe(401);
       });
-      it("Then rebuild-all returns 401", async () => {
-        const res = await fetch(`${API}/api/events/${event.id}/download/rebuild-all`, {
-          method: "POST",
+      it("Then rebuildAll fails with UNAUTHORIZED", async () => {
+        await expect(rpc().events.download.rebuildAll({ id: event.id })).rejects.toMatchObject({
+          code: "UNAUTHORIZED",
         });
-        expect(res.status).toBe(401);
       });
     });
   });
@@ -214,33 +163,25 @@ describe("Gallery archive download", () => {
 
   describe("Admin cancel", () => {
     describe("Given an authenticated admin and a QUEUED job", () => {
-      it("Then POST /api/events/:id/download/cancel returns 200 and job moves to CANCELLED", async () => {
+      it("Then events.download.cancel succeeds and the job moves to CANCELLED", async () => {
         // Ensure there is a queued job
-        await authedFetch(`/api/events/${event.id}/download/build-now`, adminCookie, {
-          method: "POST",
-        });
+        await rpc(adminCookie).events.download.buildNow({ id: event.id });
 
-        const cancelRes = await authedFetch(
-          `/api/events/${event.id}/download/cancel`,
-          adminCookie,
-          { method: "POST" },
-        );
-        expect(cancelRes.status).toBe(200);
+        const cancelled = await rpc(adminCookie).events.download.cancel({ id: event.id });
+        expect(cancelled.success).toBe(true);
 
-        const statusRes = await authedFetch(`/api/events/${event.id}/download/status`, adminCookie);
-        const statusBody = (await statusRes.json()) as { status: string };
+        const status = await rpc(adminCookie).events.download.status({ id: event.id });
         // With no pending job both build-now and cancel are no-ops (NONE). With a
         // real job it moves to CANCELLED (or READY if the worker was very fast).
-        expect(["NONE", "CANCELLED", "READY"]).toContain(statusBody.status);
+        expect(["NONE", "CANCELLED", "READY"]).toContain(status.status);
       });
     });
 
     describe("Given no admin session", () => {
-      it("Then it returns 401", async () => {
-        const res = await fetch(`${API}/api/events/${event.id}/download/cancel`, {
-          method: "POST",
+      it("Then it fails with UNAUTHORIZED", async () => {
+        await expect(rpc().events.download.cancel({ id: event.id })).rejects.toMatchObject({
+          code: "UNAUTHORIZED",
         });
-        expect(res.status).toBe(401);
       });
     });
   });
@@ -256,41 +197,24 @@ describe("Gallery archive download", () => {
       const emptyGalleryCookie = await unlockGallery(emptyEvent.slug, "ready-test");
 
       try {
-        await authedFetch(`/api/events/${emptyEvent.id}/download/build-now`, adminCookie, {
-          method: "POST",
-        });
+        await rpc(adminCookie).events.download.buildNow({ id: emptyEvent.id });
 
         // Poll up to 15s for READY (0 photos → instant build)
-        let status = "QUEUED";
-        for (let i = 0; i < 30; i++) {
-          await new Promise((r) => setTimeout(r, 500));
-          const s = await authedFetch(`/api/events/${emptyEvent.id}/download/status`, adminCookie);
-          const b = (await s.json()) as { status: string };
-          status = b.status;
-          if (status === "READY" || status === "FAILED" || status === "CANCELLED") break;
-        }
+        const status = await pollAdminStatus(
+          adminCookie,
+          emptyEvent.id,
+          "ORIGINAL",
+          (s) => s === "READY" || s === "FAILED" || s === "CANCELLED",
+          15_000,
+        );
 
         if (status !== "READY") {
           // 0-photo build might not produce a READY archive (implementation may skip)
-          // That's acceptable — just verify the endpoint doesn't crash.
+          // That's acceptable — just verify the procedure doesn't crash.
           return;
         }
 
-        const res = await fetch(`${API}/api/gallery/${emptyEvent.slug}/download`, {
-          headers: { Cookie: emptyGalleryCookie },
-        });
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as {
-          defaultQuality: string;
-          variants: Record<
-            string,
-            {
-              status: string;
-              parts?: { index: number; url: string; sizeBytes: number }[];
-              partCount?: number;
-            }
-          >;
-        };
+        const body = await rpc(emptyGalleryCookie).gallery.download({ slug: emptyEvent.slug });
 
         // We built the ORIGINAL variant (build-now defaults to ORIGINAL), so its
         // variant payload is the READY one to assert against.
@@ -299,10 +223,9 @@ describe("Gallery archive download", () => {
         expect(Array.isArray(original.parts)).toBe(true);
         expect(typeof original.partCount).toBe("number");
 
-        if (original.parts && original.parts.length > 0) {
+        if (original.parts.length > 0) {
           const part = original.parts[0];
           expect(typeof part.index).toBe("number");
-          expect(typeof part.url).toBe("string");
           expect(part.url).toMatch(/^https?:\/\//);
           expect(typeof part.sizeBytes).toBe("number");
           // URL must carry Content-Disposition with the event slug
@@ -319,9 +242,8 @@ describe("Gallery archive download", () => {
   //  this integration test is a smoke-check that the env var is wired in.)
 
   describe("DOWNLOAD_MAX_PART_BYTES env var", () => {
-    it("Then GET /api/events/:id/download/status exposes partCount field", async () => {
-      const res = await authedFetch(`/api/events/${event.id}/download/status`, adminCookie);
-      const body = (await res.json()) as { partCount: number };
+    it("Then events.download.status exposes a partCount field", async () => {
+      const body = await rpc(adminCookie).events.download.status({ id: event.id });
       // partCount is 0 when no archive exists; any non-negative integer is valid
       expect(typeof body.partCount).toBe("number");
       expect(body.partCount).toBeGreaterThanOrEqual(0);
@@ -334,12 +256,8 @@ describe("Gallery archive download", () => {
 
   describe("Guest download payload — both variants", () => {
     describe("Given a valid gallery session", () => {
-      it("Then GET /api/gallery/:slug/download returns both variants with DISPLAY as the default", async () => {
-        const res = await fetch(`${API}/api/gallery/${event.slug}/download`, {
-          headers: { Cookie: galleryCookie },
-        });
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as BothVariantsBody;
+      it("Then gallery.download returns both variants with DISPLAY as the default", async () => {
+        const body = await rpc(galleryCookie).gallery.download({ slug: event.slug });
 
         // Kompakt is the default variant.
         expect(body.defaultQuality).toBe("DISPLAY");
@@ -366,17 +284,14 @@ describe("Gallery archive download", () => {
         const lazyCookie = await unlockGallery(lazyEvent.slug, "lazy-pass");
         try {
           // Before any guest request the admin DISPLAY status is NONE.
-          const before = await authedFetch(
-            `/api/events/${lazyEvent.id}/download/status?quality=DISPLAY`,
-            adminCookie,
-          );
-          expect(((await before.json()) as { status: string }).status).toBe("NONE");
+          const before = await rpc(adminCookie).events.download.status({
+            id: lazyEvent.id,
+            quality: "DISPLAY",
+          });
+          expect(before.status).toBe("NONE");
 
           // Guest opens the download page → lazily materializes the DISPLAY job.
-          const gres = await fetch(`${API}/api/gallery/${lazyEvent.slug}/download`, {
-            headers: { Cookie: lazyCookie },
-          });
-          expect(gres.status).toBe(200);
+          await rpc(lazyCookie).gallery.download({ slug: lazyEvent.slug });
 
           const after = await pollAdminStatus(
             adminCookie,
@@ -417,16 +332,8 @@ describe("Gallery archive download", () => {
         expect(originalExists).not.toBe("NONE");
 
         // Force both builds (skip the 60s debounce) so we can verify fetchability.
-        await authedFetch(
-          `/api/events/${fanEvent.id}/download/build-now?quality=DISPLAY`,
-          adminCookie,
-          { method: "POST" },
-        );
-        await authedFetch(
-          `/api/events/${fanEvent.id}/download/build-now?quality=ORIGINAL`,
-          adminCookie,
-          { method: "POST" },
-        );
+        await rpc(adminCookie).events.download.buildNow({ id: fanEvent.id, quality: "DISPLAY" });
+        await rpc(adminCookie).events.download.buildNow({ id: fanEvent.id, quality: "ORIGINAL" });
 
         const displayStatus = await pollAdminStatus(
           adminCookie,
@@ -446,10 +353,7 @@ describe("Gallery archive download", () => {
         expect(originalStatus).toBe("READY");
 
         // The Kompakt (DISPLAY) archive is downloadable: a valid presigned part URL.
-        const res = await fetch(`${API}/api/gallery/${fanEvent.slug}/download`, {
-          headers: { Cookie: fanCookie },
-        });
-        const body = (await res.json()) as BothVariantsBody;
+        const body = await rpc(fanCookie).gallery.download({ slug: fanEvent.slug });
         expect(body.variants.DISPLAY.status).toBe("READY");
         expect(body.variants.DISPLAY.parts.length).toBeGreaterThan(0);
         expect(body.variants.DISPLAY.parts[0].url).toMatch(/^https?:\/\//);
@@ -462,31 +366,28 @@ describe("Gallery archive download", () => {
   });
 
   describe("Admin per-variant controls — independence", () => {
-    it("Then build-now on DISPLAY does not create or touch the ORIGINAL job", async () => {
+    it("Then buildNow on DISPLAY does not create or touch the ORIGINAL job", async () => {
       // Fresh event, no ORIGINAL trigger. A guest visit creates only the DISPLAY
       // job; building DISPLAY must leave ORIGINAL untouched (still NONE).
       const indyEvent = await createEvent(adminCookie, { password: "indy-pass" });
       const indyCookie = await unlockGallery(indyEvent.slug, "indy-pass");
       try {
         // Lazily create the DISPLAY job.
-        await fetch(`${API}/api/gallery/${indyEvent.slug}/download`, {
-          headers: { Cookie: indyCookie },
-        });
+        await rpc(indyCookie).gallery.download({ slug: indyEvent.slug });
 
         // Force-build only the DISPLAY variant.
-        const buildRes = await authedFetch(
-          `/api/events/${indyEvent.id}/download/build-now?quality=DISPLAY`,
-          adminCookie,
-          { method: "POST" },
-        );
-        expect(buildRes.status).toBe(200);
+        const built = await rpc(adminCookie).events.download.buildNow({
+          id: indyEvent.id,
+          quality: "DISPLAY",
+        });
+        expect(built.success).toBe(true);
 
         // ORIGINAL was never triggered → still NONE (independence).
-        const originalRes = await authedFetch(
-          `/api/events/${indyEvent.id}/download/status?quality=ORIGINAL`,
-          adminCookie,
-        );
-        expect(((await originalRes.json()) as { status: string }).status).toBe("NONE");
+        const original = await rpc(adminCookie).events.download.status({
+          id: indyEvent.id,
+          quality: "ORIGINAL",
+        });
+        expect(original.status).toBe("NONE");
 
         // DISPLAY progressed off NONE.
         const displayStatus = await pollAdminStatus(
@@ -502,12 +403,10 @@ describe("Gallery archive download", () => {
     }, 60_000);
 
     it("Then admin status reports the variant it was asked for", async () => {
-      const res = await authedFetch(
-        `/api/events/${event.id}/download/status?quality=DISPLAY`,
-        adminCookie,
-      );
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { quality: string };
+      const body = await rpc(adminCookie).events.download.status({
+        id: event.id,
+        quality: "DISPLAY",
+      });
       expect(body.quality).toBe("DISPLAY");
     });
   });

@@ -1,16 +1,23 @@
+# syntax=docker/dockerfile:1.7
 FROM oven/bun:latest
 
 WORKDIR /app
 
 # Copy workspace packages first
 COPY packages/shared ./packages/shared
+COPY packages/contracts ./packages/contracts
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/api/tsconfig.json ./apps/api/tsconfig.json
 COPY package.json ./package.json
 COPY bun.lock ./bun.lock
+COPY .npmrc ./.npmrc
 
-# Install dependencies
-RUN bun install
+# Install dependencies. @vietz-dev/* comes from GitHub Packages, so the token is
+# mounted as a build secret — it is never written to a layer (verify with
+# `docker history`). Pass it with `--secret id=node_auth_token,env=NODE_AUTH_TOKEN`
+# (docker compose wires this via the `node_auth_token` secret).
+RUN --mount=type=secret,id=node_auth_token \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/node_auth_token 2>/dev/null || true)" bun install
 
 # Copy shared package and build
 COPY packages/shared/src ./packages/shared/src

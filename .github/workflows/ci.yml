@@ -13,6 +13,11 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# `bun install` pulls @vietz-dev/* from GitHub Packages (see .npmrc).
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   lint:
     name: Lint & Format
@@ -24,6 +29,8 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: oxlint
         run: bun run lint
       - name: oxfmt
@@ -42,6 +49,8 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate Prisma client
         run: bunx prisma generate
       - name: Type check
@@ -62,6 +71,8 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Type check
         run: bunx tsc --noEmit
       - name: Build

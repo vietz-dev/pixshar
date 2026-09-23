@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # ============================================
 # Stage 1: Build Next.js application in standalone mode
 # ============================================
@@ -9,10 +10,15 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/contracts/package.json ./packages/contracts/
+COPY .npmrc ./.npmrc
 
 # Install dependencies. Bun creates symlinks at both root and workspace level,
-# which Turbopack needs to resolve next/package.json.
-RUN bun install --no-save
+# which Turbopack needs to resolve next/package.json. The root install also
+# resolves apps/api's deps, which include @vietz-dev/* from GitHub Packages —
+# hence the build secret (mounted, never baked into a layer).
+RUN --mount=type=secret,id=node_auth_token \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/node_auth_token 2>/dev/null || true)" bun install --no-save
 
 # Copy application source code
 COPY . .

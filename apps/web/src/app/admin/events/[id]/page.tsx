@@ -1168,12 +1168,8 @@ export default function EventDetailPage() {
               setLbIndex((i) => (i - 1 + filteredPhotos.length) % filteredPhotos.length)
             }
             onDownload={async (photoId) => {
-              const res = await fetch(`/api/events/${id}/photos/${photoId}/download`, {
-                credentials: "include",
-              });
-              const data = await res.json();
-              if (!res.ok) throw new Error(data.error || "Download failed");
-              return data.url;
+              const { url } = await api.events.photoDownload({ id, photoId });
+              return url;
             }}
             onDelete={(photoId) => setDeleteTarget(photoId)}
           />

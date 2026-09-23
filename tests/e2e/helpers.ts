@@ -80,7 +80,7 @@ export async function apiSignIn(): Promise<string> {
 }
 
 /** Typed oRPC client against the live API, authenticated by `cookie`. */
-function rpc(cookie: string): ContractRouterClient<Contract> {
+export function rpc(cookie: string): ContractRouterClient<Contract> {
   return createORPCClient(new RPCLink({ url: `${API}/api/rpc`, headers: { Cookie: cookie } }));
 }
 

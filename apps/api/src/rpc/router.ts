@@ -8,6 +8,8 @@ import { galleryUnlocksTotal, photoDownloadsTotal } from "../lib/metrics.js";
 import { prisma } from "../lib/prisma.js";
 import { deleteS3Object, getPresignedUrl, s3 } from "../lib/s3.js";
 import { completeUpload, initUpload } from "../lib/uploadInit.js";
+import { runService } from "../runtime.js";
+import { DownloadService } from "../services/download/service.js";
 import { base } from "./base.js";
 import { adminOs, galleryOs, rateLimit, requireOwnedEvent, requireOwner } from "./middleware.js";
 
@@ -134,6 +136,66 @@ export const router = base.router({
       await prisma.event.delete({ where: { id: context.event.id } });
       return { success: true as const };
     }),
+
+    photoDownload: adminOs.events.photoDownload
+      .use(
+        rateLimit({
+          key: (input: { id: string }) => `admin-photo-dl:${input.id}`,
+          limit: 60,
+          windowMs: 60_000,
+        }),
+      )
+      .use(requireOwner)
+      .handler(async ({ input, errors }) => {
+        const photo = await prisma.photo.findUnique({
+          where: { id: input.photoId, eventId: input.id },
+        });
+        if (!photo) throw errors.NOT_FOUND({ message: "Photo not found" });
+
+        const filename = `${(photo.photographerName || "photo").replace(/[^a-zA-Z0-9_-]/g, "_")}-${photo.id}.jpg`;
+        const url = await getPresignedUrl(
+          photo.originalKey,
+          "get",
+          60 * 60,
+          `attachment; filename="${filename}"`,
+        );
+        photoDownloadsTotal.inc({ actor: "admin" });
+        return { url };
+      }),
+
+    // The archive domain runs behind the Effect runtime — these handlers are
+    // `runService` one-liners; retries and failure typing live in the service.
+    download: {
+      status: adminOs.events.download.status
+        .use(
+          rateLimit({
+            key: (input: { id: string }) => `admin-download-status:${input.id}`,
+            limit: 60,
+            windowMs: 60_000,
+          }),
+        )
+        .use(requireOwner)
+        .handler(({ input }) =>
+          runService(DownloadService, (s) => s.status(input.id, input.quality)),
+        ),
+
+      buildNow: adminOs.events.download.buildNow.use(requireOwner).handler(async ({ input }) => {
+        await runService(DownloadService, (s) => s.buildNow(input.id, input.quality));
+        return { success: true as const };
+      }),
+
+      rebuildAll: adminOs.events.download.rebuildAll
+        .use(requireOwner)
+        .handler(async ({ input }) => {
+          await runService(DownloadService, (s) => s.rebuildAll(input.id, input.quality));
+          return { success: true as const };
+        }),
+
+      cancel: adminOs.events.download.cancel.use(requireOwner).handler(async ({ input }) => {
+        await runService(DownloadService, (s) => s.cancel(input.id, input.quality));
+        return { success: true as const };
+      }),
+    },
   },
 
   gallery: {
@@ -243,6 +305,23 @@ export const router = base.router({
         photoDownloadsTotal.inc({ actor: "guest" });
         return { url };
       }),
+
+    // Both archive variants in one round trip (partial availability: already
+    // built parts are served while newer ones are still building).
+    download: base.gallery.download
+      .use(
+        rateLimit({
+          key: (input: { slug: string }) => `download-check:${input.slug}`,
+          limit: 30,
+          windowMs: 60_000,
+        }),
+      )
+      .use(galleryOs)
+      .handler(({ context }) =>
+        runService(DownloadService, (s) =>
+          s.guestPayload(context.galleryEvent.id, context.galleryEvent.slug),
+        ),
+      ),
 
     upload: {
       init: base.gallery.upload.init

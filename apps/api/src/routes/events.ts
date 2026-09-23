@@ -3,21 +3,13 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
-import { deleteS3Object, getPresignedUrl } from "../lib/s3.js";
+import { deleteS3Object } from "../lib/s3.js";
 import { env } from "../lib/env.js";
 import type { HonoVariables } from "../types.js";
-import {
-  buildNow,
-  rebuildAll,
-  cancelJob,
-  triggerReconcileAllVariants,
-  statusMessage,
-} from "../services/downloadJob.js";
+import { triggerReconcileAllVariants, statusMessage } from "../services/downloadJob.js";
 import { getBoss } from "../lib/pgboss.js";
 import { streamSSE } from "hono/streaming";
 import { onDownloadStatus } from "../lib/eventBus.js";
-import { checkRateLimit, getRateLimitKey } from "../lib/rateLimit.js";
-import { photoDownloadsTotal } from "../lib/metrics.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
@@ -29,68 +21,10 @@ function parseQuality(c: { req: { query: (k: string) => string | undefined } }):
   return c.req.query("quality") === "DISPLAY" ? "DISPLAY" : "ORIGINAL";
 }
 
-// ---------------------------------------------------------------------------
-// Download archive admin endpoints
-// ---------------------------------------------------------------------------
-
-app.get("/:id/download/status", requireAdmin, async (c) => {
-  const id = c.req.param("id");
-  const user = c.get("user");
-
-  // Rate limit: 60 status checks per minute per event
-  const rateKey = getRateLimitKey(c, `admin-download-status:${id}`);
-  if (!checkRateLimit(rateKey, 60, 60_000)) {
-    return c.json({ error: "Too many requests. Please try again later." }, 429);
-  }
-
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event) {
-    return c.json({ error: "Event not found" }, 404);
-  }
-  if (event.createdById !== user.id) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-
-  const quality = parseQuality(c);
-  const job = await prisma.downloadJob.findUnique({
-    where: { eventId_quality: { eventId: id, quality } },
-  });
-  const totalPhotos = await prisma.photo.count({
-    where: { eventId: id, status: "PROCESSED" },
-  });
-
-  if (!job) {
-    return c.json({
-      quality,
-      status: "NONE",
-      message: "No archive created yet.",
-      processedPhotos: 0,
-      photoCount: 0,
-      uploadProgress: 0,
-      totalPhotos,
-      totalSizeBytes: null,
-      partCount: 0,
-      debounceUntil: null,
-      failureReason: null,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  return c.json({
-    quality: job.quality,
-    status: job.status,
-    message: statusMessage(job.status),
-    photoCount: job.photoCount,
-    processedPhotos: job.processedPhotos,
-    uploadProgress: job.uploadProgress,
-    totalPhotos,
-    totalSizeBytes: job.totalSizeBytes === null ? null : Number(job.totalSizeBytes),
-    partCount: job.partCount,
-    debounceUntil: job.debounceUntil,
-    failureReason: job.failureReason,
-    updatedAt: job.updatedAt,
-  });
-});
+// NOTE: the JSON download controls (status, build-now, rebuild-all, cancel)
+// and the per-photo download now live in the contract as
+// `events.download.*` / `events.photoDownload` (apps/api/src/rpc/router.ts).
+// What remains here is the status SSE stream and the photo mutation endpoints.
 
 app.get("/:id/download/status/stream", requireAdmin, async (c) => {
   const id = c.req.param("id");
@@ -159,85 +93,6 @@ app.get("/:id/download/status/stream", requireAdmin, async (c) => {
       });
     });
   });
-});
-
-// Skip the debounce wait and queue the pending reconcile now. Still routes
-// through the FIFO build queue (respects worker/image-processor load).
-app.post("/:id/download/build-now", requireAdmin, async (c) => {
-  const id = c.req.param("id");
-  const user = c.get("user");
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event) {
-    return c.json({ error: "Event not found" }, 404);
-  }
-  if (event.createdById !== user.id) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-  await buildNow(id, parseQuality(c));
-  return c.json({ success: true });
-});
-
-// Rebuild every existing part's ZIP bytes, preserving each part's membership.
-app.post("/:id/download/rebuild-all", requireAdmin, async (c) => {
-  const id = c.req.param("id");
-  const user = c.get("user");
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event) {
-    return c.json({ error: "Event not found" }, 404);
-  }
-  if (event.createdById !== user.id) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-  await rebuildAll(id, parseQuality(c));
-  return c.json({ success: true });
-});
-
-app.post("/:id/download/cancel", requireAdmin, async (c) => {
-  const id = c.req.param("id");
-  const user = c.get("user");
-  const event = await prisma.event.findUnique({ where: { id } });
-  if (!event) {
-    return c.json({ error: "Event not found" }, 404);
-  }
-  if (event.createdById !== user.id) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-  await cancelJob(id, parseQuality(c));
-  return c.json({ success: true });
-});
-
-app.get("/:id/photos/:photoId/download", requireAdmin, async (c) => {
-  const eventId = c.req.param("id");
-  const photoId = c.req.param("photoId");
-  const user = c.get("user");
-
-  // Rate limit: 60 photo downloads per minute per event
-  const rateKey = getRateLimitKey(c, `admin-photo-dl:${eventId}`);
-  if (!checkRateLimit(rateKey, 60, 60_000)) {
-    return c.json({ error: "Too many requests. Please try again later." }, 429);
-  }
-
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event || event.createdById !== user.id) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-
-  const photo = await prisma.photo.findUnique({
-    where: { id: photoId, eventId },
-  });
-  if (!photo) {
-    return c.json({ error: "Photo not found" }, 404);
-  }
-
-  const filename = `${(photo.photographerName || "photo").replace(/[^a-zA-Z0-9_-]/g, "_")}-${photo.id}.jpg`;
-  const url = await getPresignedUrl(
-    photo.originalKey,
-    "get",
-    60 * 60,
-    `attachment; filename="${filename}"`,
-  );
-  photoDownloadsTotal.inc({ actor: "admin" });
-  return c.json({ url });
 });
 
 // Re-queue all FAILED photos for an event. Reuses the existing rows (originals

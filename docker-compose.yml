@@ -54,6 +54,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      secrets:
+        - node_auth_token
     ports:
       - "3001:3001"
     environment:
@@ -93,6 +95,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      secrets:
+        - node_auth_token
     command: >
       /bin/sh -c "cd /app/apps/api && bun run start:worker"
     environment:
@@ -141,6 +145,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      secrets:
+        - node_auth_token
     ports:
       - "3000:3000"
     environment:
@@ -190,6 +196,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+# Read token for GitHub Packages (@vietz-dev/*). Mounted into the builds, never
+# baked into an image layer. Put NODE_AUTH_TOKEN in .env, or export it.
+secrets:
+  node_auth_token:
+    environment: NODE_AUTH_TOKEN
 
 volumes:
   minio-data:
