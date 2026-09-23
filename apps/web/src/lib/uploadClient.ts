@@ -2,14 +2,27 @@
 //
 // Pipeline per batch:
 //   1. SHA-256 each file in the browser (dedup key) + validate size/type.
-//   2. POST {initUrl} with the file metadata → server dedups and returns a
-//      presigned PUT URL for every file that still needs uploading.
+//   2. init() with the file metadata → server dedups and returns a presigned
+//      PUT URL for every file that still needs uploading.
 //   3. PUT the bytes straight to S3 (never through the API), with progress.
-//   4. POST {completeUrl} with the ids that landed → server starts processing.
+//   4. complete() with the ids that landed → server starts processing.
+//
+// init/complete are injected so the admin and guest callers can each pass their
+// own typed RPC procedure while sharing this batching logic.
+
+import type { UploadInitFileMeta, UploadInitResponse } from "@pixshar/contracts";
+
+type Mime = UploadInitFileMeta["contentType"];
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — keep in sync with apps/api validate.ts
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
-const MIME_BY_EXT: Record<string, string> = {
+const ALLOWED_MIME = new Set<string>([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+const MIME_BY_EXT: Record<string, Mime> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
@@ -27,8 +40,11 @@ export interface UploadFileItem {
 
 export interface PresignedUploadOptions {
   items: UploadFileItem[];
-  initUrl: string;
-  completeUrl: string;
+  init: (payload: {
+    files: UploadInitFileMeta[];
+    photographerName?: string;
+  }) => Promise<UploadInitResponse>;
+  complete: (photoIds: string[]) => Promise<unknown>;
   photographerName?: string;
   onStatus: (uid: string, status: ItemStatus, progress?: number) => void;
   shouldAbort?: () => boolean;
@@ -41,8 +57,8 @@ function fileExt(file: File): string {
 
 // The content type used for BOTH the init request and the PUT header — they must
 // match exactly or S3 rejects the presigned signature.
-export function fileContentType(file: File): string {
-  if (file.type && ALLOWED_MIME.has(file.type)) return file.type;
+export function fileContentType(file: File): Mime {
+  if (file.type && ALLOWED_MIME.has(file.type)) return file.type as Mime;
   return MIME_BY_EXT[fileExt(file)] || "image/jpeg";
 }
 
@@ -99,22 +115,13 @@ function putToS3(
   });
 }
 
-interface InitResult {
-  fileHash: string;
-  duplicate: boolean;
-  status: "PENDING" | "DUPLICATE";
-  id: string | null;
-  uploadUrl?: string;
-  contentType?: string;
-}
-
 /**
  * Run the full presigned upload for a batch of files. Resolves once every item
  * has reached a terminal state (done / skipped / error) and processing for the
  * uploaded ones has been kicked off.
  */
 export async function presignedUpload(opts: PresignedUploadOptions): Promise<void> {
-  const { items, initUrl, completeUrl, photographerName, onStatus, shouldAbort } = opts;
+  const { items, init, complete, photographerName, onStatus, shouldAbort } = opts;
   const batchSize = opts.batchSize ?? 4;
   if (items.length === 0) return;
 
@@ -152,20 +159,16 @@ export async function presignedUpload(opts: PresignedUploadOptions): Promise<voi
   if (valid.length === 0) return;
 
   // 2. Init — server dedups and returns URLs for the files that need uploading.
-  const res = await fetch(initUrl, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  let photos: UploadInitResponse["photos"];
+  try {
+    ({ photos } = await init({
       files: valid.map((v) => v.meta),
       ...(photographerName ? { photographerName } : {}),
-    }),
-  });
-  if (!res.ok) {
+    }));
+  } catch (err) {
     for (const v of valid) onStatus(v.it.uid, "error");
-    throw new Error("Upload init failed");
+    throw err;
   }
-  const { photos } = (await res.json()) as { photos: InitResult[] };
 
   // Results are index-aligned with the files we sent.
   const fresh: { uid: string; file: File; uploadUrl: string; contentType: string; id: string }[] =
@@ -211,11 +214,6 @@ export async function presignedUpload(opts: PresignedUploadOptions): Promise<voi
 
   // 4. Tell the server which uploads landed so it can start processing.
   if (uploadedIds.length > 0) {
-    await fetch(completeUrl, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ photoIds: uploadedIds }),
-    }).catch(() => {});
+    await complete(uploadedIds).catch(() => {});
   }
 }

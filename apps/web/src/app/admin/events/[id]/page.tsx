@@ -172,8 +172,8 @@ export default function EventDetailPage() {
     try {
       await presignedUpload({
         items: uploadItems,
-        initUrl: `/api/upload/events/${id}/photos/init`,
-        completeUrl: `/api/upload/events/${id}/photos/complete`,
+        init: (payload) => api.upload.init({ eventId: id, ...payload }),
+        complete: (photoIds) => api.upload.complete({ eventId: id, photoIds }),
         photographerName: uploaderName.trim() || undefined,
         shouldAbort: () => abortRef.current,
         onStatus: (uid, status, progress) => {

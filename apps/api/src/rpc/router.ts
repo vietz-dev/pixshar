@@ -7,8 +7,22 @@ import { hashPassword, verifyPassword } from "../lib/hash.js";
 import { galleryUnlocksTotal, photoDownloadsTotal } from "../lib/metrics.js";
 import { prisma } from "../lib/prisma.js";
 import { deleteS3Object, getPresignedUrl, s3 } from "../lib/s3.js";
+import { completeUpload, initUpload } from "../lib/uploadInit.js";
 import { base } from "./base.js";
-import { adminOs, galleryOs, rateLimit, requireOwner } from "./middleware.js";
+import { adminOs, galleryOs, rateLimit, requireOwnedEvent, requireOwner } from "./middleware.js";
+
+/** Processing counters for one event, straight off the Photo rows. */
+async function photoStatusCounts(eventId: string) {
+  const counts = await prisma.photo.groupBy({
+    by: ["status"],
+    where: { eventId },
+    _count: { status: true },
+  });
+  const of = (status: string) =>
+    counts.find((c: (typeof counts)[number]) => c.status === status)?._count.status ?? 0;
+  const [pending, processed, failed] = [of("PENDING"), of("PROCESSED"), of("FAILED")];
+  return { pending, processed, failed, total: pending + processed + failed };
+}
 
 const jwtSecret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
@@ -229,5 +243,69 @@ export const router = base.router({
         photoDownloadsTotal.inc({ actor: "guest" });
         return { url };
       }),
+
+    upload: {
+      init: base.gallery.upload.init
+        .use(
+          rateLimit({
+            key: (input: { slug: string }) => `upload:${input.slug}`,
+            limit: 50,
+            windowMs: 60_000,
+          }),
+        )
+        .use(galleryOs)
+        .handler(async ({ input, context }) => ({
+          photos: await initUpload({
+            eventId: context.galleryEvent.id,
+            uploadedBy: "GUEST",
+            photographerName: input.photographerName?.trim().slice(0, 100) || null,
+            files: input.files,
+          }),
+        })),
+
+      complete: base.gallery.upload.complete.use(galleryOs).handler(async ({ input, context }) => {
+        await completeUpload(context.galleryEvent.id, input.photoIds);
+        return { ok: true as const };
+      }),
+    },
+  },
+
+  upload: {
+    // Step 1 — dedup the requested files and hand back presigned PUT URLs.
+    // The browser PUTs the originals straight to S3; no bytes touch the API.
+    init: adminOs.upload.init
+      .use(
+        rateLimit({
+          key: (input: { eventId: string }) => `admin-upload:${input.eventId}`,
+          limit: 100,
+          windowMs: 60_000,
+        }),
+      )
+      .use(requireOwnedEvent)
+      .handler(async ({ input, context }) => ({
+        photos: await initUpload({
+          eventId: context.event.id,
+          uploadedBy: "ADMIN",
+          photographerName: input.photographerName?.trim().slice(0, 100) || null,
+          files: input.files,
+        }),
+      })),
+
+    // Step 2 — the client confirms which uploads landed; wake the worker.
+    complete: adminOs.upload.complete.use(requireOwnedEvent).handler(async ({ input, context }) => {
+      await completeUpload(context.event.id, input.photoIds);
+      return { ok: true as const };
+    }),
+
+    status: adminOs.upload.status
+      .use(
+        rateLimit({
+          key: (input: { eventId: string }) => `upload-status:${input.eventId}`,
+          limit: 60,
+          windowMs: 60_000,
+        }),
+      )
+      .use(requireOwnedEvent)
+      .handler(({ context }) => photoStatusCounts(context.event.id)),
   },
 });

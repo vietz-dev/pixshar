@@ -176,7 +176,7 @@ function bluePng(): Buffer {
 }
 
 /**
- * Polls GET /api/upload/events/:id/photos/status until all pending work drains.
+ * Polls `upload.status` until all pending work drains.
  * Throws on failure or timeout.
  */
 export async function waitUntilProcessed(
@@ -186,8 +186,7 @@ export async function waitUntilProcessed(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const res = await authedFetch(`/api/upload/events/${eventId}/photos/status`, cookie);
-    const body = (await res.json()) as { pending: number; failed: number; total: number };
+    const body = await rpc(cookie).upload.status({ eventId });
     if (body.total > 0 && body.pending === 0) {
       if (body.failed > 0) throw new Error(`${body.failed} photo(s) failed processing`);
       return;
@@ -209,23 +208,19 @@ export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): P
   const bytes = Buffer.concat([base, Buffer.from(`pixshar-${Date.now()}-${photoSeed++}`)]);
   const fileHash = createHash("sha256").update(bytes).digest("hex");
 
-  const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, cookie, {
-    method: "POST",
-    body: JSON.stringify({
-      files: [
-        {
-          fileName: "dl-variant.png",
-          ext: "png",
-          contentType: "image/png",
-          size: bytes.length,
-          fileHash,
-        },
-      ],
-    }),
+  const { photos } = await rpc(cookie).upload.init({
+    eventId: event.id,
+    files: [
+      {
+        fileName: "dl-variant.png",
+        ext: "png",
+        contentType: "image/png",
+        size: bytes.length,
+        fileHash,
+      },
+    ],
   });
-  if (!initRes.ok) throw new Error(`upload init failed ${initRes.status}: ${await initRes.text()}`);
-  const { photos } = (await initRes.json()) as { photos: Array<{ id: string }> };
-  const photoId = photos[0].id;
+  const photoId = photos[0].id!;
 
   await testS3.send(
     new PutObjectCommand({
@@ -236,13 +231,7 @@ export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): P
     }),
   );
 
-  const completeRes = await authedFetch(`/api/upload/events/${event.id}/photos/complete`, cookie, {
-    method: "POST",
-    body: JSON.stringify({ photoIds: [photoId] }),
-  });
-  if (completeRes.status !== 202) {
-    throw new Error(`upload complete failed ${completeRes.status}: ${await completeRes.text()}`);
-  }
+  await rpc(cookie).upload.complete({ eventId: event.id, photoIds: [photoId] });
 
   await waitUntilProcessed(cookie, event.id);
   return photoId;

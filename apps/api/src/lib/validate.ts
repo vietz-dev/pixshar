@@ -1,11 +1,8 @@
-export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-export const ALLOWED_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-];
+// The limits live in the contract package so the request schema and these
+// byte-level checks can never drift apart.
+import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "@pixshar/contracts";
+
+export { ALLOWED_MIME_TYPES, MAX_FILE_SIZE };
 
 // Magic bytes for image type verification (more reliable than client MIME type)
 const MAGIC_BYTES: Record<string, number[][]> = {
@@ -49,7 +46,7 @@ export function validateFiles(files: File[]): { valid: boolean; error?: string }
     if (file.size > MAX_FILE_SIZE) {
       return { valid: false, error: `File "${file.name}" exceeds 50MB limit` };
     }
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
       return {
         valid: false,
         error: `File "${file.name}" is not a supported image type (${file.type})`,

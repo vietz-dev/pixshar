@@ -1,13 +1,11 @@
-import { z } from "zod";
+import type { UploadInitFileMeta, UploadInitResult } from "@pixshar/contracts";
 import { prisma } from "./prisma.js";
 import { getPresignedPutUrl, deleteS3Object } from "./s3.js";
-import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from "./validate.js";
 import { getBoss } from "./pgboss.js";
 import { env } from "./env.js";
-import type { UploadInitResult } from "@pixshar/shared";
 
-// Shared logic for the presigned, deduplicated upload flow used by both the
-// admin (upload.ts) and guest (gallery.ts) routes.
+// Shared logic for the presigned, deduplicated upload flow behind both the
+// admin (upload.*) and guest (gallery.upload.*) procedures.
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -16,27 +14,6 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/heic": "heic",
   "image/heif": "heif",
 };
-
-export const uploadInitSchema = z.object({
-  files: z
-    .array(
-      z.object({
-        fileName: z.string().min(1).max(255),
-        ext: z.string().min(1).max(10),
-        contentType: z.enum(ALLOWED_MIME_TYPES as [string, ...string[]]),
-        size: z.number().int().positive().max(MAX_FILE_SIZE),
-        fileHash: z.string().regex(/^[a-f0-9]{64}$/, "fileHash must be 64-char lowercase hex"),
-      }),
-    )
-    .min(1),
-  photographerName: z.string().max(100).optional(),
-});
-
-export const uploadCompleteSchema = z.object({
-  photoIds: z.array(z.string().min(1)).min(1),
-});
-
-export type UploadInitInput = z.infer<typeof uploadInitSchema>;
 
 function isP2002(e: unknown): boolean {
   return !!e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002";
@@ -61,7 +38,7 @@ export async function initUpload(opts: {
   eventId: string;
   uploadedBy: "ADMIN" | "GUEST";
   photographerName: string | null;
-  files: UploadInitInput["files"];
+  files: UploadInitFileMeta[];
 }): Promise<UploadInitResult[]> {
   const { eventId, uploadedBy, photographerName, files } = opts;
   const hashes = files.map((f) => f.fileHash);

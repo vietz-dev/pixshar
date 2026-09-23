@@ -1,4 +1,5 @@
 import { oc } from "@orpc/contract";
+import { galleryUpload } from "./upload.js";
 import { z } from "zod";
 
 /** Public event info shown on the gallery password gate — no session needed. */
@@ -58,4 +59,7 @@ export const gallery = {
     .input(z.object({ slug: z.string(), photoId: z.string() }))
     .errors({ UNAUTHORIZED: {}, NOT_FOUND: {}, TOO_MANY_REQUESTS: {} })
     .output(z.object({ url: z.string() })),
+
+  /** Guest upload bookends — same presigned flow as the admin's. */
+  upload: galleryUpload,
 };

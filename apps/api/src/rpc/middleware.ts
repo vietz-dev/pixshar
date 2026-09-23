@@ -26,22 +26,29 @@ export const adminOs = base.use(async ({ context, next }) => {
   return next({ context: { user: session.user } });
 });
 
-/**
- * Asserts the admin owns the event named by `input.id`. Replaces the
- * findUnique + 404 + 403 triad that was copied into every admin handler.
- */
+/** The findUnique + 404 + 403 triad that was copied into every admin handler. */
+async function assertOwned(eventId: string, userId: string) {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, createdById: true },
+  });
+  if (!event) throw new ORPCError("NOT_FOUND", { message: "Event not found" });
+  if (event.createdById !== userId) throw new ORPCError("FORBIDDEN", { message: "Forbidden" });
+  return event;
+}
+
+/** Asserts the admin owns the event named by `input.id`. */
 export const requireOwner = os
   .$context<AdminContext>()
   .middleware(async ({ context, next }, input: { id: string }) => {
-    const event = await prisma.event.findUnique({
-      where: { id: input.id },
-      select: { id: true, createdById: true },
-    });
-    if (!event) throw new ORPCError("NOT_FOUND", { message: "Event not found" });
-    if (event.createdById !== context.user.id) {
-      throw new ORPCError("FORBIDDEN", { message: "Forbidden" });
-    }
-    return next({ context: { event } });
+    return next({ context: { event: await assertOwned(input.id, context.user.id) } });
+  });
+
+/** Same, for procedures whose input names the event `eventId` (the upload pair). */
+export const requireOwnedEvent = os
+  .$context<AdminContext>()
+  .middleware(async ({ context, next }, input: { eventId: string }) => {
+    return next({ context: { event: await assertOwned(input.eventId, context.user.id) } });
   });
 
 /**

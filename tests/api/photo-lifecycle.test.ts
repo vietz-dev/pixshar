@@ -15,13 +15,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createHash } from "node:crypto";
 import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
-  API,
   signInAdmin,
   authedFetch,
   createEvent,
   deleteEvent,
   rpc,
   unlockGallery,
+  waitUntilProcessed,
   type TestEvent,
 } from "./helpers.js";
 
@@ -72,28 +72,6 @@ function whitePng(): Buffer {
   );
 }
 
-/**
- * Polls GET /api/upload/events/:id/photos/status until pending === 0.
- * Throws if processing fails or times out.
- */
-async function waitUntilProcessed(
-  cookie: string,
-  eventId: string,
-  timeoutMs: number,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const res = await authedFetch(`/api/upload/events/${eventId}/photos/status`, cookie);
-    const body = (await res.json()) as { pending: number; failed: number; total: number };
-    if (body.total > 0 && body.pending === 0) {
-      if (body.failed > 0) throw new Error(`${body.failed} photo(s) failed processing`);
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 2_000));
-  }
-  throw new Error(`Timed out after ${timeoutMs}ms waiting for image processing`);
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("Photo lifecycle", () => {
@@ -131,25 +109,19 @@ describe("Photo lifecycle", () => {
 
     beforeAll(async () => {
       // Step 1: init
-      const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
-        method: "POST",
-        body: JSON.stringify({
-          files: [
-            {
-              fileName: "admin-photo.png",
-              ext: "png",
-              contentType: "image/png",
-              size: jpeg.length,
-              fileHash,
-            },
-          ],
-        }),
+      const { photos } = await rpc(adminCookie).upload.init({
+        eventId: event.id,
+        files: [
+          {
+            fileName: "admin-photo.png",
+            ext: "png",
+            contentType: "image/png",
+            size: jpeg.length,
+            fileHash,
+          },
+        ],
       });
-      expect(initRes.status).toBe(200);
-      const { photos } = (await initRes.json()) as {
-        photos: Array<{ id: string; duplicate: boolean }>;
-      };
-      adminPhotoId = photos[0].id;
+      adminPhotoId = photos[0].id!;
       adminOriginalKey = `${event.id}/${adminPhotoId}/original.png`;
 
       // Step 2: PUT bytes directly to Minio (presigned URL uses minio:9000 hostname,
@@ -157,15 +129,7 @@ describe("Photo lifecycle", () => {
       await putToS3(adminOriginalKey, jpeg, "image/png");
 
       // Step 3: complete — wakes the image-processor worker
-      const completeRes = await authedFetch(
-        `/api/upload/events/${event.id}/photos/complete`,
-        adminCookie,
-        {
-          method: "POST",
-          body: JSON.stringify({ photoIds: [adminPhotoId] }),
-        },
-      );
-      expect(completeRes.status).toBe(202);
+      await rpc(adminCookie).upload.complete({ eventId: event.id, photoIds: [adminPhotoId] });
     }, 30_000);
 
     describe("When the admin calls upload init, PUTs the file, and calls complete", () => {
@@ -248,35 +212,28 @@ describe("Photo lifecycle", () => {
       const guestBytes = whitePng();
       const guestHash = sha256(guestBytes);
 
-      const initRes = await fetch(`${API}/api/gallery/${event.slug}/upload/init`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: galleryCookie },
-        body: JSON.stringify({
-          photographerName: "Alice Guest",
-          files: [
-            {
-              fileName: "guest-photo.png",
-              ext: "png",
-              contentType: "image/png",
-              size: guestBytes.length,
-              fileHash: guestHash,
-            },
-          ],
-        }),
+      const { photos } = await rpc(galleryCookie).gallery.upload.init({
+        slug: event.slug,
+        photographerName: "Alice Guest",
+        files: [
+          {
+            fileName: "guest-photo.png",
+            ext: "png",
+            contentType: "image/png",
+            size: guestBytes.length,
+            fileHash: guestHash,
+          },
+        ],
       });
-      expect(initRes.status).toBe(200);
-      const { photos } = (await initRes.json()) as { photos: Array<{ id: string }> };
-      guestPhotoId = photos[0].id;
+      guestPhotoId = photos[0].id!;
       guestOriginalKey = `${event.id}/${guestPhotoId}/original.png`;
 
       await putToS3(guestOriginalKey, guestBytes, "image/png");
 
-      const completeRes = await fetch(`${API}/api/gallery/${event.slug}/upload/complete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: galleryCookie },
-        body: JSON.stringify({ photoIds: [guestPhotoId] }),
+      await rpc(galleryCookie).gallery.upload.complete({
+        slug: event.slug,
+        photoIds: [guestPhotoId],
       });
-      expect(completeRes.status).toBe(202);
 
       await waitUntilProcessed(adminCookie, event.id, 60_000);
 
