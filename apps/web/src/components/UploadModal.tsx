@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Box, Button, chakra, Dialog, Field, Flex, Input, Portal, Text } from "@chakra-ui/react";
 import UploadTray, { UploadItem, randomTint } from "./UploadTray";
 import { presignedUpload } from "../lib/uploadClient";
+import { api } from "@/lib/rpc";
 
 interface UploadModalProps {
   galleryName: string;
@@ -67,8 +68,8 @@ export default function UploadModal({ galleryName, slug, onClose }: UploadModalP
     try {
       await presignedUpload({
         items: uploadItems,
-        initUrl: `/api/gallery/${slug}/upload/init`,
-        completeUrl: `/api/gallery/${slug}/upload/complete`,
+        init: (payload) => api.gallery.upload.init({ slug, ...payload }),
+        complete: (photoIds) => api.gallery.upload.complete({ slug, photoIds }),
         photographerName: name.trim(),
         shouldAbort: () => abortRef.current,
         onStatus: (uid, status, progress) => {

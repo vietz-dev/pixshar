@@ -13,24 +13,9 @@ import {
   SimpleGrid,
   Text,
 } from "@chakra-ui/react";
+import type { DownloadStatus, Quality } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 import AlertDialog from "./AlertDialog";
-
-type Quality = "DISPLAY" | "ORIGINAL";
-
-interface AdminDownloadState {
-  quality: Quality;
-  status: string;
-  message: string;
-  photoCount: number;
-  processedPhotos: number;
-  uploadProgress: number;
-  totalPhotos: number;
-  totalSizeBytes: number | null;
-  partCount: number;
-  debounceUntil: string | null;
-  failureReason: string | null;
-  updatedAt: string;
-}
 
 /** Status → Chakra colorPalette for the state badge. */
 const STATUS_PALETTE: Record<string, string> = {
@@ -92,7 +77,7 @@ function VariantPanel({
 }) {
   const t = useTranslations("download.panel");
   const tCommon = useTranslations("common");
-  const [state, setState] = useState<AdminDownloadState | null>(null);
+  const [state, setState] = useState<DownloadStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -112,7 +97,7 @@ function VariantPanel({
       withCredentials: true,
     });
     es.addEventListener("download-status", (e) => {
-      setState(JSON.parse(e.data));
+      setState(JSON.parse(e.data) as DownloadStatus);
       setLoading(false);
     });
     // Don't close on error — let EventSource auto-reconnect after a transient
@@ -126,10 +111,7 @@ function VariantPanel({
   async function handleBuildNow() {
     setActionLoading("buildNow");
     try {
-      await fetch(`/api/events/${eventId}/download/build-now?quality=${quality}`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.events.download.buildNow({ id: eventId, quality });
     } finally {
       setActionLoading(null);
     }
@@ -138,10 +120,7 @@ function VariantPanel({
   async function handleRebuildAll() {
     setActionLoading("rebuildAll");
     try {
-      await fetch(`/api/events/${eventId}/download/rebuild-all?quality=${quality}`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.events.download.rebuildAll({ id: eventId, quality });
     } finally {
       setActionLoading(null);
     }
@@ -151,10 +130,7 @@ function VariantPanel({
     setCancelOpen(false);
     setActionLoading("cancel");
     try {
-      await fetch(`/api/events/${eventId}/download/cancel?quality=${quality}`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await api.events.download.cancel({ id: eventId, quality });
     } finally {
       setActionLoading(null);
     }

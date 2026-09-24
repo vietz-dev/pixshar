@@ -8,3 +8,4 @@
 * [Gallery Password Encryption](gallery-password-encryption.md) - Why gallery passwords are stored AES-256-GCM encrypted (not plaintext) and the key-management model
 * [Graceful Shutdown & HA](graceful-shutdown.md) - Why uploads survive API restarts by design, and how the opt-in Helm HA flag enables zero-downtime Kubernetes rolling updates
 * [Download-Varianten](download-variants.md) - Why every event always builds both a Kompakt (display-image) and an Original archive as two independent per-quality DownloadJobs, with lazy Kompakt creation and a Kompakt-default guest toggle
+* [Contract-first API (oRPC)](contract-first-api.md) - Why every JSON endpoint is a contract-declared oRPC procedure, why the SSE streams stay plain Hono routes, and why `packages/shared` was deleted

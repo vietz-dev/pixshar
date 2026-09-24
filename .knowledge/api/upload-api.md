@@ -1,57 +1,46 @@
 ---
 type: API
 title: Upload API
-description: Two-phase presigned PUT flow for photo uploads from both admin and guests.
-tags: [api, upload, s3, presigned]
-timestamp: 2026-07-03T00:00:00Z
+description: Two-phase presigned PUT flow for photo uploads from both admin and guests, as contract procedures.
+tags: [api, upload, s3, presigned, orpc]
+timestamp: 2026-09-24T00:00:00Z
 ---
 
 # Design: Two-Phase Upload
 
-Photos are **never uploaded through the API server**. Instead, the upload uses a two-phase flow:
+Photos are **never uploaded through the API server**:
 
-1. **Init** — client calls the API to reserve a Photo row and get a presigned `PUT` URL.
-2. **Put** — client uploads the file directly from browser to S3 using the presigned URL.
-3. **Complete** — client notifies the API that the upload finished, triggering processing.
+1. **Init** — the client sends metadata for a batch of files and gets one presigned `PUT` URL per fresh file.
+2. **Put** — the browser uploads the bytes directly to S3 (4 in flight, `XMLHttpRequest` for progress).
+3. **Complete** — the client reports which uploads landed, which enqueues processing.
 
-This means the API server never receives image bytes. Large files don't exhaust API server memory, and bandwidth is consumed only between browser and S3.
+So the API never receives image bytes: large files cannot exhaust its memory, and the bandwidth is browser ↔ S3.
 
-# Admin Upload Flow
+# Procedures
 
-## POST /api/upload/events/:id/photos/init
-**Auth:** Admin session  
-**Body:** `{ fileName, contentType, fileHash, fileSize }`  
-**Response:** `{ photoId, uploadUrl, key, isDuplicate }`
+Both halves are contract procedures; the limits (`MAX_FILE_SIZE` 50 MB, `ALLOWED_MIME_TYPES`) live in `@pixshar/contracts` and are re-used by the API's byte-level magic-number checks, so request validation and file validation cannot drift.
 
-If `(eventId, fileHash)` already exists, returns `{ isDuplicate: true, photoId }` without creating a new row or presigned URL.
+## `upload.init({ eventId, files, photographerName? })` — admin
+`files` is an array of `{ fileName, ext, contentType, size, fileHash }`. The response is index-aligned: one `{ fileHash, duplicate, status, id, uploadUrl?, contentType? }` per requested file.
 
-Otherwise:
-1. Creates a Photo row with `status: PENDING`, `originalKey: {eventId}/originals/{photoId}.{ext}`.
-2. Generates a presigned `PUT` URL for `originalKey` (5-minute expiry, `Content-Type` enforced).
-3. Returns the URL to the client.
+If `(eventId, fileHash)` already exists, the entry comes back `duplicate: true` with no row and no URL, and the client skips those bytes. Otherwise a Photo row is created with `status: PENDING` and `originalKey: {eventId}/originals/{photoId}.{ext}`, and a presigned `PUT` URL is issued for it (`Content-Type` enforced).
 
-## POST /api/upload/events/:id/photos/complete
-**Auth:** Admin session  
-**Body:** `{ photoId }`  
-Enqueues `photo-resize` via pg-boss. Triggers archive debounce.
+## `upload.complete({ eventId, photoIds })` — admin
+Enqueues `photo-resize` via pg-boss for each photo and triggers the archive debounce.
 
-## GET /api/upload/events/:id/photos/status
-**Auth:** Admin session  
-**Response:** `{ total, pending, processing, processed, failed }`  
-Polled by the admin UI every 2 s while `pending > 0`.
+## `upload.status({ eventId })` — admin
+`{ pending, processed, failed, total }`. The UI reads it once and then follows the SSE stream.
 
-# Guest Upload Flow
+## `gallery.upload.init` / `gallery.upload.complete` — guest
+The same flow keyed by `slug` instead of `eventId`, behind the gallery session cookie. The photo is tagged `uploadedBy: GUEST` and appears in the gallery alongside admin uploads after processing.
 
-Guest uploads follow the same two-phase pattern, accessed through gallery endpoints:
+# Authorisation
 
-- `POST /api/gallery/:slug/upload/init` — same as admin init, but requires gallery cookie and mandates `photographerName`.
-- `POST /api/gallery/:slug/upload/complete` — same as admin complete, requires gallery cookie.
-
-The photo is tagged `uploadedBy: GUEST` and appears in the gallery alongside admin-uploaded photos after processing.
+Admin procedures run under `adminOs` + `requireOwnedEvent`; guest procedures under `galleryOs`. Neither handler repeats the ownership check — it is declared at the procedure.
 
 # Concurrency
 
-The admin UI caps concurrent uploads at 4 simultaneous presigned PUT requests. The API imposes no per-client concurrency limit but pg-boss naturally throttles processing throughput via `WORKER_CONCURRENCY`.
+The web client caps concurrent PUTs at 4. The API imposes no per-client limit; pg-boss throttles processing throughput via `WORKER_CONCURRENCY`.
 
 # Citations
 

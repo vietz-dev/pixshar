@@ -1,4 +1,8 @@
 import { type Page, expect } from "@playwright/test";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { ContractRouterClient } from "@orpc/contract";
+import type { Contract } from "@pixshar/contracts";
 
 export const WEB = "http://localhost:3000";
 export const API = "http://localhost:3001";
@@ -75,19 +79,18 @@ export async function apiSignIn(): Promise<string> {
   throw new Error("apiSignIn: exhausted retries due to rate limiting");
 }
 
+/** Typed oRPC client against the live API, authenticated by `cookie`. */
+export function rpc(cookie: string): ContractRouterClient<Contract> {
+  return createORPCClient(new RPCLink({ url: `${API}/api/rpc`, headers: { Cookie: cookie } }));
+}
+
 export async function apiCreateEvent(
   cookie: string,
   opts: { name: string; slug: string; password: string },
 ): Promise<{ id: string; slug: string }> {
-  const res = await fetch(`${API}/api/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify(opts),
-  });
-  if (!res.ok) throw new Error(`apiCreateEvent failed ${res.status}: ${await res.text()}`);
-  return res.json();
+  return rpc(cookie).events.create(opts);
 }
 
 export async function apiDeleteEvent(cookie: string, id: string): Promise<void> {
-  await fetch(`${API}/api/events/${id}`, { method: "DELETE", headers: { Cookie: cookie } });
+  await rpc(cookie).events.delete({ id });
 }

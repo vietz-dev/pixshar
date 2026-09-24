@@ -29,31 +29,14 @@ import DownloadPanel from "../../../../components/DownloadPanel";
 import AlertDialog from "../../../../components/AlertDialog";
 import UploadTray, { UploadItem, randomTint } from "../../../../components/UploadTray";
 import { presignedUpload } from "../../../../lib/uploadClient";
-
-interface Photo {
-  id: string;
-  photographerName: string | null;
-  originalKey: string;
-  displayKey: string;
-  thumbKey: string;
-  thumbUrl: string;
-  displayUrl: string;
-  status: string;
-  uploadedBy: string;
-  createdAt: string;
-  placeholderDataUrl: string | null;
-}
-
-interface EventDetail {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  password: string | null;
-  status: string;
-  createdAt: string;
-  photos: Photo[];
-}
+import { ORPCError } from "@orpc/client";
+import type {
+  AdminPhoto as Photo,
+  EventDetail,
+  PhotoNewEvent,
+  UploadStatus,
+} from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 export default function EventDetailPage() {
   const t = useTranslations("admin.eventDetail");
@@ -97,19 +80,13 @@ export default function EventDetailPage() {
   const [showAnonymous, setShowAnonymous] = useState(false);
 
   const fetchEvent = useCallback(() => {
-    fetch(`/api/events/${id}`, { credentials: "include" })
-      .then((res) => {
-        if (res.status === 401) {
-          router.push("/auth/login");
-          return null;
-        }
-        return res.json();
+    api.events
+      .get({ id })
+      .then((data) => setEvent(data))
+      .catch((err) => {
+        if (err instanceof ORPCError && err.code === "UNAUTHORIZED") router.push("/auth/login");
       })
-      .then((data) => {
-        if (data) setEvent(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      .finally(() => setLoading(false));
   }, [id, router]);
 
   useEffect(() => {
@@ -123,16 +100,10 @@ export default function EventDetailPage() {
       withCredentials: true,
     });
     es.addEventListener("photo-status", (e) => {
-      setUploadStatus(JSON.parse(e.data));
+      setUploadStatus(JSON.parse(e.data) as UploadStatus);
     });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as {
-        id: string;
-        thumbUrl: string;
-        displayUrl: string;
-        photographerName: string | null;
-        placeholderDataUrl: string | null;
-      };
+      const p = JSON.parse(e.data) as PhotoNewEvent;
       setEvent((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: Photo = {
@@ -145,7 +116,7 @@ export default function EventDetailPage() {
           displayUrl: p.displayUrl,
           status: "PROCESSED",
           uploadedBy: "ADMIN",
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(),
           placeholderDataUrl: p.placeholderDataUrl ?? null,
         };
         return { ...prev, photos: [photo, ...prev.photos] };
@@ -200,8 +171,8 @@ export default function EventDetailPage() {
     try {
       await presignedUpload({
         items: uploadItems,
-        initUrl: `/api/upload/events/${id}/photos/init`,
-        completeUrl: `/api/upload/events/${id}/photos/complete`,
+        init: (payload) => api.upload.init({ eventId: id, ...payload }),
+        complete: (photoIds) => api.upload.complete({ eventId: id, photoIds }),
         photographerName: uploaderName.trim() || undefined,
         shouldAbort: () => abortRef.current,
         onStatus: (uid, status, progress) => {
@@ -241,7 +212,7 @@ export default function EventDetailPage() {
   async function handleRetryFailed() {
     setRetryingFailed(true);
     try {
-      await fetch(`/api/events/${id}/photos/retry`, { method: "POST", credentials: "include" });
+      await api.events.photos.retry({ id });
       // Progress + new thumbnails arrive via the SSE stream.
     } finally {
       setRetryingFailed(false);
@@ -266,26 +237,20 @@ export default function EventDetailPage() {
   }
 
   async function handleDeleteEvent() {
-    const res = await fetch(`/api/events/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) {
+    try {
+      await api.events.delete({ id });
       router.push("/admin");
-    } else {
+    } catch {
       setError(t("deleteEvent.failed"));
     }
   }
 
   async function handleDeletePhoto(photoId: string) {
-    const res = await fetch(`/api/events/${id}/photos/${photoId}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) {
+    try {
+      await api.events.photos.delete({ id, photoId });
       toaster.create({ type: "success", title: t("deletePhoto.success") });
       fetchEvent();
-    } else {
+    } catch {
       toaster.create({ type: "error", title: t("deletePhoto.failed") });
     }
   }
@@ -302,21 +267,14 @@ export default function EventDetailPage() {
     if (!pwNewValue.trim()) return;
     setPwSaving(true);
     try {
-      const res = await fetch(`/api/events/${id}/password`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pwNewValue }),
-      });
-      if (res.ok) {
-        toaster.create({ type: "success", title: t("password.saved") });
-        setEvent((prev) => (prev ? { ...prev, password: pwNewValue } : prev));
-        setPwNewValue("");
-        setPwChangeOpen(false);
-        setPwVisible(false);
-      } else {
-        toaster.create({ type: "error", title: t("password.failed") });
-      }
+      await api.events.setPassword({ id, password: pwNewValue });
+      toaster.create({ type: "success", title: t("password.saved") });
+      setEvent((prev) => (prev ? { ...prev, password: pwNewValue } : prev));
+      setPwNewValue("");
+      setPwChangeOpen(false);
+      setPwVisible(false);
+    } catch {
+      toaster.create({ type: "error", title: t("password.failed") });
     } finally {
       setPwSaving(false);
     }
@@ -383,13 +341,7 @@ export default function EventDetailPage() {
     setBulkDeleting(true);
     const ids = [...selectedIds];
     try {
-      const res = await fetch(`/api/events/${id}/photos`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoIds: ids }),
-      });
-      if (!res.ok) throw new Error();
+      await api.events.photos.deleteMany({ id, photoIds: ids });
       toaster.create({ type: "success", title: t("bulkDelete.success", { count: ids.length }) });
       exitSelection();
       fetchEvent();
@@ -407,13 +359,7 @@ export default function EventDetailPage() {
     const ids = [...selectedIds];
     const name = bulkRenameName;
     try {
-      const res = await fetch(`/api/events/${id}/photos`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoIds: ids, photographerName: name }),
-      });
-      if (!res.ok) throw new Error();
+      await api.events.photos.rename({ id, photoIds: ids, photographerName: name });
       setEvent((prev) =>
         prev
           ? {
@@ -1206,12 +1152,8 @@ export default function EventDetailPage() {
               setLbIndex((i) => (i - 1 + filteredPhotos.length) % filteredPhotos.length)
             }
             onDownload={async (photoId) => {
-              const res = await fetch(`/api/events/${id}/photos/${photoId}/download`, {
-                credentials: "include",
-              });
-              const data = await res.json();
-              if (!res.ok) throw new Error(data.error || "Download failed");
-              return data.url;
+              const { url } = await api.events.photoDownload({ id, photoId });
+              return url;
             }}
             onDelete={(photoId) => setDeleteTarget(photoId)}
           />

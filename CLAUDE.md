@@ -39,7 +39,7 @@ pixshar/
 │           ├── admin/              # page.tsx (event list) — DONE
 │           ├── gallery/[slug]/     # page.tsx (password gate) — DONE
 │           └── auth/login/         # page.tsx — DONE
-├── packages/shared/src/index.ts    # Shared TS types
+├── packages/contracts/src/         # oRPC contract — shared request/response shapes
 ├── docker-compose.yml
 └── helm/pixshar/
 ```

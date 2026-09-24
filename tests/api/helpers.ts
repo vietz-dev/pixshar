@@ -5,6 +5,10 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { ContractRouterClient } from "@orpc/contract";
+import type { Contract } from "@pixshar/contracts";
 
 export const API = "http://localhost:3001";
 export const ADMIN_EMAIL = "admin@example.com";
@@ -51,20 +55,17 @@ export async function signInAdmin(): Promise<string> {
   return cookies;
 }
 
-/** Performs an authenticated request against the API. */
-export function authedFetch(
-  path: string,
-  cookie: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  return fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: cookie,
-      ...(init.headers as Record<string, string>),
-    },
-  });
+/**
+ * Typed oRPC client against the live API. Pass a session/gallery cookie to
+ * authenticate; procedures assert their own access level server-side.
+ */
+export function rpc(cookie?: string): ContractRouterClient<Contract> {
+  return createORPCClient(
+    new RPCLink({
+      url: `${API}/api/rpc`,
+      headers: cookie ? { Cookie: cookie } : {},
+    }),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,39 +91,39 @@ export async function createEvent(
   overrides: Partial<{ name: string; slug: string; description: string; password: string }> = {},
 ): Promise<TestEvent> {
   const slug = overrides.slug ?? uniqueSlug("evt");
-  const body: Record<string, string> = {
+  return rpc(cookie).events.create({
     name: overrides.name ?? `Test Event ${slug}`,
     slug,
     password: overrides.password ?? "gallery-pass",
-  };
-  if (overrides.description !== undefined) body.description = overrides.description;
-
-  const res = await authedFetch("/api/events", cookie, {
-    method: "POST",
-    body: JSON.stringify(body),
+    description: overrides.description,
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`createEvent failed ${res.status}: ${text}`);
-  }
-  // API returns the event object directly (not wrapped in { event: ... })
-  return res.json() as Promise<TestEvent>;
 }
 
-/** Deletes a test event by ID. Silently ignores 404. */
+/** Deletes a test event by ID. Silently ignores an already-deleted event. */
 export async function deleteEvent(cookie: string, id: string): Promise<void> {
-  const res = await authedFetch(`/api/events/${id}`, cookie, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) {
-    console.warn(`deleteEvent(${id}) failed: ${res.status}`);
-  }
+  await rpc(cookie)
+    .events.delete({ id })
+    .catch((err: unknown) => console.warn(`deleteEvent(${id}) failed: ${String(err)}`));
 }
 
-/** Gets a gallery session cookie for a given slug + password. */
+// Unlock is rate limited to 5 attempts/minute per gallery, and suites unlock
+// the same gallery in many tests — hand back the cookie we already have.
+const galleryCookies = new Map<string, string>();
+
+/**
+ * Gets a gallery session cookie for a given slug + password.
+ *
+ * Uses the RPC wire format directly rather than the typed client: the cookie
+ * lives in the response headers, which the client does not expose.
+ */
 export async function unlockGallery(slug: string, password: string): Promise<string> {
-  const res = await fetch(`${API}/api/gallery/${slug}/unlock`, {
+  const cached = galleryCookies.get(`${slug}:${password}`);
+  if (cached) return cached;
+
+  const res = await fetch(`${API}/api/rpc/gallery/unlock`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ json: { slug, password } }),
   });
   if (!res.ok) {
     const body = await res.text();
@@ -132,6 +133,7 @@ export async function unlockGallery(slug: string, password: string): Promise<str
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
+  galleryCookies.set(`${slug}:${password}`, galleryCookie);
   return galleryCookie;
 }
 
@@ -158,7 +160,7 @@ function bluePng(): Buffer {
 }
 
 /**
- * Polls GET /api/upload/events/:id/photos/status until all pending work drains.
+ * Polls `upload.status` until all pending work drains.
  * Throws on failure or timeout.
  */
 export async function waitUntilProcessed(
@@ -168,8 +170,7 @@ export async function waitUntilProcessed(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const res = await authedFetch(`/api/upload/events/${eventId}/photos/status`, cookie);
-    const body = (await res.json()) as { pending: number; failed: number; total: number };
+    const body = await rpc(cookie).upload.status({ eventId });
     if (body.total > 0 && body.pending === 0) {
       if (body.failed > 0) throw new Error(`${body.failed} photo(s) failed processing`);
       return;
@@ -191,23 +192,19 @@ export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): P
   const bytes = Buffer.concat([base, Buffer.from(`pixshar-${Date.now()}-${photoSeed++}`)]);
   const fileHash = createHash("sha256").update(bytes).digest("hex");
 
-  const initRes = await authedFetch(`/api/upload/events/${event.id}/photos/init`, cookie, {
-    method: "POST",
-    body: JSON.stringify({
-      files: [
-        {
-          fileName: "dl-variant.png",
-          ext: "png",
-          contentType: "image/png",
-          size: bytes.length,
-          fileHash,
-        },
-      ],
-    }),
+  const { photos } = await rpc(cookie).upload.init({
+    eventId: event.id,
+    files: [
+      {
+        fileName: "dl-variant.png",
+        ext: "png",
+        contentType: "image/png",
+        size: bytes.length,
+        fileHash,
+      },
+    ],
   });
-  if (!initRes.ok) throw new Error(`upload init failed ${initRes.status}: ${await initRes.text()}`);
-  const { photos } = (await initRes.json()) as { photos: Array<{ id: string }> };
-  const photoId = photos[0].id;
+  const photoId = photos[0].id!;
 
   await testS3.send(
     new PutObjectCommand({
@@ -218,13 +215,7 @@ export async function uploadAndProcessPhoto(cookie: string, event: TestEvent): P
     }),
   );
 
-  const completeRes = await authedFetch(`/api/upload/events/${event.id}/photos/complete`, cookie, {
-    method: "POST",
-    body: JSON.stringify({ photoIds: [photoId] }),
-  });
-  if (completeRes.status !== 202) {
-    throw new Error(`upload complete failed ${completeRes.status}: ${await completeRes.text()}`);
-  }
+  await rpc(cookie).upload.complete({ eventId: event.id, photoIds: [photoId] });
 
   await waitUntilProcessed(cookie, event.id);
   return photoId;

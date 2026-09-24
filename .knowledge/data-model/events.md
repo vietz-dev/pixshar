@@ -37,9 +37,9 @@ This is used to show the admin a simple "still processing" banner. Individual ph
 
 # Lifecycle
 
-1. Admin creates the event via `POST /api/events`.
-2. Guests unlock the gallery by submitting the password to `POST /api/gallery/:slug/unlock`.
-3. The event exists until explicitly deleted by the admin (`DELETE /api/events/:id`), which also deletes all photos from S3 and all associated DB rows via cascade.
+1. Admin creates the event via `events.create`.
+2. Guests unlock the gallery by submitting the password to `gallery.unlock`.
+3. The event exists until explicitly deleted by the admin (`events.delete`), which also deletes all photos from S3 and all associated DB rows via cascade.
 
 # Citations
 

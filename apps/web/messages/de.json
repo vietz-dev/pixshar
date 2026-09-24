@@ -52,7 +52,8 @@
       "cancelButton": "Abbrechen",
       "creating": "Wird erstellt...",
       "createButton": "Event erstellen",
-      "createFailed": "Event konnte nicht erstellt werden"
+      "createFailed": "Event konnte nicht erstellt werden",
+      "slugTaken": "Dieser Link ist bereits vergeben."
     },
     "eventDetail": {
       "backToEvents": "Zurück zu Events",
@@ -147,6 +148,7 @@
       "unlocking": "Wird entsperrt...",
       "unlock": "Galerie entsperren",
       "invalidPassword": "Falsches Passwort",
+      "tooManyAttempts": "Zu viele Versuche. Bitte später erneut versuchen.",
       "unlockFailed": "Entsperren fehlgeschlagen",
       "poweredBy": "Powered by Pixshar"
     },

@@ -52,7 +52,8 @@
       "cancelButton": "Cancel",
       "creating": "Creating...",
       "createButton": "Create event",
-      "createFailed": "Failed to create event"
+      "createFailed": "Failed to create event",
+      "slugTaken": "That share link is already taken."
     },
     "eventDetail": {
       "backToEvents": "Back to events",
@@ -147,6 +148,7 @@
       "unlocking": "Unlocking...",
       "unlock": "Unlock gallery",
       "invalidPassword": "Invalid password",
+      "tooManyAttempts": "Too many attempts. Please try again later.",
       "unlockFailed": "Failed to unlock",
       "poweredBy": "Powered by Pixshar"
     },

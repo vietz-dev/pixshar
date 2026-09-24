@@ -10,7 +10,7 @@
       "extra-files": [
         { "type": "json", "path": "apps/api/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "packages/shared/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/contracts/package.json", "jsonpath": "$.version" },
         { "type": "yaml", "path": "helm/pixshar/Chart.yaml", "jsonpath": "$.version" },
         { "type": "yaml", "path": "helm/pixshar/Chart.yaml", "jsonpath": "$.appVersion" }
       ]

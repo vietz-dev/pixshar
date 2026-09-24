@@ -1,63 +1,40 @@
 ---
 type: API
 title: Gallery API (Guest)
-description: The guest-facing HTTP surface — unlock, browse, upload, and download.
-tags: [api, gallery, guest]
-timestamp: 2026-07-11T00:00:00Z
+description: The guest-facing surface — unlock, browse, upload, and download, as oRPC procedures plus two SSE streams.
+tags: [api, gallery, guest, orpc]
+timestamp: 2026-09-24T00:00:00Z
 ---
+
+# Transport
+
+Every JSON call is an **oRPC procedure** declared in `@pixshar/contracts` and reached over `POST /api/rpc/gallery/<procedure>`; the browser calls them through the typed client (`apps/web/src/lib/rpc.ts`). Failures arrive as oRPC error codes (`NOT_FOUND`, `UNAUTHORIZED`, `TOO_MANY_REQUESTS`), never as English strings the client has to match. See [Contract-first API](/decisions/contract-first-api.md).
+
+The two live feeds stay plain Hono SSE routes — an `EventSource` cannot speak RPC.
 
 # Authentication
 
-All gallery endpoints (except `POST /unlock`) require a valid per-gallery JWT cookie set by the unlock endpoint. The cookie is scoped to a single event slug. Cross-gallery cookies are explicitly rejected.
+Every procedure except `gallery.info` and `gallery.unlock` runs behind the `galleryOs` middleware, which verifies the per-gallery JWT cookie **against the slug in the input**, so a session for one gallery cannot read another.
 
-# Endpoints
+# Procedures
 
-## POST /api/gallery/:slug/unlock
+## `gallery.info({ slug })` — public
+Returns `{ id, name, description }` for the password gate. Errors: `NOT_FOUND`.
 
-**Auth:** Public  
-**Body:** `{ password: string }`  
-**Response:** `{ success: true }` + sets `gallery_{slug}` cookie
+## `gallery.unlock({ slug, password })` — public
+Verifies the password, then sets the `gallery_{slug}` JWT cookie (`HttpOnly; SameSite=Lax`, 7 days) from inside the procedure via oRPC's response-headers plugin. Returns `{ success: true }`. Errors: `NOT_FOUND`, `UNAUTHORIZED`, `TOO_MANY_REQUESTS` (5 unlocks / 60 s per slug).
 
-Verifies the gallery password (bcrypt compare against the stored hash). On success, signs a JWT scoped to the event ID and sets it as an `HttpOnly; SameSite=Lax` cookie. Redirecting to `/gallery/{slug}/view` is done by the frontend, not the API.
+## `gallery.get({ slug })`
+Returns `{ id, slug, name, description, photos: [{ id, photographerName, thumbUrl, displayUrl, status, placeholderDataUrl }] }` with presigned thumb/display URLs (1 h). Errors: `UNAUTHORIZED`, `TOO_MANY_REQUESTS`.
 
-On failure: `401 { error: "Invalid password" }`.
+## `gallery.photoDownload({ slug, photoId })`
+Returns `{ url }` — a presigned URL for the original with `Content-Disposition: attachment` baked into the signature.
 
----
+## `gallery.upload.init({ slug, files, photographerName? })` / `gallery.upload.complete({ slug, photoIds })`
+The guest half of the two-phase presigned upload. See [Upload API](/api/upload-api.md).
 
-## GET /api/gallery/:slug
-
-**Auth:** Gallery cookie  
-**Response:** `{ id, slug, name, description, photos: [{id, photographerName, thumbUrl, displayUrl, status, placeholderDataUrl}] }`
-
-Returns event metadata and all photos with presigned thumb and display URLs. Only `PROCESSED` photos have valid URLs. `PENDING`/`PROCESSING` photos are included with their status so the frontend can show a "processing" placeholder. URLs expire after 15 minutes.
-
----
-
-## POST /api/gallery/:slug/upload/init
-
-**Auth:** Gallery cookie  
-**Body:** `{ fileName: string, contentType: string, fileHash: string, fileSize: number, photographerName: string }`  
-**Response:** `{ photoId, uploadUrl, isDuplicate }` or `{ isDuplicate: true, photoId }` on dedup
-
-Creates a Photo row (`status: PENDING`), generates a presigned `PUT` URL (5-minute expiry), and returns it. The client uploads directly to S3 using this URL, then calls the complete endpoint.
-
----
-
-## POST /api/gallery/:slug/upload/complete
-
-**Auth:** Gallery cookie  
-**Body:** `{ photoId: string }`
-
-Confirms the S3 upload completed. Enqueues the `photo-resize` job. Triggers archive debounce.
-
----
-
-## GET /api/gallery/:slug/download
-
-**Auth:** Gallery cookie  
-**Response:** Both-variants download payload
-
-Returns **both** download variants in a single response — Kompakt (`DISPLAY`) and Original (`ORIGINAL`) — so the toggle can label both tabs from one round trip. Opening the page lazily creates the Kompakt job for events that predate the variant. See [Download-Varianten](/decisions/download-variants.md).
+## `gallery.download({ slug })`
+Returns **both** download variants in one payload — Kompakt (`DISPLAY`) and Original (`ORIGINAL`) — so the toggle can label both tabs from one round trip. Opening the page lazily creates the Kompakt job for events that predate the variant. See [Download-Varianten](/decisions/download-variants.md).
 
 ```json
 {
@@ -70,19 +47,21 @@ Returns **both** download variants in a single response — Kompakt (`DISPLAY`) 
 }
 ```
 
-Each variant carries the per-status fields (`status` ∈ `READY | BUILDING | DEBOUNCING | QUEUED | NONE`, `parts[]`, `partCount`, `totalSizeBytes`, `photoCount`, `building`). The default variant's fields are also spread at the top level for backward compatibility. Presigned part URLs expire after 1 hour and include a `Content-Disposition: attachment; filename="..."` header (Kompakt filenames carry a `-kompakt` segment).
+The default variant's fields are also spread at the top level. The payload shape is the contract's `bothVariantsPayload`, shared with the SSE stream below. Presigned part URLs expire after 1 hour and carry an attachment filename (Kompakt filenames get a `-kompakt` segment). This procedure runs through the Effect `DownloadService`.
 
----
+# Streams (plain Hono, not RPC)
 
 ## GET /api/gallery/:slug/download/stream
+`text/event-stream`. Pushes `download-status` events carrying the same `bothVariantsPayload`; any variant's status change re-emits the whole payload so both tabs stay live.
 
-**Auth:** Gallery cookie  
-**Response:** `text/event-stream` (SSE)
+## GET /api/gallery/:slug/photos/stream
+`text/event-stream`. Pushes a `photo-new` event (contract type `PhotoNewEvent`) whenever a photo finishes processing, so the guest grid fills in without a refresh.
 
-Pushes `download-status` events matching the same both-variants payload shape as `GET /download`; any variant's status change re-emits the whole payload so both tabs stay live. Used by the gallery view page and the download page.
+Both live in `apps/api/src/routes/streams.ts`, authenticate with the same gallery cookie via the `requireGallerySession` Hono middleware, and ping `keep-alive` every 15 s.
 
 # Citations
 
 [1] [Auth architecture](/architecture/auth.md)
 [2] [Upload API](/api/upload-api.md)
 [3] [Archive generation architecture](/architecture/archive-generation.md)
+[4] [Contract-first API](/decisions/contract-first-api.md)

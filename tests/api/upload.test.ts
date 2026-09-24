@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createHash } from "node:crypto";
 import {
   signInAdmin,
-  authedFetch,
   createEvent,
   deleteEvent,
   unlockGallery,
+  rpc,
+  API,
   type TestEvent,
 } from "./helpers.js";
-import { API } from "./helpers.js";
 
 function sha256(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
@@ -27,6 +27,16 @@ function tinyJpeg(): Buffer {
   );
 }
 
+function fileMeta(bytes: Buffer, fileName: string) {
+  return {
+    fileName,
+    ext: "jpg",
+    contentType: "image/jpeg" as const,
+    size: bytes.length,
+    fileHash: sha256(bytes),
+  };
+}
+
 describe("Photo Upload", () => {
   let adminCookie: string;
   let event: TestEvent;
@@ -43,115 +53,94 @@ describe("Photo Upload", () => {
   // ─── Init upload ─────────────────────────────────────────────────────────────
 
   describe("Given an authenticated admin with an event", () => {
-    describe("When initialising an upload via POST /api/upload/events/:id/photos/init", () => {
-      it("Then it returns 200 with presigned PUT URLs for each file", async () => {
-        const jpeg = tinyJpeg();
-        const hash = sha256(jpeg);
+    describe("When calling upload.init", () => {
+      it("Then it returns presigned PUT URLs for each file", async () => {
+        const meta = fileMeta(tinyJpeg(), "test-photo.jpg");
 
-        const res = await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
-          method: "POST",
-          body: JSON.stringify({
-            files: [
-              {
-                fileName: "test-photo.jpg",
-                ext: "jpg",
-                contentType: "image/jpeg",
-                size: jpeg.length,
-                fileHash: hash,
-              },
-            ],
-          }),
+        const { photos } = await rpc(adminCookie).upload.init({
+          eventId: event.id,
+          files: [meta],
         });
 
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as {
-          photos: Array<{ fileHash: string; uploadUrl: string }>;
-        };
-        expect(body.photos).toHaveLength(1);
-        expect(body.photos[0].fileHash).toBe(hash);
-        expect(body.photos[0].uploadUrl).toMatch(/^http/);
+        expect(photos).toHaveLength(1);
+        expect(photos[0].fileHash).toBe(meta.fileHash);
+        expect(photos[0].uploadUrl).toMatch(/^http/);
       });
     });
   });
 
   describe("Given the same file hash uploaded twice (deduplication)", () => {
     describe("When initialising the upload again", () => {
-      it("Then the second response marks the photo as a duplicate", async () => {
-        const jpeg = tinyJpeg();
-        const hash = sha256(jpeg);
-        const payload = {
-          files: [
-            {
-              fileName: "dup.jpg",
-              ext: "jpg",
-              contentType: "image/jpeg",
-              size: jpeg.length,
-              fileHash: hash,
-            },
-          ],
-        };
+      it("Then the second response resumes or marks the photo a duplicate", async () => {
+        const files = [fileMeta(tinyJpeg(), "dup.jpg")];
 
-        // First init
-        await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
+        await rpc(adminCookie).upload.init({ eventId: event.id, files });
+        const { photos } = await rpc(adminCookie).upload.init({ eventId: event.id, files });
+
+        // PENDING row → resume (not flagged duplicate yet); PROCESSED → duplicate.
+        expect(photos).toHaveLength(1);
+        expect(photos[0].duplicate || photos[0].uploadUrl).toBeTruthy();
+      });
+    });
+  });
+
+  describe("Given a file that violates the contract's limits", () => {
+    describe("When calling upload.init", () => {
+      it("Then it is rejected as BAD_REQUEST, not a raw ZodError", async () => {
+        const meta = fileMeta(tinyJpeg(), "too-big.jpg");
+
+        await expect(
+          rpc(adminCookie).upload.init({
+            eventId: event.id,
+            files: [{ ...meta, size: 51 * 1024 * 1024 }],
+          }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+        const res = await fetch(`${API}/api/rpc/upload/init`, {
           method: "POST",
-          body: JSON.stringify(payload),
+          headers: { "Content-Type": "application/json", Cookie: adminCookie },
+          body: JSON.stringify({
+            json: { eventId: event.id, files: [{ ...meta, contentType: "image/gif" }] },
+          }),
         });
-
-        // Second init with same hash
-        const res2 = await authedFetch(`/api/upload/events/${event.id}/photos/init`, adminCookie, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-
-        const body = (await res2.json()) as { photos: Array<{ duplicate?: boolean }> };
-        // PENDING row → resume (not flagged duplicate yet), or if PROCESSED → duplicate: true
-        expect([200, 200]).toContain(res2.status);
-        // Either duplicate or a new presigned URL is fine; the key thing is no 500
-        expect(body.photos).toHaveLength(1);
+        expect(res.status).toBe(400);
       });
     });
   });
 
   describe("Given a guest with a valid gallery session", () => {
-    describe("When initialising a guest upload via POST /api/gallery/:slug/upload/init", () => {
-      it("Then it returns 200 with a presigned URL", async () => {
-        const jpeg = tinyJpeg();
-        const hash = sha256(jpeg);
+    describe("When calling gallery.upload.init", () => {
+      it("Then it returns a presigned URL", async () => {
         const galleryCookie = await unlockGallery(event.slug, "upload-pass");
 
-        const res = await fetch(`${API}/api/gallery/${event.slug}/upload/init`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Cookie: galleryCookie },
-          body: JSON.stringify({
-            photographerName: "Guest Tester",
-            files: [
-              {
-                fileName: "guest-photo.jpg",
-                ext: "jpg",
-                contentType: "image/jpeg",
-                size: jpeg.length,
-                fileHash: hash,
-              },
-            ],
-          }),
+        const { photos } = await rpc(galleryCookie).gallery.upload.init({
+          slug: event.slug,
+          photographerName: "Guest Tester",
+          files: [fileMeta(tinyJpeg(), "guest-photo.jpg")],
         });
 
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as { photos: unknown[] };
-        expect(body.photos).toHaveLength(1);
+        expect(photos).toHaveLength(1);
       });
     });
   });
 
   describe("Given an unauthenticated request", () => {
-    describe("When calling the admin upload init endpoint", () => {
-      it("Then it returns 401 Unauthorized", async () => {
-        const res = await fetch(`${API}/api/upload/events/${event.id}/photos/init`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ files: [] }),
-        });
-        expect(res.status).toBe(401);
+    describe("When calling upload.init", () => {
+      it("Then it fails with UNAUTHORIZED", async () => {
+        await expect(
+          rpc().upload.init({ eventId: event.id, files: [fileMeta(tinyJpeg(), "nope.jpg")] }),
+        ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      });
+    });
+
+    describe("When calling gallery.upload.init without a gallery cookie", () => {
+      it("Then it fails with UNAUTHORIZED", async () => {
+        await expect(
+          rpc().gallery.upload.init({
+            slug: event.slug,
+            files: [fileMeta(tinyJpeg(), "nope.jpg")],
+          }),
+        ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
       });
     });
   });
@@ -159,19 +148,12 @@ describe("Photo Upload", () => {
   // ─── Status poll ─────────────────────────────────────────────────────────────
 
   describe("Given an event with no photos", () => {
-    describe("When polling photo status via GET /api/upload/events/:id/photos/status", () => {
-      it("Then it returns 200 with all counts at zero", async () => {
+    describe("When calling upload.status", () => {
+      it("Then all counts are zero", async () => {
         const fresh = await createEvent(adminCookie, { password: "fresh-pass" });
 
-        const res = await authedFetch(`/api/upload/events/${fresh.id}/photos/status`, adminCookie);
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as {
-          pending: number;
-          processed: number;
-          failed: number;
-          total: number;
-        };
-        expect(body.total).toBe(0);
+        const status = await rpc(adminCookie).upload.status({ eventId: fresh.id });
+        expect(status.total).toBe(0);
 
         await deleteEvent(adminCookie, fresh.id);
       });

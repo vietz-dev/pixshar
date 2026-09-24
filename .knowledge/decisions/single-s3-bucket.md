@@ -21,7 +21,7 @@ All events and all photo variants (originals, display, thumbs, archives) live in
 
 **One set of credentials:** A single bucket means one IAM policy, one access key pair, one set of environment variables (`S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). Creating a new event requires no IAM changes.
 
-**Atomic event deletion:** `DELETE /api/events/:id` deletes everything under the prefix `{eventId}/` with a `ListObjectsV2` + `DeleteObjects` loop (up to 1000 keys per call). One logical delete operation covers all variants.
+**Atomic event deletion:** `events.delete` deletes everything under the prefix `{eventId}/` with a `ListObjectsV2` + `DeleteObjects` loop (up to 1000 keys per call). One logical delete operation covers all variants.
 
 **Self-hosting simplicity:** Minio's bucket creation happens once at startup via the `minio-init` container. No automation is needed to provision per-event buckets.
 

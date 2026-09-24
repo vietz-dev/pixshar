@@ -9,23 +9,8 @@ import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import UploadModal from "../../../../components/UploadModal";
 import DownloadButton from "../../../../components/DownloadButton";
-
-interface GalleryPhoto {
-  id: string;
-  photographerName: string | null;
-  thumbUrl: string;
-  displayUrl: string;
-  status: string;
-  placeholderDataUrl: string | null;
-}
-
-interface GalleryData {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  photos: GalleryPhoto[];
-}
+import type { GalleryData, GalleryPhoto, PhotoNewEvent } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 export default function GalleryViewPage() {
   const t = useTranslations("gallery.view");
@@ -60,12 +45,9 @@ export default function GalleryViewPage() {
       // ignore sessionStorage errors
     }
 
-    fetch(`/api/gallery/${slug}`, { credentials: "include" })
-      .then((res) => {
-        if (!res.ok) throw new Error(t("loadFailed"));
-        return res.json();
-      })
-      .then((data: GalleryData) => {
+    api.gallery
+      .get({ slug })
+      .then((data) => {
         setGallery(data);
         setLoading(false);
         try {
@@ -74,8 +56,8 @@ export default function GalleryViewPage() {
           // ignore sessionStorage quota errors
         }
       })
-      .catch((err) => {
-        setError(err.message);
+      .catch(() => {
+        setError(t("loadFailed"));
         setLoading(false);
       });
   }, [slug, t, cacheKey]);
@@ -97,13 +79,7 @@ export default function GalleryViewPage() {
     if (!galleryLoaded) return;
     const es = new EventSource(`/api/gallery/${slug}/photos/stream`, { withCredentials: true });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as {
-        id: string;
-        thumbUrl: string;
-        displayUrl: string;
-        photographerName: string | null;
-        placeholderDataUrl: string | null;
-      };
+      const p = JSON.parse(e.data) as PhotoNewEvent;
       setGallery((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: GalleryPhoto = {
@@ -391,12 +367,8 @@ export default function GalleryViewPage() {
           onNext={() => setLbIndex((i) => (i + 1) % filteredPhotos.length)}
           onPrev={() => setLbIndex((i) => (i - 1 + filteredPhotos.length) % filteredPhotos.length)}
           onDownload={async (photoId) => {
-            const res = await fetch(`/api/gallery/${slug}/photos/${photoId}/download`, {
-              credentials: "include",
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Download failed");
-            return data.url;
+            const { url } = await api.gallery.photoDownload({ slug, photoId });
+            return url;
           }}
         />
       )}

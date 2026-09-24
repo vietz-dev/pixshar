@@ -4,39 +4,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Box, Button, chakra, Flex, Heading, Spinner, Stack, Tabs, Text } from "@chakra-ui/react";
-
-interface ArchivePart {
-  index: number;
-  url: string | null;
-  sizeBytes: number;
-  photoCount?: number;
-  membershipSig?: string;
-  rebuilding?: boolean;
-}
-
-interface VariantPayload {
-  status: string;
-  parts: ArchivePart[];
-  partCount: number;
-  totalSizeBytes: number;
-  photoCount: number;
-  building: boolean;
-  message?: string;
-}
-
-type Quality = "DISPLAY" | "ORIGINAL";
-
-interface DownloadPayload {
-  defaultQuality: "DISPLAY";
-  // back-compat: DISPLAY variant fields spread at top level
-  status: string;
-  parts?: ArchivePart[];
-  partCount?: number;
-  totalSizeBytes?: number;
-  photoCount?: number;
-  building?: boolean;
-  variants: { DISPLAY: VariantPayload; ORIGINAL: VariantPayload };
-}
+import { ORPCError } from "@orpc/client";
+import type { BothVariantsPayload, Quality } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -95,7 +65,7 @@ export default function GalleryDownloadPage() {
   const router = useRouter();
   const slug = params.slug as string;
 
-  const [payload, setPayload] = useState<DownloadPayload | null>(null);
+  const [payload, setPayload] = useState<BothVariantsPayload | null>(null);
   const [error, setError] = useState("");
   // Which variant tab is active. Always lands on DISPLAY (Kompakt); only an
   // explicit user click ever changes this — SSE re-applies never touch it.
@@ -109,7 +79,7 @@ export default function GalleryDownloadPage() {
 
   // Load per-part download state from localStorage for both variants.
   const loadDownloadedState = useCallback(
-    (data: DownloadPayload) => {
+    (data: BothVariantsPayload) => {
       const next: Record<Quality, Record<number, boolean>> = { DISPLAY: {}, ORIGINAL: {} };
       for (const q of ["DISPLAY", "ORIGINAL"] as Quality[]) {
         for (const p of data.variants[q]?.parts ?? []) {
@@ -128,7 +98,7 @@ export default function GalleryDownloadPage() {
   );
 
   const apply = useCallback(
-    (data: DownloadPayload) => {
+    (data: BothVariantsPayload) => {
       setPayload(data);
       loadDownloadedState(data);
     },
@@ -137,18 +107,20 @@ export default function GalleryDownloadPage() {
 
   // Initial fetch (handles auth redirect + first paint).
   useEffect(() => {
-    fetch(`/api/gallery/${slug}/download`, { credentials: "include" })
-      .then(async (res) => {
-        if (res.status === 401 || res.status === 403) {
-          router.replace(`/gallery/${slug}`);
-          return;
-        }
-        if (!res.ok) throw new Error(await res.text());
-        const data: DownloadPayload = await res.json();
+    api.gallery
+      .download({ slug })
+      .then((data) => {
         initialLoaded.current = true;
         apply(data);
       })
-      .catch(() => setError(t("loadFailed")));
+      .catch((err: unknown) => {
+        const code = err instanceof ORPCError ? err.code : null;
+        if (code === "UNAUTHORIZED" || code === "NOT_FOUND") {
+          router.replace(`/gallery/${slug}`);
+          return;
+        }
+        setError(t("loadFailed"));
+      });
   }, [slug, router, t, apply]);
 
   // Live updates: new parts appear + rebuilt parts flip status without a reload.

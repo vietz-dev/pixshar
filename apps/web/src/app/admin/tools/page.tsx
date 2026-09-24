@@ -3,17 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Box, Button, Card, Flex, Heading, Progress, Text } from "@chakra-ui/react";
-
-interface BackfillStatus {
-  total: number;
-  missing: number;
-}
-
-interface BackfillProgress {
-  total: number;
-  processed: number;
-  done?: boolean;
-}
+import type { BackfillProgress, BackfillStatus } from "@pixshar/contracts";
+import { api } from "@/lib/rpc";
 
 export default function AdminToolsPage() {
   const [status, setStatus] = useState<BackfillStatus | null>(null);
@@ -22,8 +13,8 @@ export default function AdminToolsPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    fetch("/api/admin/backfill/status", { credentials: "include" })
-      .then((r) => r.json())
+    api.admin
+      .backfillStatus()
       .then(setStatus)
       .catch(() => {});
   }, []);

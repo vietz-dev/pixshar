@@ -4,27 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button, HStack, Progress, Spinner } from "@chakra-ui/react";
-
-type DownloadStatus = "NONE" | "DEBOUNCING" | "BUILDING" | "READY" | "FAILED";
-
-interface ArchivePart {
-  index: number;
-  url: string | null;
-  sizeBytes: number;
-}
-
-interface DownloadState {
-  status: DownloadStatus;
-  parts?: ArchivePart[];
-  partCount?: number;
-  totalSizeBytes?: number;
-  photoCount?: number;
-  processedPhotos?: number;
-  uploadProgress?: number;
-  message?: string;
-  debounceUntil?: string;
-  building?: boolean;
-}
+import type { BothVariantsPayload } from "@pixshar/contracts";
 
 /** Shared chrome for every state of the button — only colors/cursor differ. */
 const buttonBase = {
@@ -61,12 +41,12 @@ function DownloadIcon() {
 export default function DownloadButton({ slug }: { slug: string }) {
   const t = useTranslations("download.button");
   const router = useRouter();
-  const [state, setState] = useState<DownloadState | null>(null);
+  const [state, setState] = useState<BothVariantsPayload | null>(null);
 
   useEffect(() => {
     const es = new EventSource(`/api/gallery/${slug}/download/stream`, { withCredentials: true });
     es.addEventListener("download-status", (e) => {
-      const data = JSON.parse(e.data);
+      const data = JSON.parse(e.data) as BothVariantsPayload;
       setState(data);
       // Keep the stream open while more parts are still being built so newly
       // appended parts appear; only close once fully settled or failed.
@@ -168,7 +148,7 @@ export default function DownloadButton({ slug }: { slug: string }) {
 
 function labelFor(
   t: ReturnType<typeof useTranslations<"download.button">>,
-  status: DownloadStatus,
+  status: string,
 ): string {
   switch (status) {
     case "NONE":

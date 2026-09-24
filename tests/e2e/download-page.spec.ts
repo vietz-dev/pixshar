@@ -10,7 +10,7 @@
  *  - Checkbox state persists in localStorage after clicking a part link
  */
 import { test, expect } from "@playwright/test";
-import { WEB, API, apiSignIn, apiCreateEvent, apiDeleteEvent, uniqueSlug } from "./helpers.js";
+import { WEB, API, apiSignIn, apiCreateEvent, apiDeleteEvent, rpc, uniqueSlug } from "./helpers.js";
 
 test.describe("Gallery download page", () => {
   let adminCookie: string;
@@ -93,21 +93,15 @@ test.describe("Gallery download page", () => {
   test.describe("Given a READY archive (0 photos, forced build)", () => {
     test("Then the download page shows part rows and checkboxes", async ({ page }) => {
       // Force-build via admin API (0 photos → should complete fast)
-      const buildRes = await fetch(`${API}/api/events/${eventId}/download/build-now`, {
-        method: "POST",
-        headers: { Cookie: adminCookie },
-      });
-      expect(buildRes.status).toBe(200);
+      const buildRes = await rpc(adminCookie).events.download.buildNow({ id: eventId });
+      expect(buildRes.success).toBe(true);
 
-      // Poll for READY (up to 20 s)
+      // Poll for READY (up to 20 s). 1 s between polls, since two tests in this
+      // file share the `admin-download-status:<id>` bucket (60 calls/minute).
       let status = "QUEUED";
-      for (let i = 0; i < 40; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const s = await fetch(`${API}/api/events/${eventId}/download/status`, {
-          headers: { Cookie: adminCookie },
-        });
-        const b = (await s.json()) as { status: string };
-        status = b.status;
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        status = (await rpc(adminCookie).events.download.status({ id: eventId })).status;
         if (status === "READY" || status === "FAILED" || status === "CANCELLED") break;
       }
 
@@ -142,19 +136,12 @@ test.describe("Gallery download page", () => {
       page,
     }) => {
       // Force-build to ensure READY
-      await fetch(`${API}/api/events/${eventId}/download/build-now`, {
-        method: "POST",
-        headers: { Cookie: adminCookie },
-      });
+      await rpc(adminCookie).events.download.buildNow({ id: eventId });
 
       let status = "QUEUED";
-      for (let i = 0; i < 40; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const s = await fetch(`${API}/api/events/${eventId}/download/status`, {
-          headers: { Cookie: adminCookie },
-        });
-        const b = (await s.json()) as { status: string };
-        status = b.status;
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        status = (await rpc(adminCookie).events.download.status({ id: eventId })).status;
         if (status === "READY" || status === "FAILED") break;
       }
 
@@ -164,21 +151,18 @@ test.describe("Gallery download page", () => {
       }
 
       // Fetch the download payload to see if there are any parts
-      const galleryCookieRes = await fetch(`${API}/api/gallery/${eventSlug}/unlock`, {
+      const galleryCookieRes = await fetch(`${API}/api/rpc/gallery/unlock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "dl-e2e-pass" }),
+        body: JSON.stringify({ json: { slug: eventSlug, password: "dl-e2e-pass" } }),
       });
       const galleryCookieStr = galleryCookieRes.headers
         .getSetCookie()
         .map((c) => c.split(";")[0])
         .join("; ");
 
-      const dlRes = await fetch(`${API}/api/gallery/${eventSlug}/download`, {
-        headers: { Cookie: galleryCookieStr },
-      });
-      const dlBody = (await dlRes.json()) as { parts?: unknown[] };
-      if (!dlBody.parts || dlBody.parts.length === 0) {
+      const dlBody = await rpc(galleryCookieStr).gallery.download({ slug: eventSlug });
+      if (dlBody.parts.length === 0) {
         test.skip(); // eslint-disable-line playwright/no-skipped-test
         return;
       }
