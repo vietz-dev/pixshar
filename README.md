@@ -50,15 +50,18 @@ bun run dev          # API + Web
 
 ### GitHub Actions Release
 
-Push a tag to automatically build and publish everything:
+Merge a [Conventional Commit](https://www.conventionalcommits.org/) to `main` — that is
+the whole ritual. [release-please](https://github.com/googleapis/release-please) opens a
+`chore: release <version>` PR carrying the version bumps and the changelog; merging that PR
+cuts the release.
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
+```text
+fix:   → patch        feat:  → minor        chore:/docs: → no release
+feat!: → minor while below 1.0.0            Release-As: 1.0.0 footer → forces 1.0.0
 ```
 
-This triggers the release workflow that:
-1. Runs tests (`tsc`, `next build`, Helm lint)
+Merging the release PR triggers the release workflow that:
+1. Tags `v<version>` and creates the GitHub Release with the changelog
 2. Builds and pushes Docker images to `ghcr.io/<owner>/pixshar-api` and `ghcr.io/<owner>/pixshar-web`
 3. Packages and pushes the Helm chart to `ghcr.io/<owner>/pixshar`
 

@@ -1,5 +1,6 @@
 {
   "name": "pixshar",
+  "version": "0.0.31",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -18,8 +19,6 @@
     "test:e2e": "bunx playwright test",
     "test:e2e:ui": "bunx playwright test --ui",
     "test:all": "bun run test && bun run test:e2e",
-    "release": "bash scripts/release.sh",
-    "version": "changeset version",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt .",
@@ -27,8 +26,6 @@
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.31.0",
     "@orpc/client": "^1.15.0",
     "@orpc/contract": "^1.15.0",
     "@pixshar/contracts": "workspace:*",

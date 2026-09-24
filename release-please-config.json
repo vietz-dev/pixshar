@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "3887e095bba6b35f01a905787dfcb098a55191cb",
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "pixshar",
+      "extra-files": [
+        { "type": "json", "path": "apps/api/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/web/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/contracts/package.json", "jsonpath": "$.version" },
+        { "type": "yaml", "path": "helm/pixshar/Chart.yaml", "jsonpath": "$.version" },
+        { "type": "yaml", "path": "helm/pixshar/Chart.yaml", "jsonpath": "$.appVersion" }
+      ]
+    }
+  }
+}
