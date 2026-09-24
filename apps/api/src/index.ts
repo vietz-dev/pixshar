@@ -3,9 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
 import { env } from "./lib/env.js";
-import events from "./routes/events.js";
-import gallery from "./routes/gallery.js";
-import upload from "./routes/upload.js";
+import streams from "./routes/streams.js";
 import auth from "./routes/auth.js";
 import backfill from "./routes/backfill.js";
 import metricsRoute from "./routes/metrics.js";
@@ -93,9 +91,9 @@ export function createApp(resolveContext: ContextResolver = defaultResolveContex
   const api = app.basePath("/api");
 
   api.route("/auth", auth);
-  api.route("/events", events);
-  api.route("/gallery", gallery);
-  api.route("/upload", upload);
+  // Everything else JSON is an oRPC procedure; what is left on Hono are the
+  // SSE streams (EventSource cannot speak RPC) and the backfill POST stream.
+  api.route("/", streams);
 
   // health checks
   api.get("/health", (c) => c.json({ status: "ok" }));

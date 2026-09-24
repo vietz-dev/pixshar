@@ -12,7 +12,7 @@ set -euo pipefail
 bunx changeset version
 
 # Read the new version from any fixed package (all share the same version)
-VERSION=$(node -p "require('./packages/shared/package.json').version")
+VERSION=$(node -p "require('./packages/contracts/package.json').version")
 echo "Bumping Helm chart to v${VERSION}"
 
 # Bump Helm chart

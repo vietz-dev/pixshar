@@ -18,7 +18,7 @@ set -euo pipefail
 # We do NOT publish to npm and we do NOT create git tags here.
 # ============================================
 
-VERSION=$(node -p "require('./packages/shared/package.json').version")
+VERSION=$(node -p "require('./packages/contracts/package.json').version")
 TAG="v${VERSION}"
 
 if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "${TAG}"; then
@@ -30,6 +30,6 @@ echo "==> Releasing ${TAG}" >&2
 
 # Emit one line per package so changesets/action marks the step as published.
 # (Monorepo: the single-package fallback does not apply, so names are required.)
-for pkg in @pixshar/shared @pixshar/api @pixshar/web; do
+for pkg in @pixshar/contracts @pixshar/api @pixshar/web; do
   echo "New tag: ${pkg}@${VERSION}"
 done

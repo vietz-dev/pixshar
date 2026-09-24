@@ -30,7 +30,12 @@ import AlertDialog from "../../../../components/AlertDialog";
 import UploadTray, { UploadItem, randomTint } from "../../../../components/UploadTray";
 import { presignedUpload } from "../../../../lib/uploadClient";
 import { ORPCError } from "@orpc/client";
-import type { AdminPhoto as Photo, EventDetail } from "@pixshar/contracts";
+import type {
+  AdminPhoto as Photo,
+  EventDetail,
+  PhotoNewEvent,
+  UploadStatus,
+} from "@pixshar/contracts";
 import { api } from "@/lib/rpc";
 
 export default function EventDetailPage() {
@@ -95,16 +100,10 @@ export default function EventDetailPage() {
       withCredentials: true,
     });
     es.addEventListener("photo-status", (e) => {
-      setUploadStatus(JSON.parse(e.data));
+      setUploadStatus(JSON.parse(e.data) as UploadStatus);
     });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as {
-        id: string;
-        thumbUrl: string;
-        displayUrl: string;
-        photographerName: string | null;
-        placeholderDataUrl: string | null;
-      };
+      const p = JSON.parse(e.data) as PhotoNewEvent;
       setEvent((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: Photo = {
@@ -213,7 +212,7 @@ export default function EventDetailPage() {
   async function handleRetryFailed() {
     setRetryingFailed(true);
     try {
-      await fetch(`/api/events/${id}/photos/retry`, { method: "POST", credentials: "include" });
+      await api.events.photos.retry({ id });
       // Progress + new thumbnails arrive via the SSE stream.
     } finally {
       setRetryingFailed(false);
@@ -247,14 +246,11 @@ export default function EventDetailPage() {
   }
 
   async function handleDeletePhoto(photoId: string) {
-    const res = await fetch(`/api/events/${id}/photos/${photoId}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) {
+    try {
+      await api.events.photos.delete({ id, photoId });
       toaster.create({ type: "success", title: t("deletePhoto.success") });
       fetchEvent();
-    } else {
+    } catch {
       toaster.create({ type: "error", title: t("deletePhoto.failed") });
     }
   }
@@ -345,13 +341,7 @@ export default function EventDetailPage() {
     setBulkDeleting(true);
     const ids = [...selectedIds];
     try {
-      const res = await fetch(`/api/events/${id}/photos`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoIds: ids }),
-      });
-      if (!res.ok) throw new Error();
+      await api.events.photos.deleteMany({ id, photoIds: ids });
       toaster.create({ type: "success", title: t("bulkDelete.success", { count: ids.length }) });
       exitSelection();
       fetchEvent();
@@ -369,13 +359,7 @@ export default function EventDetailPage() {
     const ids = [...selectedIds];
     const name = bulkRenameName;
     try {
-      const res = await fetch(`/api/events/${id}/photos`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoIds: ids, photographerName: name }),
-      });
-      if (!res.ok) throw new Error();
+      await api.events.photos.rename({ id, photoIds: ids, photographerName: name });
       setEvent((prev) =>
         prev
           ? {

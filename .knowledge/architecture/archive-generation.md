@@ -79,9 +79,9 @@ A heartbeat (`heartbeatAt`) is updated every few photos. A reaper (runs every `D
 
 All three take a `?quality=` selector (default `ORIGINAL`) and act on exactly **one** variant, so the admin can, e.g., re-zip the cheap Kompakt archive without triggering the expensive Original rebuild across many parts. The admin UI renders two independent per-variant panels.
 
-- `POST /api/events/:id/download/build-now` — skip the debounce wait and queue the pending reconcile immediately. Only the timer is skipped; it still routes through QUEUED → the FIFO claim, so worker/image-processor load stays bounded. No-op if nothing is pending.
-- `POST /api/events/:id/download/rebuild-all` — mark every part `STALE` and reconcile, regenerating each part's bytes from its stored membership. Membership is preserved, so guests are not forced to re-download parts whose contents did not change.
-- `POST /api/events/:id/download/cancel` — stops the current build; already-committed (immutable) parts stay downloadable.
+- `events.download.buildNow({ id, quality })` — skip the debounce wait and queue the pending reconcile immediately. Only the timer is skipped; it still routes through QUEUED → the FIFO claim, so worker/image-processor load stays bounded. No-op if nothing is pending.
+- `events.download.rebuildAll({ id, quality })` — mark every part `STALE` and reconcile, regenerating each part's bytes from its stored membership. Membership is preserved, so guests are not forced to re-download parts whose contents did not change.
+- `events.download.cancel({ id, quality })` — stops the current build; already-committed (immutable) parts stay downloadable.
 
 # Deletion
 

@@ -9,7 +9,6 @@ WORKDIR /app
 # Copy package files first to leverage Docker's caching mechanism
 COPY package.json bun.lock* ./
 COPY apps/web/package.json ./apps/web/
-COPY packages/shared/package.json ./packages/shared/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY .npmrc ./.npmrc
 
@@ -32,9 +31,6 @@ ENV WORKSPACE_ROOT=/app
 # Learn more here: https://nextjs.org/telemetry
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build shared workspace package first (required by the web app)
-RUN cd packages/shared && bun run build
 
 # Build Next.js application
 RUN cd apps/web && bun run build

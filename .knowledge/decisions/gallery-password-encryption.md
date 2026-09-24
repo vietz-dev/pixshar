@@ -21,7 +21,7 @@ Gallery passwords are encrypted at rest using **AES-256-GCM** before being store
 
 **Implementation**: `apps/api/src/lib/crypto.ts` — `encryptPassword` / `decryptPassword`.
 
-The API decrypts before returning in `GET /api/events/:id` and encrypts on `POST /api/events` and `PATCH /api/events/:id/password`.
+The API decrypts before returning in `events.get` and encrypts in `events.create` and `events.setPassword`.
 
 ## Why not plaintext?
 

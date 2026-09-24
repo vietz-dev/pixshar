@@ -68,22 +68,6 @@ export function rpc(cookie?: string): ContractRouterClient<Contract> {
   );
 }
 
-/** Performs an authenticated request against the API. */
-export function authedFetch(
-  path: string,
-  cookie: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  return fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: cookie,
-      ...(init.headers as Record<string, string>),
-    },
-  });
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Factories
 // ─────────────────────────────────────────────────────────────────────────────

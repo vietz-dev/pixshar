@@ -16,7 +16,6 @@ import { createHash } from "node:crypto";
 import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   signInAdmin,
-  authedFetch,
   createEvent,
   deleteEvent,
   rpc,
@@ -269,13 +268,14 @@ describe("Photo lifecycle", () => {
 
   describe("Phase 5 — Given the admin deletes the admin-uploaded photo", () => {
     beforeAll(async () => {
-      const res = await authedFetch(`/api/events/${event.id}/photos/${adminPhotoId}`, adminCookie, {
-        method: "DELETE",
+      const res = await rpc(adminCookie).events.photos.delete({
+        id: event.id,
+        photoId: adminPhotoId,
       });
-      expect(res.status).toBe(200);
+      expect(res.success).toBe(true);
     }, 15_000);
 
-    describe("When DELETE /api/events/:id/photos/:photoId is called", () => {
+    describe("When events.photos.delete is called", () => {
       it("Then the photo no longer appears in the admin event detail", async () => {
         const detail = await rpc(adminCookie).events.get({ id: event.id });
         expect(detail.photos.find((p) => p.id === adminPhotoId)).toBeUndefined();

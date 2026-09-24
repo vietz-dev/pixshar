@@ -9,7 +9,7 @@ import PhotoGrid from "../../../../components/PhotoGrid";
 import Lightbox from "../../../../components/Lightbox";
 import UploadModal from "../../../../components/UploadModal";
 import DownloadButton from "../../../../components/DownloadButton";
-import type { GalleryData, GalleryPhoto } from "@pixshar/contracts";
+import type { GalleryData, GalleryPhoto, PhotoNewEvent } from "@pixshar/contracts";
 import { api } from "@/lib/rpc";
 
 export default function GalleryViewPage() {
@@ -79,13 +79,7 @@ export default function GalleryViewPage() {
     if (!galleryLoaded) return;
     const es = new EventSource(`/api/gallery/${slug}/photos/stream`, { withCredentials: true });
     es.addEventListener("photo-new", (e) => {
-      const p = JSON.parse(e.data) as {
-        id: string;
-        thumbUrl: string;
-        displayUrl: string;
-        photographerName: string | null;
-        placeholderDataUrl: string | null;
-      };
+      const p = JSON.parse(e.data) as PhotoNewEvent;
       setGallery((prev) => {
         if (!prev || prev.photos.some((x) => x.id === p.id)) return prev;
         const photo: GalleryPhoto = {

@@ -1,63 +1,62 @@
 ---
 type: API
 title: Admin API
-description: Admin-only endpoints for event CRUD, photo management, processing status, and archive control.
-tags: [api, admin]
-timestamp: 2026-07-11T00:00:00Z
+description: Admin-only oRPC procedures for event CRUD, photo management, processing status, and archive control.
+tags: [api, admin, orpc]
+timestamp: 2026-09-24T00:00:00Z
 ---
 
-# Authentication
+# Transport & Authentication
 
-All admin endpoints require a valid BetterAuth session cookie obtained via `POST /api/auth/sign-in/email`. There is exactly one admin account per installation; sign-up is disabled.
+Admin JSON calls are **oRPC procedures** from `@pixshar/contracts`, reached over `POST /api/rpc/<path>` (see [Contract-first API](/decisions/contract-first-api.md)). They are built from the `adminOs` middleware, which asserts a BetterAuth session (`UNAUTHORIZED` otherwise), and most of them add `requireOwner`, which loads the event and raises `NOT_FOUND` / `FORBIDDEN` before the handler runs. Rate limits are declared per procedure with the `rateLimit` middleware.
+
+There is exactly one admin account per installation; sign-up is disabled. `POST /api/auth/*` remains BetterAuth's own endpoint family (`sign-in/email`, `sign-out`, `get-session`) and is not part of the contract.
 
 # Event Management
 
-## GET /api/events
-Returns an array of all events with summary info (id, slug, name, status, photo counts, download job status).
+- `events.list()` — all events with `_count.photos`.
+- `events.create({ name, slug, description?, password })` — slug must be unique and lowercase; `CONFLICT` on collision.
+- `events.get({ id })` — full detail: the decrypted gallery password plus every photo with presigned thumb/display URLs.
+- `events.setPassword({ id, password })`
+- `events.delete({ id })` — deletes the event, its rows (cascade) and every S3 object under `{eventId}/`. Irreversible.
 
-## POST /api/events
-**Body:** `{ name, slug, password, description? }`  
-Creates a new event. Slug must be unique and lowercase. Returns `409` on slug conflict.
+# Photos
 
-## GET /api/events/:id
-Returns full event details including all photos (with presigned URLs for admin view) and the current download job state.
+- `events.photos.retry({ id })` — re-queues every FAILED photo of the event onto pg-boss, reusing the rows.
+- `events.photos.rename({ id, photoIds, photographerName })` — bulk attribution; a blank name clears it.
+- `events.photos.deleteMany({ id, photoIds })` / `events.photos.delete({ id, photoId })` — remove the rows and their S3 objects, then mark the archive parts that contained those photos `STALE` and reconcile both variants.
+- `events.photoDownload({ id, photoId })` — presigned attachment URL for one original.
 
-## DELETE /api/events/:id
-Deletes the event, all its photos, all S3 objects under `{eventId}/`, and all associated DB rows (cascade). This is irreversible.
+# Processing Status
 
-# Processing Status & SSE
-
-## GET /api/upload/events/:id/photos/status
-Returns current counts: `{ total, pending, processing, processed, failed }`. Used for the admin progress bar.
-
-## GET /api/events/:id/status/stream
-SSE stream that pushes photo processing progress and archive build status updates as they occur. Powered by the `pg_notify` bridge — the image-processor sends notifications; the API relays them over SSE.
+- `upload.status({ eventId })` — `{ pending, processed, failed, total }` for the admin progress bar.
+- `admin.backfillStatus()` — how many PROCESSED photos still lack a blur placeholder.
 
 # Archive Control
 
-Every action and status endpoint takes a `?quality=DISPLAY|ORIGINAL` selector (default `ORIGINAL`) and targets **one** variant. Each event has two archives (Kompakt / Original); the admin UI renders two independent per-variant panels. See [Download-Varianten](/decisions/download-variants.md).
+Every archive procedure takes a `quality: "DISPLAY" | "ORIGINAL"` input (default `ORIGINAL`) and targets **one** variant; the admin UI renders two independent per-variant panels. See [Download-Varianten](/decisions/download-variants.md). All four run through the Effect `DownloadService` (`runService`), not directly against Prisma.
 
-## GET /api/events/:id/download/status?quality=…
-Returns the selected variant's DownloadJob state with all progress fields. Unlike the gallery-facing endpoint, this returns `quality`, `totalPhotos`, `partCount`, `totalSizeBytes`, `debounceUntil`, and `failureReason` for the admin UI's detailed panel.
+- `events.download.status({ id, quality })` — the variant's DownloadJob state with every progress field (`quality`, `totalPhotos`, `partCount`, `totalSizeBytes`, `debounceUntil`, `failureReason`); `status: "NONE"` when no job row exists yet.
+- `events.download.buildNow({ id, quality })` — skips the debounce wait only; still routes QUEUED → FIFO claim. No-op if nothing is pending.
+- `events.download.rebuildAll({ id, quality })` — marks every part `STALE` and regenerates its bytes from the stored membership (membership preserved).
+- `events.download.cancel({ id, quality })` — cancels a QUEUED/BUILDING/DEBOUNCING job; committed parts stay downloadable.
 
-## POST /api/events/:id/download/build-now?quality=…
-Skips the debounce wait and queues the pending reconcile immediately for that variant. Only the timer is skipped — it still routes through QUEUED → the FIFO claim. No-op if nothing is pending.
+# Non-RPC Routes
 
-## POST /api/events/:id/download/rebuild-all?quality=…
-Marks every part of that variant `STALE` and reconciles, regenerating each part's bytes from its stored membership (membership preserved, so guests aren't forced to re-download unchanged parts).
+Four endpoints are deliberately not procedures:
 
-## POST /api/events/:id/download/cancel?quality=…
-Cancels a QUEUED/BUILDING/DEBOUNCING job for that variant. Already-committed (immutable) parts stay downloadable; a pending rebuild reverts to READY.
+| Route | Why |
+|---|---|
+| `GET /api/events/:id/download/status/stream?quality=` | SSE build progress, server-filtered by variant |
+| `GET /api/upload/events/:id/photos/status/stream` | SSE `photo-status` + `photo-new` for one event |
+| `POST /api/admin/backfill/start` | streams progress from a POST body — an `EventSource` cannot POST |
+| `POST /api/auth/*` | owned by BetterAuth |
 
-## GET /api/events/:id/download/status/stream?quality=…
-SSE stream for real-time build progress of the selected variant (server-filtered by `quality`), pushed on state changes.
-
-# Auth Routes
-
-`POST /api/auth/*` — BetterAuth's standard endpoint family: `sign-in/email`, `sign-out`, `get-session`. These are handled by BetterAuth's Hono integration and are not custom routes.
+The SSE handlers live in `apps/api/src/routes/streams.ts` and their payload types (`DownloadStatus`, `UploadStatus`, `PhotoNewEvent`) come from the contract, so the web app never re-declares them.
 
 # Citations
 
 [1] [Gallery API](/api/gallery-api.md)
 [2] [Upload API](/api/upload-api.md)
 [3] [Auth architecture](/architecture/auth.md)
+[4] [Contract-first API](/decisions/contract-first-api.md)

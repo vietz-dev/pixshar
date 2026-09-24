@@ -6,14 +6,8 @@ import type { HonoVariables } from "../types.js";
 
 const app = new Hono<{ Variables: HonoVariables }>();
 
-app.get("/status", requireAdmin, async (c) => {
-  const [total, missing] = await Promise.all([
-    prisma.photo.count({ where: { status: "PROCESSED" } }),
-    prisma.photo.count({ where: { status: "PROCESSED", placeholderDataUrl: null } }),
-  ]);
-  return c.json({ total, missing });
-});
-
+// GET /status now lives in the contract as `admin.backfillStatus`; the run
+// itself stays a POST stream here — an EventSource cannot POST.
 app.post("/start", requireAdmin, async () => {
   const photos = await prisma.photo.findMany({
     where: { status: "PROCESSED", placeholderDataUrl: null, thumbKey: { not: "" } },

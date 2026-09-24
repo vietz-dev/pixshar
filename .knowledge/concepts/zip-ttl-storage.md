@@ -116,7 +116,7 @@ derived variants are infrastructure overhead absorbed into the margin.
 
 ## Admin
 - [ ] Expose TTL configuration as a per-event or per-tier setting in the admin UI (future).
-- [ ] The existing `POST /api/events/:id/download/rebuild-all` already serves as a manual
+- [ ] The existing `events.download.rebuildAll` already serves as a manual
       "force rebuild after expiry" escape hatch.
 
 # Non-Goals

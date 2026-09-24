@@ -31,7 +31,6 @@
         "@hono/zod-validator": "^0.4.0",
         "@orpc/server": "^1.15.0",
         "@pixshar/contracts": "workspace:*",
-        "@pixshar/shared": "workspace:*",
         "@prisma/client": "^6.2.0",
         "@vietz-dev/hono-effect": "^1.0.0",
         "archiver": "^8.0.0",
@@ -62,7 +61,6 @@
         "@orpc/client": "^1.15.0",
         "@orpc/contract": "^1.15.0",
         "@pixshar/contracts": "workspace:*",
-        "@pixshar/shared": "workspace:*",
         "@tanstack/react-virtual": "^3.14.5",
         "next": "16.2.9",
         "next-intl": "^4.13.1",
@@ -84,13 +82,6 @@
         "@orpc/contract": "^1.15.0",
         "zod": "^3.25.0",
       },
-      "devDependencies": {
-        "typescript": "^5.7.0",
-      },
-    },
-    "packages/shared": {
-      "name": "@pixshar/shared",
-      "version": "0.0.31",
       "devDependencies": {
         "typescript": "^5.7.0",
       },
@@ -612,8 +603,6 @@
     "@pixshar/api": ["@pixshar/api@workspace:apps/api"],
 
     "@pixshar/contracts": ["@pixshar/contracts@workspace:packages/contracts"],
-
-    "@pixshar/shared": ["@pixshar/shared@workspace:packages/shared"],
 
     "@pixshar/web": ["@pixshar/web@workspace:apps/web"],
 

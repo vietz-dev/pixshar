@@ -1,5 +1,10 @@
 # Pixshar Knowledge Bundle — Update Log
 
+## 2026-09-24
+* **Change**: The API became **contract-first**. All 27 JSON endpoints are now oRPC procedures declared in the new `packages/contracts` (`@pixshar/contracts`) and mounted on Hono at `/api/rpc`; `routes/{events,gallery,upload}.ts` are deleted and `packages/shared` is gone. Auth, ownership and rate limiting are procedure middleware (`adminOs`, `galleryOs`, `requireOwner`, `rateLimit`), and failures carry oRPC error codes instead of English strings. Added [Contract-first API](/decisions/contract-first-api.md); updated [backend](/architecture/backend.md), [gallery API](/api/gallery-api.md), [admin API](/api/admin-api.md), [upload API](/api/upload-api.md).
+* **Change**: The four SSE streams moved into `routes/streams.ts` and stay plain Hono routes (an `EventSource` cannot speak RPC), as does the backfill POST stream; only their payload types (`DownloadStatus`, `UploadStatus`, `PhotoNewEvent`, `BothVariantsPayload`) now come from the contract, so the web app no longer re-declares them.
+* **Change**: Effect gained a request-side seam — the download/archive domain runs behind one `ManagedRuntime` (`@vietz-dev/hono-effect`), reached via `runService(DownloadService, …)`, disposed during the SIGTERM drain. Plain CRUD stays plain async.
+
 ## 2026-09-20
 * **Change**: The web app migrated to **Chakra UI v3** for components and layout, replacing inline styles and undeclared CSS variables. A single theme module now owns all colors, radii, fonts, shadows and gradients behind semantic token names; overlays share one dialog primitive; toasts moved to Chakra's toaster. Dark mode stays deferred but is now a one-file change. Updated [frontend](/architecture/frontend.md).
 

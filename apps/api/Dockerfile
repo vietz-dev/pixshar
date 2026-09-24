@@ -4,7 +4,6 @@ FROM oven/bun:latest
 WORKDIR /app
 
 # Copy workspace packages first
-COPY packages/shared ./packages/shared
 COPY packages/contracts ./packages/contracts
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/api/tsconfig.json ./apps/api/tsconfig.json
@@ -18,11 +17,6 @@ COPY .npmrc ./.npmrc
 # (docker compose wires this via the `node_auth_token` secret).
 RUN --mount=type=secret,id=node_auth_token \
     NODE_AUTH_TOKEN="$(cat /run/secrets/node_auth_token 2>/dev/null || true)" bun install
-
-# Copy shared package and build
-COPY packages/shared/src ./packages/shared/src
-COPY packages/shared/tsconfig.json ./packages/shared/tsconfig.json
-RUN cd packages/shared && bun run build
 
 # Copy API source
 COPY apps/api/src ./apps/api/src

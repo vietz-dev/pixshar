@@ -45,6 +45,48 @@ export type EventDetail = z.infer<typeof eventDetail>;
 
 const success = z.object({ success: z.literal(true) });
 
+/**
+ * The `photo-new` SSE frame, emitted on both the admin upload-status stream and
+ * the guest photo stream when a photo finishes processing. The streams stay on
+ * Hono (EventSource cannot speak RPC); only their payload type lives here.
+ */
+export const photoNewEvent = z.object({
+  id: z.string(),
+  thumbUrl: z.string(),
+  displayUrl: z.string(),
+  photographerName: z.string().nullable(),
+  placeholderDataUrl: z.string().nullable(),
+});
+export type PhotoNewEvent = z.infer<typeof photoNewEvent>;
+
+const photoIds = z.array(z.string().min(1)).min(1);
+
+/** Photo maintenance on one owned event. */
+export const eventPhotos = {
+  /** Re-queue every FAILED photo of the event (rows are reused). */
+  retry: oc
+    .input(z.object({ id: z.string() }))
+    .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+    .output(z.object({ success: z.literal(true), requeued: z.number() })),
+
+  /** Bulk set (or clear, when blank) the photographer name. */
+  rename: oc
+    .input(z.object({ id: z.string(), photoIds, photographerName: z.string().max(100) }))
+    .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+    .output(z.object({ success: z.literal(true), updated: z.number() })),
+
+  /** Bulk delete — rows plus their S3 objects; affected archive parts go STALE. */
+  deleteMany: oc
+    .input(z.object({ id: z.string(), photoIds }))
+    .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+    .output(z.object({ success: z.literal(true), deleted: z.number() })),
+
+  delete: oc
+    .input(z.object({ id: z.string(), photoId: z.string() }))
+    .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
+    .output(success),
+};
+
 export const events = {
   list: oc
     .input(z.object({}).optional())
@@ -113,4 +155,7 @@ export const events = {
       .errors({ NOT_FOUND: {}, FORBIDDEN: {} })
       .output(success),
   },
+
+  /** Photo maintenance — retry, rename, delete. */
+  photos: eventPhotos,
 };

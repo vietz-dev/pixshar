@@ -10,7 +10,6 @@
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
-      "@pixshar/shared": ["../../packages/shared/src/index.ts"],
       "@pixshar/contracts": ["../../packages/contracts/src/index.ts"]
     }
   },

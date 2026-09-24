@@ -1,9 +1,9 @@
 ---
 type: Architecture
 title: Backend
-description: Hono HTTP server running on Bun, with Effect for error-safe async pipelines and Zod for input validation.
-tags: [backend, hono, bun, effect, zod]
-timestamp: 2026-07-03T00:00:00Z
+description: Hono HTTP server running on Bun serving a contract-first oRPC API, with Effect for error-safe async pipelines.
+tags: [backend, hono, bun, effect, zod, orpc]
+timestamp: 2026-09-24T00:00:00Z
 ---
 
 # Runtime
@@ -17,8 +17,13 @@ The API process runs on **Bun** — a JavaScript runtime with built-in TypeScrip
 - `hono/cors` — CORS restricted to the configured `WEB_URL`
 - `hono/body-limit` — 100 MB cap to prevent memory exhaustion from large uploads
 - `hono/streaming` — SSE streams for real-time status updates
-- `requireAdmin` — checks BetterAuth session
-- `requireGallerySession` — validates per-event JWT cookie
+- `requireAdmin` / `requireGallerySession` — session guards for the surviving SSE routes
+
+Hono carries the transport; it no longer carries the API surface. One middleware at `/api/rpc/*` resolves the per-request context and hands the request to the oRPC handler, and what is left of `routes/` is the BetterAuth catch-all, `streams.ts`, `backfill.ts`, `metrics.ts` and the health checks. `createApp(resolveContext)` takes the context resolver as a parameter so the API can be driven in-process by tests.
+
+# API Surface
+
+Every JSON endpoint is an **oRPC procedure** declared in `packages/contracts` and implemented in `src/rpc/`. Access rules are middleware declared at the procedure (`adminOs`, `galleryOs`, `requireOwner`, `rateLimit`), not code copied into handler bodies, and failures are error codes rather than English strings. The four SSE streams stay plain Hono routes. See [Contract-first API](/decisions/contract-first-api.md).
 
 # Effect
 
@@ -32,12 +37,13 @@ The API process runs on **Bun** — a JavaScript runtime with built-in TypeScrip
 Effect is used in:
 - The image processing pipeline (resize + upload + DB update)
 - The archive build pipeline (part planning + streaming + S3 upload)
+- The download/archive procedures on the request path, through a single `ManagedRuntime` created by `@vietz-dev/hono-effect`: handlers are `runService(DownloadService, …)` one-liners and never call `Effect.runPromise` themselves. The runtime's scoped resources are released by `dispose()` during the SIGTERM drain.
 
 Effect is **not** used for simple CRUD handlers — those are plain async functions. The principle is: use Effect where the operation has meaningful retry semantics or multiple typed failure modes.
 
 # Validation
 
-All external input (request bodies, query params, env vars) is validated with **Zod** at system boundaries. Internal functions trust their inputs. API responses on failure always have the shape `{ error: string }` with an appropriate HTTP status code.
+All external input is validated with **Zod** at system boundaries. For RPC calls that validation *is* the contract: the procedure's input schema runs before the handler, and a violation comes back as `BAD_REQUEST` rather than a raw `ZodError`. Env vars and the surviving Hono routes keep their own Zod checks. Internal functions trust their inputs. Failures on the RPC surface carry an oRPC error code mapped to the HTTP status the endpoint returned before; the remaining Hono routes still answer `{ error: string }`.
 
 # Two Processes
 

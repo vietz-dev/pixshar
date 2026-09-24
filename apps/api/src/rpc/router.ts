@@ -7,9 +7,11 @@ import { hashPassword, verifyPassword } from "../lib/hash.js";
 import { galleryUnlocksTotal, photoDownloadsTotal } from "../lib/metrics.js";
 import { prisma } from "../lib/prisma.js";
 import { deleteS3Object, getPresignedUrl, s3 } from "../lib/s3.js";
+import { getBoss } from "../lib/pgboss.js";
 import { completeUpload, initUpload } from "../lib/uploadInit.js";
 import { runService } from "../runtime.js";
 import { DownloadService } from "../services/download/service.js";
+import { triggerReconcileAllVariants } from "../services/downloadJob.js";
 import { base } from "./base.js";
 import { adminOs, galleryOs, rateLimit, requireOwnedEvent, requireOwner } from "./middleware.js";
 
@@ -26,6 +28,24 @@ async function photoStatusCounts(eventId: string) {
   return { pending, processed, failed, total: pending + processed + failed };
 }
 
+/**
+ * Deleting photos invalidates the already-built (immutable) archive parts that
+ * contain them: mark exactly those parts STALE and reconcile both variants, so
+ * a guest who already pulled an unaffected part is not forced to re-fetch it.
+ */
+async function staleArchivePartsForPhotos(eventId: string, photoIds: string[]): Promise<void> {
+  if (photoIds.length === 0) return;
+  const affected = await prisma.downloadArchivePart.updateMany({
+    where: {
+      job: { eventId },
+      status: "READY",
+      entries: { some: { photoId: { in: photoIds } } },
+    },
+    data: { status: "STALE" },
+  });
+  if (affected.count > 0) await triggerReconcileAllVariants(eventId);
+}
+
 const jwtSecret = new TextEncoder().encode(env.BETTER_AUTH_SECRET);
 
 const eventSummarySelect = {
@@ -38,6 +58,16 @@ const eventSummarySelect = {
 } as const;
 
 export const router = base.router({
+  admin: {
+    backfillStatus: adminOs.admin.backfillStatus.handler(async () => {
+      const [total, missing] = await Promise.all([
+        prisma.photo.count({ where: { status: "PROCESSED" } }),
+        prisma.photo.count({ where: { status: "PROCESSED", placeholderDataUrl: null } }),
+      ]);
+      return { total, missing };
+    }),
+  },
+
   events: {
     list: adminOs.events.list
       .use(rateLimit({ key: () => "list-events", limit: 60, windowMs: 60_000 }))
@@ -162,6 +192,91 @@ export const router = base.router({
         photoDownloadsTotal.inc({ actor: "admin" });
         return { url };
       }),
+
+    // Photo maintenance. Ownership is asserted by `requireOwner`, so these
+    // handlers only carry the work itself.
+    photos: {
+      retry: adminOs.events.photos.retry.use(requireOwner).handler(async ({ context }) => {
+        const failed = await prisma.photo.findMany({
+          where: { eventId: context.event.id, status: "FAILED" },
+          select: { id: true },
+        });
+
+        const res = await prisma.photo.updateMany({
+          where: { eventId: context.event.id, status: "FAILED" },
+          data: { status: "PENDING", attempts: 0, lastError: null },
+        });
+
+        const boss = getBoss();
+        await Promise.all(
+          failed.map((p: { id: string }) =>
+            boss.send(
+              "photo-resize",
+              { photoId: p.id },
+              {
+                singletonKey: p.id,
+                retryLimit: env.PROCESS_MAX_ATTEMPTS - 1,
+                retryDelay: 10,
+                retryBackoff: true,
+              },
+            ),
+          ),
+        );
+
+        return { success: true as const, requeued: res.count };
+      }),
+
+      rename: adminOs.events.photos.rename.use(requireOwner).handler(async ({ input, context }) => {
+        const res = await prisma.photo.updateMany({
+          where: { id: { in: input.photoIds }, eventId: context.event.id },
+          data: { photographerName: input.photographerName.trim() || null },
+        });
+        return { success: true as const, updated: res.count };
+      }),
+
+      deleteMany: adminOs.events.photos.deleteMany
+        .use(requireOwner)
+        .handler(async ({ input, context }) => {
+          const photos = await prisma.photo.findMany({
+            where: { id: { in: input.photoIds }, eventId: context.event.id },
+            select: { id: true, originalKey: true, displayKey: true, thumbKey: true },
+          });
+
+          await Promise.all(
+            photos.flatMap((p: { originalKey: string; displayKey: string; thumbKey: string }) =>
+              [p.originalKey, p.displayKey, p.thumbKey]
+                .filter(Boolean)
+                .map((key) => deleteS3Object(key).catch(() => {})),
+            ),
+          );
+
+          const ids = photos.map((p: { id: string }) => p.id);
+          await prisma.photo.deleteMany({ where: { id: { in: ids }, eventId: context.event.id } });
+          await staleArchivePartsForPhotos(context.event.id, ids);
+
+          return { success: true as const, deleted: photos.length };
+        }),
+
+      delete: adminOs.events.photos.delete
+        .use(requireOwner)
+        .handler(async ({ input, context, errors }) => {
+          const photo = await prisma.photo.findUnique({
+            where: { id: input.photoId, eventId: context.event.id },
+          });
+          if (!photo) throw errors.NOT_FOUND({ message: "Photo not found" });
+
+          await Promise.all(
+            [photo.originalKey, photo.displayKey, photo.thumbKey]
+              .filter(Boolean)
+              .map((key) => deleteS3Object(key).catch(() => {})),
+          );
+
+          await prisma.photo.delete({ where: { id: photo.id } });
+          await staleArchivePartsForPhotos(context.event.id, [photo.id]);
+
+          return { success: true as const };
+        }),
+    },
 
     // The archive domain runs behind the Effect runtime — these handlers are
     // `runService` one-liners; retries and failure typing live in the service.
